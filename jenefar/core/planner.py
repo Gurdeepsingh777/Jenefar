@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from jenefar.core.task_plan import HierarchicalTaskPlanner, TaskStep
 
 
 @dataclass
@@ -10,10 +12,38 @@ class Plan:
     needs_tool: bool = False
     confidence: float = 0.5
     reason: str = ""
+    steps: list[TaskStep] = field(default_factory=list)
+
+    @property
+    def is_compound(self) -> bool:
+        return len(self.steps) > 1
 
 
 class Planner:
-    """Small deterministic intent planner used as the first routing signal."""
+    """Deterministic intent planner plus bounded hierarchical decomposition."""
+
+    def __init__(self) -> None:
+        self.task_planner = HierarchicalTaskPlanner()
+
+    def _make_plan(
+        self,
+        text: str,
+        intent: str,
+        agent: str,
+        *,
+        needs_tool: bool = False,
+        confidence: float,
+        reason: str,
+    ) -> Plan:
+        task_plan = self.task_planner.build(text, intent, agent)
+        return Plan(
+            intent=intent,
+            agent=agent,
+            needs_tool=needs_tool,
+            confidence=confidence,
+            reason=reason,
+            steps=list(task_plan.steps),
+        )
 
     def plan(self, text: str) -> Plan:
         t = text.lower()
@@ -28,84 +58,34 @@ class Planner:
             "architecture review",
         )
         if "kali" in t or any(x in t for x in ("nmap", "hashcat", "metasploit", "burpsuite", "sqlmap")):
-            return Plan(
-                "kali",
-                "kali",
-                confidence=0.96,
-                reason="Kali/security-tool keyword match",
-            )
+            return self._make_plan(text, "kali", "kali", confidence=0.96, reason="Kali/security-tool keyword match", needs_tool=True)
 
         if any(x in t for x in ("youtube", "song", "mp3", "vlc", "browser", "music")):
-            return Plan(
-                "media_automation",
-                "automation",
-                confidence=0.95,
-                reason="browser/media automation keyword match",
-            )
+            return self._make_plan(text, "media_automation", "automation", confidence=0.95, reason="browser/media automation keyword match", needs_tool=True)
 
         if any(x in t for x in (
             ".py", "python file", "python script", "fix error", "edit file",
             "modify file", "add a feature", "custom feature", "run this file",
             "check this file",
         )):
-            return Plan(
-                "local_development",
-                "local_development",
-                confidence=0.96,
-                reason="local code/file task keyword match",
-            )
+            return self._make_plan(text, "local_development", "local_development", confidence=0.96, reason="local code/file task keyword match", needs_tool=True)
 
         if any(x in t for x in repository_terms):
-            return Plan(
-                "repository",
-                "repository",
-                confidence=0.95,
-                reason="repository/GitHub keyword match",
-            )
+            return self._make_plan(text, "repository", "repository", confidence=0.95, reason="repository/GitHub keyword match", needs_tool=True)
 
         if any(x in t for x in ("desktop", "screen", "screenshot", "mouse", "keyboard", "click", "gui", "window")):
-            return Plan(
-                "automation",
-                "automation",
-                confidence=0.94,
-                reason="desktop automation keyword match",
-            )
+            return self._make_plan(text, "automation", "automation", confidence=0.94, reason="desktop automation keyword match", needs_tool=True)
 
         if any(x in t for x in ("python", "pip", "pytest", "django", "fastapi", "flask")):
-            return Plan(
-                "coding",
-                "python",
-                confidence=0.95,
-                reason="python keyword match",
-            )
+            return self._make_plan(text, "coding", "python", confidence=0.95, reason="python keyword match")
 
         if any(x in t for x in ("bug bounty", "bugbounty", "xss", "sqli", "idor", "burp")):
-            return Plan(
-                "bugbounty",
-                "bugbounty",
-                confidence=0.92,
-                reason="application-security keyword match",
-            )
+            return self._make_plan(text, "bugbounty", "bugbounty", confidence=0.92, reason="application-security keyword match")
 
         if any(x in t for x in ("robot", "arduino", "esp32", "ros", "servo", "sensor", "motor")):
-            return Plan(
-                "robotics",
-                "robotics",
-                confidence=0.92,
-                reason="robotics keyword match",
-            )
+            return self._make_plan(text, "robotics", "robotics", confidence=0.92, reason="robotics keyword match")
 
         if any(x in t for x in ("kali", "nmap", "cve", "malware", "cybersecurity", "network")):
-            return Plan(
-                "cybersecurity",
-                "cybersecurity",
-                confidence=0.9,
-                reason="security keyword match",
-            )
+            return self._make_plan(text, "cybersecurity", "cybersecurity", confidence=0.9, reason="security keyword match")
 
-        return Plan(
-            "research",
-            "research",
-            confidence=0.55,
-            reason="fallback",
-        )
+        return self._make_plan(text, "research", "research", confidence=0.55, reason="fallback")
