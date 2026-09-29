@@ -25,6 +25,8 @@ from jenefar.automation.browser import play_youtube, first_mp3_in_folder
 from jenefar.media.song import record_and_recognize
 from jenefar.tools.kali import KaliToolManager
 from jenefar.vision.screen import ScreenVision
+from jenefar.skills.manager import SkillManager
+from jenefar.connectors.manager import ConnectorManager
 
 
 @dataclass
@@ -53,11 +55,20 @@ class ToolBroker:
         self.ros2_robot = Ros2RobotController()
         self.workspace = WorkspaceService()
         self.capabilities = CapabilityStore()
+        self.skills = SkillManager()
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
         self.kali = KaliToolManager(self.scope)
         self.security = ScopedSecurityToolExecutor(self.scope)
+        self.connectors = ConnectorManager(
+            workspace=self.workspace,
+            desktop=self.desktop,
+            robotics=self.robotics,
+            mqtt_robot=self.mqtt_robot,
+            ros2_robot=self.ros2_robot,
+            security=self.security,
+        )
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
 
@@ -89,6 +100,87 @@ class ToolBroker:
                 "online_only_unavailable": unavailable_online_items(),
                 "local_capabilities": local_items(),
             },
+        ))
+        self.registry.register(ToolSpec(
+            name="skill_catalog",
+            description="List available declarative Jenefar skills and whether each skill is enabled.",
+            handler=lambda _args: self.skills.list(),
+        ))
+        self.registry.register(ToolSpec(
+            name="skill_enable",
+            description="Enable a registered Jenefar skill. This changes persistent skill configuration; it does not grant security authorization.",
+            parameters={
+                "type": "object",
+                "properties": {"skill": {"type": "string"}},
+                "required": ["skill"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.skills.enable(str(args["skill"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="skill_disable",
+            description="Disable a registered Jenefar skill without deleting it. This changes persistent skill configuration.",
+            parameters={
+                "type": "object",
+                "properties": {"skill": {"type": "string"}},
+                "required": ["skill"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.skills.disable(str(args["skill"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="skill_install_manifest",
+            description="Install a declarative skill manifest from a file inside configured JENEFAR_SKILL_ROOTS. No arbitrary code is executed.",
+            parameters={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.skills.install_manifest(str(args["path"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="connector_catalog",
+            description="List trusted connector adapters and their bounded actions.",
+            handler=lambda _args: self.connectors.list(),
+        ))
+        self.registry.register(ToolSpec(
+            name="connector_status",
+            description="Return metadata for one trusted connector.",
+            parameters={
+                "type": "object",
+                "properties": {"connector": {"type": "string"}},
+                "required": ["connector"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.connectors.status(str(args["connector"])),
+        ))
+        self.registry.register(ToolSpec(
+            name="connector_execute",
+            description="Execute one bounded action through a trusted connector adapter. Explicit confirmation is required for every connector call.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "connector": {"type": "string"},
+                    "action": {"type": "string"},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["connector", "action", "arguments"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._connector_execute(
+                str(args["connector"]),
+                str(args["action"]),
+                dict(args.get("arguments") or {}),
+            ),
+            requires_confirmation=True,
+            action=True,
         ))
         self.registry.register(ToolSpec(
             name="scope_add_capability",
@@ -626,6 +718,26 @@ class ToolBroker:
             },
             handler=self._scope_check,
         ))
+
+
+    def _connector_execute(
+        self,
+        connector: str,
+        action: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        value = self.connectors.execute(connector, action, arguments)
+        self.audit.record(
+            "connector_executed",
+            connector=connector,
+            action=action,
+            arguments=arguments,
+        )
+        return {
+            "connector": connector,
+            "action": action,
+            "result": value,
+        }
 
     def _browser_play_youtube(self, query: str) -> dict[str, Any]:
         try:
