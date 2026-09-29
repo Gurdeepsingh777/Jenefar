@@ -21,7 +21,12 @@ def create_ephemeral_session(tool_broker: ToolBroker | None = None) -> dict[str,
     voice = os.getenv("OPENAI_REALTIME_VOICE", os.getenv("OPENAI_TTS_VOICE", "alloy"))
     instructions = os.getenv(
         "OPENAI_REALTIME_INSTRUCTIONS",
-        "You are Jenefar, a precise voice-first multi-agent assistant.",
+        (
+            "You are Jenefar, a precise voice-first multi-agent assistant. "
+            "When the user addresses you with the wake phrase 'Hello Jenefar', "
+            "reply naturally in Hinglish using Roman Hindi mixed with English. "
+            "Keep code, commands, filenames, APIs, and technical terminology unchanged."
+        ),
     )
     broker = tool_broker or ToolBroker()
     tools = broker.schemas(
