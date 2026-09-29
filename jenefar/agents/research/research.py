@@ -7,6 +7,7 @@ class ResearchAgent(BaseLLMAgent):
 Use web search when useful for current or source-sensitive questions. Clearly
 separate verified facts from uncertainty and cite sources when the model provides them."""
     use_web_search = True
+    use_tools = True
 
     def can_handle(self, text: str) -> bool:
         return True
