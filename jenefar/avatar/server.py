@@ -8,6 +8,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from jenefar.avatar.controller import AvatarController
+from jenefar.avatar.settings import UISettings
+from jenefar.evaluation.dashboard import render_dashboard
 from jenefar.realtime.server import (
     RealtimeSessionError,
     create_ephemeral_session,
@@ -21,6 +23,7 @@ ASSET_DIR = Path(__file__).with_name("web")
 class _AvatarHandler(BaseHTTPRequestHandler):
     controller: AvatarController
     vrm_path: Path | None
+    tool_broker = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -39,6 +42,18 @@ class _AvatarHandler(BaseHTTPRequestHandler):
 
         if path == "/avatar.vrm":
             self._vrm()
+            return
+
+        if path == "/settings":
+            self._send(
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(UISettings().load()).encode("utf-8"),
+            )
+            return
+
+        if path == "/evaluation":
+            self._send(200, "text/html; charset=utf-8", render_dashboard().encode("utf-8"))
             return
 
         assets = {
@@ -67,6 +82,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         if path == "/realtime/tool":
             self._realtime_tool()
             return
+        if path == "/settings":
+            self._settings_update()
+            return
         if path != "/realtime/session":
             self._send(404, "text/plain; charset=utf-8", b"Not found")
             return
@@ -85,13 +103,41 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             json.dumps(result).encode("utf-8"),
         )
 
+    def _settings_update(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            result = UISettings().update(payload)
+        except Exception as exc:
+            self._send(
+                400,
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(exc)}).encode("utf-8"),
+            )
+            return
+        self._send(
+            200,
+            "application/json; charset=utf-8",
+            json.dumps(result).encode("utf-8"),
+        )
+
     def _realtime_tool(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length) or b"{}")
             name = str(payload.get("name", ""))
             arguments = payload.get("arguments") or {}
-            result = invoke_realtime_tool(name, arguments)
+            if payload.get("approve_id"):
+                broker = self.tool_broker or None
+                if broker is None:
+                    raise RealtimeSessionError("Realtime broker is unavailable.")
+                result = broker.approve(str(payload["approve_id"]))
+            else:
+                broker = self.tool_broker
+                if broker is not None:
+                    result = broker.invoke(name, arguments)
+                else:
+                    result = invoke_realtime_tool(name, arguments)
         except Exception as exc:
             self._send(
                 400,
@@ -100,10 +146,11 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             )
             return
 
+        parsed = json.loads(result)
         self._send(
             200,
             "application/json; charset=utf-8",
-            json.dumps({"result": json.loads(result)}).encode("utf-8"),
+            json.dumps({"result": parsed}).encode("utf-8"),
         )
 
     def _vrm(self) -> None:
@@ -152,8 +199,10 @@ class AvatarServer:
         host: str = "127.0.0.1",
         port: int = 8787,
         vrm_path: str | Path | None = None,
+        tool_broker=None,
     ):
         self.controller = controller
+        self.tool_broker = tool_broker
         self.host = host
         self.port = port
         configured = vrm_path or os.getenv("JENEFAR_AVATAR_VRM_PATH", "")
@@ -164,6 +213,7 @@ class AvatarServer:
         self._server = ThreadingHTTPServer((host, port), _AvatarHandler)
         self._server.RequestHandlerClass.controller = controller
         self._server.RequestHandlerClass.vrm_path = self.vrm_path
+        self._server.RequestHandlerClass.tool_broker = tool_broker
         self._thread: threading.Thread | None = None
 
     @property
