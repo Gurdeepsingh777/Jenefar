@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
 from jenefar.agents.coding.python import PythonAgent
 from jenefar.agents.coding.repository_agent import RepositoryAgent
@@ -12,6 +13,8 @@ from jenefar.core.planner import Planner
 from jenefar.core.router import AgentRouter
 from jenefar.core.session import Session
 from jenefar.memory.store import MemoryStore
+from jenefar.memory.graph import KnowledgeGraph
+from jenefar.evaluation.loop import EvaluationLoop
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -25,6 +28,8 @@ class JenefarOrchestrator:
         self.state = JenefarState.SLEEPING
         self.session = Session()
         self.memory = MemoryStore()
+        self.graph = KnowledgeGraph(self.memory.path)
+        self.evaluator = EvaluationLoop()
         self.planner = Planner()
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
@@ -35,6 +40,7 @@ class JenefarOrchestrator:
         )
         self.router = AgentRouter([
             RepositoryAgent(tool_broker=self.tool_broker),
+            AutomationAgent(tool_broker=self.tool_broker),
             PythonAgent(tool_broker=self.tool_broker),
             CybersecurityAgent(tool_broker=self.tool_broker),
             BugBountyAgent(tool_broker=self.tool_broker),
@@ -95,6 +101,7 @@ class JenefarOrchestrator:
         self._avatar_state("thinking", "Processing your request…")
         self.session.add("user", text)
         self.memory.remember_message(self.session.session_id, "user", text)
+        self.graph.learn_text(text)
         retrieved = self.memory.search(text, limit=6)
         plan = self.planner.plan(text)
         result = self.router.dispatch(
@@ -114,6 +121,12 @@ class JenefarOrchestrator:
         output = self.verifier.verify(text, result.content)
         self.session.add("assistant", output)
         self.memory.remember_message(self.session.session_id, "assistant", output)
+        self.graph.learn_text(output)
+        self.evaluator.evaluate(
+            text,
+            output,
+            provider=str(result.metadata.get("provider", "")),
+        )
 
         if result.metadata.get("provider") == "approval_required":
             self._register_pending_workflow(text, result)
