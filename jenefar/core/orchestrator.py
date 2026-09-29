@@ -9,6 +9,7 @@ from jenefar.core.config import load_config
 from jenefar.core.planner import Planner
 from jenefar.core.router import AgentRouter
 from jenefar.core.session import Session
+from jenefar.memory.store import MemoryStore
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -21,6 +22,7 @@ class JenefarOrchestrator:
         self.config = load_config()
         self.state = JenefarState.SLEEPING
         self.session = Session()
+        self.memory = MemoryStore()
         self.planner = Planner()
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
@@ -87,6 +89,8 @@ class JenefarOrchestrator:
     def handle(self, text: str) -> str:
         self.state = JenefarState.THINKING
         self.session.add("user", text)
+        self.memory.remember_message(self.session.session_id, "user", text)
+        retrieved = self.memory.search(text, limit=6)
         plan = self.planner.plan(text)
         result = self.router.dispatch(
             text,
@@ -95,10 +99,15 @@ class JenefarOrchestrator:
                 "intent": plan.intent,
                 "planner_reason": plan.reason,
                 "history": self.session.recent(8),
+                "retrieved_memory": [
+                    {"source": hit.source, "title": hit.title, "content": hit.content}
+                    for hit in retrieved
+                ],
             },
         )
         output = self.verifier.verify(text, result.content)
         self.session.add("assistant", output)
+        self.memory.remember_message(self.session.session_id, "assistant", output)
 
         if result.metadata.get("provider") == "approval_required":
             self.state = JenefarState.WAITING_APPROVAL
