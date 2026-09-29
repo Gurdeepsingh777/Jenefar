@@ -11,6 +11,7 @@ from jenefar.core.router import AgentRouter
 from jenefar.core.session import Session
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
+from jenefar.tools.broker import ToolBroker
 from jenefar.voice.wakeword import WakeWord
 
 class JenefarOrchestrator:
@@ -19,9 +20,15 @@ class JenefarOrchestrator:
         self.state = JenefarState.SLEEPING
         self.session = Session()
         self.planner = Planner()
+        self.tool_broker = ToolBroker(
+            require_confirmation=self.config.require_confirmation_for_tools
+        )
         self.router = AgentRouter([
-            PythonAgent(), CybersecurityAgent(), BugBountyAgent(),
-            RoboticsAgent(), ResearchAgent()
+            PythonAgent(tool_broker=self.tool_broker),
+            CybersecurityAgent(tool_broker=self.tool_broker),
+            BugBountyAgent(tool_broker=self.tool_broker),
+            RoboticsAgent(tool_broker=self.tool_broker),
+            ResearchAgent(tool_broker=self.tool_broker),
         ])
         self.verifier = Verifier()
         self.wakeword = WakeWord(self.config.wake_phrases)
@@ -30,15 +37,32 @@ class JenefarOrchestrator:
         print(f"[JENEFAR] {self.config.name} is running.")
         print("[JENEFAR] Sleeping. Say/type 'Hi Jenefar' or 'Hello Jenefar' to wake me.")
         print("[JENEFAR] Type 'exit' to quit.")
+        print("[JENEFAR] Type 'approve <id>' only after reviewing a pending local tool action.")
+
         while True:
             try:
                 raw = input("You > ").strip()
             except (EOFError, KeyboardInterrupt):
                 print("\n[JENEFAR] Shutting down.")
                 return
-            if raw.lower() == "exit":
+
+            lowered = raw.lower()
+            if lowered == "exit":
                 print("[JENEFAR] Goodbye.")
                 return
+
+            if lowered.startswith("approve "):
+                pending_id = raw.split(maxsplit=1)[1].strip()
+                if pending_id:
+                    result = self.tool_broker.approve(pending_id)
+                    print(f"Jenefar > {result}")
+                    self.state = JenefarState.SLEEPING
+                continue
+
+            if self.state == JenefarState.WAITING_APPROVAL:
+                print("[JENEFAR] A tool approval is pending. Use: approve <id>")
+                continue
+
             if self.state == JenefarState.SLEEPING:
                 if not self.wakeword.detect(raw):
                     print("[JENEFAR] (sleeping)")
@@ -50,6 +74,7 @@ class JenefarOrchestrator:
                     continue
                 print(f"Jenefar > {self.handle(command)}")
                 continue
+
             if raw:
                 print(f"Jenefar > {self.handle(raw)}")
 
@@ -68,8 +93,13 @@ class JenefarOrchestrator:
         )
         output = self.verifier.verify(text, result.content)
         self.session.add("assistant", output)
-        self.state = (
-            JenefarState.SLEEPING
-            if self.config.single_turn_sleep else JenefarState.AWAKE
-        )
+
+        if result.metadata.get("provider") == "approval_required":
+            self.state = JenefarState.WAITING_APPROVAL
+        else:
+            self.state = (
+                JenefarState.SLEEPING
+                if self.config.single_turn_sleep
+                else JenefarState.AWAKE
+            )
         return output
