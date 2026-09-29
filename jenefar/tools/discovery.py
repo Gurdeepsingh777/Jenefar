@@ -12,23 +12,23 @@ class DiscoveredTool:
     description: str
 
 DEFAULT_KALI_TOOLS = (
-    ("nmap","recon","Network/service discovery"),
-    ("masscan","recon","High-speed port scanner"),
-    ("nikto","web","Web server scanner"),
-    ("sqlmap","web","SQL injection testing tool"),
-    ("ffuf","web","Web fuzzing/content discovery"),
-    ("gobuster","web","Content/DNS discovery"),
-    ("whatweb","web","Web technology fingerprinting"),
-    ("hydra","auth","Network authentication auditing"),
-    ("john","password","Password auditing"),
-    ("hashcat","password","Password recovery/auditing"),
-    ("aircrack-ng","wireless","Wi-Fi security auditing suite"),
-    ("wpscan","web","WordPress security scanner"),
-    ("searchsploit","research","Exploit-DB search utility"),
-    ("enum4linux-ng","enum","SMB/Windows enumeration"),
-    ("smbclient","enum","SMB client"),
-    ("responder","network","Network protocol analysis/testing"),
-    ("burpsuite","web","Web application security testing"),
+    ("nmap", "recon", "Network/service discovery"),
+    ("masscan", "recon", "High-speed port scanner"),
+    ("nikto", "web", "Web server scanner"),
+    ("sqlmap", "web", "SQL injection testing tool"),
+    ("ffuf", "web", "Web fuzzing/content discovery"),
+    ("gobuster", "web", "Content/DNS discovery"),
+    ("whatweb", "web", "Web technology fingerprinting"),
+    ("hydra", "auth", "Network authentication auditing"),
+    ("john", "password", "Password auditing"),
+    ("hashcat", "password", "Password recovery/auditing"),
+    ("aircrack-ng", "wireless", "Wi-Fi security auditing suite"),
+    ("wpscan", "web", "WordPress security scanner"),
+    ("searchsploit", "research", "Exploit-DB search utility"),
+    ("enum4linux-ng", "enum", "SMB/Windows enumeration"),
+    ("smbclient", "enum", "SMB client"),
+    ("responder", "network", "Network protocol analysis/testing"),
+    ("burpsuite", "web", "Web application security testing"),
 )
 
 def discover_tools(extra: tuple[str, ...] = ()) -> list[DiscoveredTool]:
@@ -38,9 +38,9 @@ def discover_tools(extra: tuple[str, ...] = ()) -> list[DiscoveredTool]:
         DiscoveredTool(
             name=name,
             category=category,
-            command=command,
-            installed=shutil.which(command) is not None,
+            command=name,
+            installed=shutil.which(name) is not None,
             description=description,
         )
-        for name, category, command, description in names
+        for name, category, description in names
     ]
