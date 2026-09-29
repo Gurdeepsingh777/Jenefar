@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -25,8 +26,12 @@ from jenefar.automation.browser import play_youtube, first_mp3_in_folder
 from jenefar.media.song import record_and_recognize
 from jenefar.tools.kali import KaliToolManager
 from jenefar.vision.screen import ScreenVision
+from jenefar.automation.headless import HeadlessDesktopAutomation
 from jenefar.skills.manager import SkillManager
 from jenefar.connectors.manager import ConnectorManager
+from jenefar.memory.advanced import AdvancedMemory
+from jenefar.events.engine import EventEngine
+from jenefar.tools.phase4 import register_phase4_tools
 
 
 @dataclass
@@ -46,10 +51,17 @@ class ToolBroker:
         audit: AuditLogger | None = None,
         scope: ScopePolicy | None = None,
         skills: SkillManager | None = None,
+        memory: AdvancedMemory | None = None,
+        events: EventEngine | None = None,
+        event_handler=None,
     ):
         self.registry = ToolRegistry()
         self.terminal = TerminalTool()
-        self.desktop = DesktopAutomation()
+        desktop_backend = os.getenv("JENEFAR_DESKTOP_BACKEND", "native").strip().lower()
+        if desktop_backend in {"headless", "virtual", "safe"}:
+            self.desktop = HeadlessDesktopAutomation()
+        else:
+            self.desktop = DesktopAutomation()
         self.screen_vision = ScreenVision(self.desktop)
         self.robotics = SerialRobotController()
         self.mqtt_robot = MqttRobotController()
@@ -57,6 +69,9 @@ class ToolBroker:
         self.workspace = WorkspaceService()
         self.capabilities = CapabilityStore()
         self.skills = skills or SkillManager()
+        self.memory = memory or AdvancedMemory()
+        self.events = events or EventEngine()
+        self.event_handler = event_handler
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
@@ -73,6 +88,12 @@ class ToolBroker:
         )
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
+        register_phase4_tools(
+            self,
+            memory=self.memory,
+            events=self.events,
+            event_handler=self.event_handler,
+        )
 
     def _register_builtin_tools(self) -> None:
         self.registry.register(ToolSpec(
