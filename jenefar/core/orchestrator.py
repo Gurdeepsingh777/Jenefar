@@ -103,6 +103,7 @@ class JenefarOrchestrator:
         self.memory.remember_message(self.session.session_id, "user", text)
         self.graph.learn_text(text)
         retrieved = self.memory.search(text, limit=6)
+        graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
         plan = self.planner.plan(text)
         result = self.router.dispatch(
             text,
@@ -115,6 +116,14 @@ class JenefarOrchestrator:
                 "retrieved_memory": [
                     {"source": hit.source, "title": hit.title, "content": hit.content}
                     for hit in retrieved
+                ],
+                "knowledge_graph": [
+                    {
+                        "subject": relation.subject,
+                        "predicate": relation.predicate,
+                        "object": relation.object,
+                    }
+                    for relation in graph_hits
                 ],
             },
         )
