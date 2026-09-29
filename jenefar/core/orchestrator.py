@@ -125,6 +125,14 @@ class JenefarOrchestrator:
                     }
                     for relation in graph_hits
                 ],
+                "knowledge_graph": [
+                    {
+                        "subject": relation.subject,
+                        "predicate": relation.predicate,
+                        "object": relation.object,
+                    }
+                    for relation in graph_hits
+                ],
             },
         )
         output = self.verifier.verify(text, result.content)
