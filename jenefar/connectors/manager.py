@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from jenefar.automation.browser import open_url, play_youtube
+from jenefar.automation.browser import open_url, play_youtube, first_mp3_in_folder
 from jenefar.execution.scope import ScopePolicy
 from jenefar.research.sources import fetch_github_repository, fetch_url
 from jenefar.offline.connectivity import internet_available
@@ -21,6 +21,7 @@ class ConnectorManager:
         *,
         workspace=None,
         desktop=None,
+        screen_vision=None,
         robotics=None,
         mqtt_robot=None,
         ros2_robot=None,
@@ -55,6 +56,46 @@ class ConnectorManager:
         ros2_robot,
         security,
     ) -> None:
+        if desktop is not None:
+            handlers = {
+                "screen_size": lambda _args: desktop.screen_size(),
+                "hotkey": lambda args: desktop.hotkey([str(item) for item in args["keys"]]),
+                "scroll": lambda args: desktop.scroll(int(args["clicks"])),
+            }
+            actions = [
+                ConnectorAction("screen_size", "Return current screen dimensions."),
+                ConnectorAction("hotkey", "Press a bounded keyboard shortcut.", True),
+                ConnectorAction("scroll", "Scroll the desktop by a bounded amount.", True),
+            ]
+            if screen_vision is not None:
+                handlers.update({
+                    "observe": lambda args: screen_vision.analyze(str(args["query"])),
+                    "find_element": lambda args: screen_vision.locate(str(args["query"])),
+                    "click_element": lambda args: screen_vision.locate_and_click(str(args["query"])),
+                    "type_into_element": lambda args: screen_vision.locate_and_type(
+                        str(args["query"]),
+                        str(args["text"]),
+                    ),
+                })
+                actions.extend([
+                    ConnectorAction("observe", "Analyze the current screen semantically.", True),
+                    ConnectorAction("find_element", "Locate a semantic UI element.", True),
+                    ConnectorAction("click_element", "Click a semantic UI element.", True),
+                    ConnectorAction("type_into_element", "Type into a semantic input.", True),
+                ])
+            self.register(
+                Connector(
+                    ConnectorManifest(
+                        name="desktop",
+                        version="1.0",
+                        description="Semantic desktop and GUI control adapter.",
+                        online_required=False,
+                        actions=tuple(actions),
+                    ),
+                    handlers,
+                )
+            )
+
         if workspace is not None:
             self.register(
                 Connector(
@@ -80,6 +121,23 @@ class ConnectorManager:
                     },
                 )
             )
+
+        self.register(
+            Connector(
+                ConnectorManifest(
+                    name="media",
+                    version="1.0",
+                    description="Local media playback adapter using the configured VLC helper.",
+                    online_required=False,
+                    actions=(
+                        ConnectorAction("play_first_mp3", "Play the first MP3 under a local folder.", True),
+                    ),
+                ),
+                {
+                    "play_first_mp3": lambda args: first_mp3_in_folder(str(args["path"])),
+                },
+            )
+        )
 
         self.register(
             Connector(
