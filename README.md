@@ -588,3 +588,48 @@ Phase 1 me Jenefar compound requests ke liye bounded multi-step execution plan b
 Model routing role-based hai: coding (local development, Python, repository), security (Kali, cybersecurity, bug-bounty), research, robotics, automation, aur fast/general. Online profiles JENEFAR_MODEL_* aur optional local profiles JENEFAR_LOCAL_LLM_MODEL_* se override kiye ja sakte hain. Unset profiles global model configuration par fall back karte hain.
 
 Local edits, Python execution aur pytest ab bhi authorized workspace aur explicit approval boundaries ke andar hi hote hain.
+
+
+## Phase 2 — Vision, GUI Agent aur Semantic Screen Control
+
+Phase 2 me Jenefar ko semantic desktop understanding add ki gayi hai. GUI specialist current screen ko screenshot ke through multimodal vision backend ko deta hai aur visible UI elements ko label, role, confidence, bounding box aur center coordinates ke saath normalize karta hai.
+
+Semantic tools:
+- desktop_observe — current screen ko vision model se analyze karta hai.
+- desktop_find_element — semantic query se visible UI element locate karta hai.
+- desktop_click_element — element ko semantic description se locate karke click karta hai.
+- desktop_type_into_element — semantic input field locate, click aur text type karta hai.
+- desktop_hotkey — bounded safe keyboard shortcuts.
+- desktop_scroll — bounded scrolling.
+
+GUI actions explicit approval ke peeche rehte hain. Screen observation bhi GUI action policy ke through gated hai, kyunki screenshot me private information ho sakti hai.
+
+Vision flow:
+
+User goal
+   ↓
+GUI Vision Agent
+   ↓
+Current screenshot
+   ↓
+Vision model
+   ↓
+Semantic elements
+   ↓
+Validated coordinates
+   ↓
+Approved GUI action
+   ↓
+Optional re-observation / verification
+
+Online mode me configured JENEFAR_VISION_MODEL use hota hai; blank hone par OPENAI_MODEL fallback use hota hai. Offline mode me JENEFAR_LOCAL_VISION_MODEL ya compatible local multimodal model use hota hai.
+
+Bounding boxes model ke resized screenshot coordinates se original desktop resolution me scale kiye jate hain aur screen boundaries ke against validate kiye jate hain.
+
+Example requests:
+
+Hello Jenefar, screen par search box find karo.
+Hello Jenefar, search box me Jenefar AI type karo.
+Hello Jenefar, jo Submit button screen par hai use click karo.
+
+Current implementation semantic coordinates ko model output se derive karti hai; live desktop smoke-testing ke liye target machine par pyautogui aur vision-capable model configured hona zaroori hai.
