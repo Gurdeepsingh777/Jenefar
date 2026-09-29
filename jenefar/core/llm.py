@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 @dataclass
@@ -10,6 +10,7 @@ class LLMResponse:
     text: str
     provider: str = "local"
     response_id: str | None = None
+    pending_tools: list[dict[str, str]] = field(default_factory=list)
 
 class LLMClient:
     """OpenAI Responses API boundary with optional web search and local tools."""
@@ -91,6 +92,7 @@ class LLMClient:
                 next_input = list(getattr(response, "output", []) or [])
                 approval_required = False
                 pending_ids: list[str] = []
+                pending_tools: list[dict[str, str]] = []
 
                 for call in calls:
                     try:
@@ -109,8 +111,14 @@ class LLMClient:
 
                     if parsed.get("status") == "approval_required":
                         approval_required = True
-                        if parsed.get("pending_id"):
-                            pending_ids.append(str(parsed["pending_id"]))
+                        pending_id = str(parsed.get("pending_id") or "")
+                        if pending_id:
+                            pending_ids.append(pending_id)
+                            pending_tools.append({
+                                "pending_id": pending_id,
+                                "tool": str(getattr(call, "name", "")),
+                                "call_id": str(getattr(call, "call_id", "")),
+                            })
 
                     next_input.append({
                         "type": "function_call_output",
@@ -127,6 +135,7 @@ class LLMClient:
                         "A local tool requested explicit confirmation before execution." + suffix,
                         "approval_required",
                         getattr(response, "id", None),
+                        pending_tools=pending_tools,
                     )
 
                 request_input = next_input
