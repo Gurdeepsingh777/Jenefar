@@ -58,6 +58,7 @@ class BaseLLMAgent(BaseAgent):
         graph = context.metadata.get("knowledge_graph", [])
         runtime_text = context.metadata.get("runtime", {})
         capability_text = context.metadata.get("capabilities", [])
+        skill_text = context.metadata.get("skills", [])
         task_plan = context.metadata.get("task_plan", {})
         graph_text = ""
         if graph:
@@ -77,6 +78,11 @@ class BaseLLMAgent(BaseAgent):
         if capability_text:
             instructions += "\nUser-requested capability scope:\n" + "\n".join(
                 f"- {item.get('capability', '')}" for item in capability_text[-20:]
+            )
+        if skill_text:
+            instructions += "\nEnabled Jenefar skills:\n" + "\n".join(
+                f"- {item.get('name', '')}: {item.get('description', '')}"
+                for item in skill_text[-30:]
             )
         if task_plan:
             plan_text = str(task_plan.get("prompt_text") or "").strip()
