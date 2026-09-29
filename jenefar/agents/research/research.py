@@ -1,11 +1,12 @@
-from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
+from jenefar.agents.llm_agent import BaseLLMAgent
 
-class ResearchAgent(BaseAgent):
-    name="research"
-    description="General research and information synthesis specialist"
+class ResearchAgent(BaseLLMAgent):
+    name = "research"
+    description = "Web research and information synthesis specialist"
+    system_prompt = """You are Jenefar's research specialist.
+Use web search when useful for current or source-sensitive questions. Clearly
+separate verified facts from uncertainty and cite sources when the model provides them."""
+    use_web_search = True
 
-    def can_handle(self,text:str)->bool:
+    def can_handle(self, text: str) -> bool:
         return True
-
-    def run(self,context:AgentContext)->AgentResult:
-        return AgentResult(self.name, f"Research specialist received: {context.task}")
