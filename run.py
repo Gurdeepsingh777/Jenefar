@@ -29,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--memory-search", metavar="QUERY", help="search persistent Jenefar memory/RAG index")
     parser.add_argument("--graph-search", metavar="QUERY", help="search persistent knowledge-graph relations")
     parser.add_argument("--evaluation-report", action="store_true", help="show recent runtime evaluation records")
+    parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
+    parser.add_argument("--wakeword-prepare", metavar="PHRASE", help="generate an openWakeWord training config for PHRASE")
+    parser.add_argument("--wakeword-config", metavar="PATH", help="training config path for --wakeword-train")
+    parser.add_argument("--wakeword-train", choices=["clips", "augment", "train", "all", "tflite"], help="run a custom openWakeWord training stage")
     return parser
 
 def doctor() -> int:
@@ -158,6 +162,29 @@ def main() -> int:
 
     if args.doctor:
         return doctor()
+
+    if args.wakeword_prepare:
+        from jenefar.voice.wakeword_trainer import prepare_config
+        path = prepare_config(args.wakeword_prepare)
+        print(f"[JENEFAR] Wake-word config: {path}")
+        return 0
+
+    if args.wakeword_train:
+        if not args.wakeword_config:
+            print("[JENEFAR] --wakeword-train requires --wakeword-config")
+            return 2
+        from jenefar.voice.wakeword_trainer import train
+        return train(args.wakeword_config, stage=args.wakeword_train)
+
+    if args.evaluation_dashboard:
+        import webbrowser
+        from jenefar.evaluation.dashboard import render_dashboard
+        dashboard_path = "data/evaluation_dashboard.html"
+        from pathlib import Path
+        Path(dashboard_path).write_text(render_dashboard(), encoding="utf-8")
+        webbrowser.open(Path(dashboard_path).resolve().as_uri())
+        print(f"[JENEFAR] Evaluation dashboard: {Path(dashboard_path).resolve()}")
+        return 0
 
     if args.analyze_github and args.plan_github:
         print("[JENEFAR] Use only one GitHub analysis option at a time.")
