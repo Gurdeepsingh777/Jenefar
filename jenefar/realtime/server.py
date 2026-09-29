@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 from urllib import request
+
+from jenefar.tools.broker import ToolBroker
 
 
 class RealtimeSessionError(RuntimeError):
@@ -20,12 +23,18 @@ def create_ephemeral_session() -> dict[str, object]:
         "OPENAI_REALTIME_INSTRUCTIONS",
         "You are Jenefar, a precise voice-first multi-agent assistant.",
     )
+    broker = ToolBroker()
+    tools = broker.schemas(
+        allow_action_tools=False,
+        include_confirmation_tools=False,
+    )
     payload = {
         "session": {
             "type": "realtime",
             "model": model,
             "instructions": instructions,
             "audio": {"output": {"voice": voice}},
+            "tools": tools,
         }
     }
     req = request.Request(
@@ -51,3 +60,15 @@ def create_ephemeral_session() -> dict[str, object]:
             "Realtime session response did not contain an ephemeral client secret."
         )
     return {"value": value, "model": model}
+
+
+def invoke_realtime_tool(name: str, arguments: dict[str, Any]) -> str:
+    """Execute only read-only tools exposed to browser Realtime sessions."""
+    broker = ToolBroker()
+    allowed = {item["name"] for item in broker.schemas(
+        allow_action_tools=False,
+        include_confirmation_tools=False,
+    )}
+    if name not in allowed:
+        raise RealtimeSessionError(f"Realtime tool '{name}' is not exposed by policy.")
+    return broker.invoke(name, arguments)
