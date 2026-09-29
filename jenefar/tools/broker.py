@@ -75,6 +75,11 @@ class ToolBroker:
             ],
         ))
         self.registry.register(ToolSpec(
+            name="dismiss_offline_notice",
+            description="Acknowledge and close Jenefar's current offline-capability notice.",
+            handler=lambda _args: {"closed": True, "message": "Offline capability notice closed."},
+        ))
+        self.registry.register(ToolSpec(
             name="offline_status",
             description="Report online/offline connectivity and which capabilities are unavailable when internet is not reachable.",
             handler=lambda _args: {
