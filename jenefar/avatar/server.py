@@ -206,7 +206,11 @@ class AvatarServer:
         self.host = host
         self.port = port
         configured = vrm_path or os.getenv("JENEFAR_AVATAR_VRM_PATH", "")
-        self.vrm_path = Path(configured).expanduser() if configured else None
+        if configured:
+            self.vrm_path = Path(configured).expanduser()
+        else:
+            bundled_sample = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+            self.vrm_path = bundled_sample if bundled_sample.is_file() else None
         if self.vrm_path and not self.vrm_path.is_absolute():
             self.vrm_path = (Path.cwd() / self.vrm_path).resolve()
 
