@@ -22,6 +22,7 @@ class ModelRouter:
         "research": "JENEFAR_MODEL_RESEARCH",
         "robotics": "JENEFAR_MODEL_ROBOTICS",
         "automation": "JENEFAR_MODEL_AUTOMATION",
+        "vision": "JENEFAR_MODEL_VISION",
     }
 
     AGENT_ROLES = {
@@ -34,6 +35,7 @@ class ModelRouter:
         "research": "research",
         "robotics": "robotics",
         "automation": "automation",
+        "gui_vision": "vision",
     }
 
     def role_for_agent(self, agent_name: str) -> str:
