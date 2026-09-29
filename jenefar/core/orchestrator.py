@@ -218,10 +218,13 @@ class JenefarOrchestrator:
             self.state = JenefarState.SLEEPING
             return raw_result
 
+        continue_kwargs = {}
+        if workflow.get("response_language"):
+            continue_kwargs["response_language"] = workflow["response_language"]
         final_result = agent.continue_after_tools(
             workflow["task"],
             workflow["results"],
-            response_language=workflow.get("response_language"),
+            **continue_kwargs,
         )
         output = self.verifier.verify(workflow["task"], final_result.content)
         self.session.add("assistant", output)
