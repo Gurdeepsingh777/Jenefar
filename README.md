@@ -1,32 +1,34 @@
 # Jenefar AI
 
-Jenefar is a modular, voice-first multi-agent AI assistant designed to grow into a desktop automation, coding, cybersecurity, research, robotics, and authorized tool-execution platform.
+Jenefar ek modular, voice-first multi-agent AI assistant hai jo dheere-dheere ek powerful desktop automation, coding, cybersecurity, research, robotics aur authorized tool-execution platform ke roop me grow karne ke liye design kiya gaya hai.
 
 ## Current release
 
-The core now includes:
+Abhi Jenefar ke core me ye features available hain:
 
 - Master orchestrator + deterministic planner + specialist router
-- Model-backed Python, repository, cybersecurity, bug-bounty, robotics, and research agents
+- Python, repository, cybersecurity, bug-bounty, robotics aur research ke liye model-backed specialist agents
 - OpenAI Responses API adapter
-- Optional hosted web search for the research agent
-- Short-term session memory passed to specialists
+- Research agent ke liye optional hosted web search
+- Short-term session memory jo specialist agents ko pass hoti hai
 - Centralized tool broker with approval-gated function calls
-- Explicit permission boundary for terminal execution
-- Authorization-scope and JSONL audit logging
-- Safe discovery of common Kali/Linux security tools
+- Terminal execution ke liye explicit permission boundary
+- Authorization scope aur JSONL audit logging
+- Common Kali/Linux security tools ki safe discovery
 - "Hi Jenefar" / "Hello Jenefar" activation logic
-- Text runtime for immediate testing
-- Bounded and continuous microphone -> STT -> orchestrator -> TTS runtimes
-- Local particle avatar with optional Three.js/VRM rendering and expressions
-- Browser Realtime speech-to-speech transport using ephemeral client secrets
+- Immediate testing ke liye text runtime
+- Bounded aur continuous microphone -> STT -> orchestrator -> TTS runtimes
+- Local particle avatar with optional Three.js/VRM rendering aur expressions
+- Ephemeral client secrets ke through browser Realtime speech-to-speech transport
 - Persistent SQLite memory + FTS5 retrieval
-- URL and public GitHub research ingestion
-- Read-only URL/GitHub research tools for the model
-- GitHub repository architecture analysis and change planning
-- PDF/DOCX/text document extraction and RAG ingestion
+- URL aur public GitHub research ingestion
+- Model ke liye read-only URL/GitHub research tools
+- GitHub repository architecture analysis aur change planning
+- PDF/DOCX/text document extraction aur RAG ingestion
+- "Hello Jenefar" se activate hone par Hinglish response preference
+- Safe external asset provisioning for wake-word training aur sample VRM
 
-The LLM and voice integrations remain isolated behind adapters so providers can be changed later.
+LLM aur voice integrations adapters ke peeche isolated rakhe gaye hain, isliye future me providers ko replace karna easier rahega.
 
 ## Quick start
 
@@ -40,17 +42,51 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 
 cp .env.example .env
-# Put your OpenAI API key in .env
+# .env me apni OpenAI API key daalo
 python run.py
 ```
 
-Then type:
+Phir type karo:
 
 ```text
 Hi Jenefar
 ```
 
-and ask a question. Without an API key, the runtime reports that the model provider is not configured.
+aur apna question poochho. API key configured nahi hogi to runtime model provider configuration error batayega.
+
+## Language behavior
+
+Jenefar me wake phrase ke basis par response language preference set ki ja sakti hai.
+
+Jab tum bolo:
+
+```text
+Hello Jenefar
+```
+
+to Jenefar Hinglish me reply karega.
+
+Example:
+
+```text
+You > Hello Jenefar
+Jenefar > Haan, boliye. Main sun rahi hoon.
+```
+
+Agar wake phrase ke saath command bhi ho:
+
+```text
+You > Hello Jenefar Python kya hota hai?
+```
+
+to request ko Hinglish response preference ke saath specialist agent tak bheja jayega.
+
+Hinglish mode me:
+- Hindi ko primarily Roman script me use kiya jayega.
+- English technical terms natural form me rahenge.
+- Code, commands, filenames, APIs aur syntax ko translate nahi kiya jayega.
+- "Hi Jenefar" ke liye normal/default response language behavior use hota hai.
+- Browser Realtime mode me bhi "Hello Jenefar" ke liye Hinglish instruction configured hai.
 
 ## Voice mode
 
@@ -66,17 +102,19 @@ Continuous voice mode:
 python run.py --voice-continuous
 ```
 
-Continuous mode keeps the microphone open, uses local energy-based VAD to segment utterances, sends only detected utterances to STT, applies the same wake-word gate and orchestrator routing, then streams TTS back to the speakers. Tune the VAD with the `JENEFAR_VOICE_*` environment variables in `.env`.
+Continuous mode microphone ko open rakhta hai, local energy-based VAD se utterances detect karta hai, detected utterances ko STT ke liye bhejta hai, wake-word gate apply karta hai, phir same orchestrator routing use karta hai aur TTS response speakers par play karta hai.
 
-## Avatar and realtime voice
+Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai.
 
-Launch the avatar UI:
+## Avatar aur realtime voice
+
+Avatar UI launch karne ke liye:
 
 ```bash
 python run.py --avatar
 ```
 
-Run continuous local VAD/STT/TTS with the avatar:
+Avatar ke saath continuous local VAD/STT/TTS:
 
 ```bash
 python run.py --avatar --voice-continuous
@@ -94,46 +132,54 @@ Direct realtime mode:
 python run.py --realtime
 ```
 
-The repository includes a safe first-run asset provisioner for a redistributable sample avatar. Run:
+Repository me ek safe first-run asset provisioner bhi hai jo redistribution-documented sample avatar ko local machine par la sakta hai:
 
 ```bash
 python run.py --setup-assets avatar
 ```
 
-This downloads the VRM Consortium sample `AvatarSample_A_1.0.vrm.glb` from the pinned upstream commit, records provenance in `data/avatar/AVATAR_LICENSE.txt`, and the avatar server auto-detects it. The source project documents redistribution permission for this fixture and attributes it to pixiv VRoid Project.
+Ye pinned upstream source se `AvatarSample_A_1.0.vrm.glb` download karta hai, `data/avatar/AVATAR_LICENSE.txt` me provenance record karta hai aur avatar server us model ko automatically detect kar leta hai.
 
-For your own VRM, set:
+Apna khud ka licensed VRM use karna ho to:
 
 ```env
 JENEFAR_AVATAR_VRM_PATH=/absolute/path/to/your/avatar.vrm
 ```
 
-The browser loads the VRM with Three.js + `@pixiv/three-vrm` when the file is present and falls back to the procedural avatar when it is not. Runtime events drive expressions and mouth animation.
+VRM available hone par browser Three.js + `@pixiv/three-vrm` ke through usse load karta hai. VRM available na ho to procedural avatar fallback use hota hai. Runtime events expressions aur mouth animation drive karte hain.
 
-For low-latency browser speech-to-speech, start `--avatar` and press **START REALTIME**. The server mints a short-lived Realtime client secret; the browser then establishes the WebRTC media session directly with OpenAI. The server never sends the long-lived API key to the browser.
+Low-latency browser speech-to-speech ke liye `--avatar` start karo aur **START REALTIME** press karo. Server short-lived Realtime client secret mint karta hai; browser uske baad WebRTC session directly OpenAI ke saath establish karta hai. Long-lived API key browser ko send nahi hoti.
 
-## Production desktop shell and settings
+## Production desktop shell aur settings
 
-The local avatar server exposes non-secret UI settings and an evaluation dashboard. The optional `pywebview` shell wraps the same UI in a native desktop window. The settings store allowlists only UI preferences; API keys are never written to it.
+Local avatar server non-secret UI settings aur evaluation dashboard expose karta hai.
+
+Optional `pywebview` shell same UI ko native desktop window ke andar wrap karta hai.
+
+Settings store sirf allowlisted UI preferences rakhta hai. API keys is settings store me save nahi hoti.
 
 ## Native wake word
 
-Install optional runtime integrations:
+Optional runtime integrations install karo:
 
 ```bash
 pip install -r requirements-optional.txt
 ```
 
-Configure a custom openWakeWord model:
+Custom openWakeWord model configure karne ke liye:
 
 ```env
 JENEFAR_WAKEWORD_MODEL_PATH=/path/to/your/jenefar_wakeword.tflite
 JENEFAR_WAKEWORD_THRESHOLD=0.55
 ```
 
-With a model configured, continuous voice detection performs local wake-word inference before sending an utterance to STT. Without a configured model, Jenefar keeps its transcript-based wake-word fallback.
+Model configured hone par continuous voice detection STT ko audio bhejne se pehle local wake-word inference karti hai.
 
-Provision the real training resources from pinned, license-documented sources:
+Agar custom model configured nahi hai, Jenefar transcript-based wake-word fallback use karta hai.
+
+### Real wake-word training resources
+
+Actual training resources provision karne ke liye:
 
 ```bash
 pip install -r requirements-optional.txt
@@ -143,102 +189,138 @@ python run.py --wakeword-prepare-validation --wakeword-validation-hours 11.3
 python run.py --wakeword-train all --wakeword-config data/wakeword/jenefar.yaml
 ```
 
-The safe profile downloads:
-- the openWakeWord-compatible `dscripka/piper-sample-generator` fork plus its LibriTTS generator model
-- OpenSLR SLR26 simulated RIRs (Apache-2.0)
-- OpenSLR SLR12 LibriSpeech dev-clean/dev-other (CC BY 4.0) for real speech/background and validation material
+S­afe profile me Jenefar ye resources arrange karta hai:
+- `dscripka/piper-sample-generator` aur uska LibriTTS generator model
+- OpenSLR SLR26 simulated RIRs
+- OpenSLR SLR12 LibriSpeech dev-clean/dev-other speech material
 
-For a larger room/noise pool, use:
+Agar larger room/noise pool chahiye to:
 
 ```bash
 python run.py --setup-assets wakeword --wakeword-asset-profile rich
 ```
 
-The rich profile also downloads OpenSLR SLR28, whose RIR/noise database is Apache-2.0. Jenefar deliberately does not use the public openWakeWord ACAV100M feature file by default because that dataset is distributed under CC-BY-NC-SA-4.0.
+Rich profile me additional OpenSLR SLR28 RIR/noise resources bhi aate hain.
 
-The validation-preparation step creates the `validation_set_features.npy` required by the current openWakeWord training entry point. It uses the downloaded LibriSpeech audio and deterministic noise only as a remainder when the requested validation window is not completely filled. The actual `Hi Jenefar` model is trained locally on your machine and is intentionally not committed to this public repository.
+Jenefar default training config me public openWakeWord ACAV100M feature file ko mandatory dependency nahi banata.
 
-## Desktop automation and robotics
+Validation step:
 
-Desktop primitives and robotics serial commands are approval-gated. Configure robotics hardware with:
+```bash
+python run.py --wakeword-prepare-validation --wakeword-validation-hours 11.3
+```
+
+ke through `data/wakeword/validation_set_features.npy` generate hota hai.
+
+Ye file false-positive validation ke liye use hoti hai.
+
+Important: actual `Hi Jenefar` neural model training local machine par hoti hai. Public repository me trained binary, huge datasets ya generated model files commit nahi kiye jate.
+
+## Desktop automation aur robotics
+
+Desktop primitives aur robotics serial commands approval-gated hain.
+
+Serial robotics setup:
 
 ```env
 JENEFAR_ROBOT_SERIAL_PORT=/dev/ttyUSB0
 JENEFAR_ROBOT_BAUDRATE=115200
 ```
 
-Jenefar exposes read-only screen/serial discovery plus confirmed click, typing, keyboard, screenshot and bounded robot commands.
+Jenefar read-only screen/serial discovery ke saath confirmed click, typing, keyboard, screenshot aur bounded robot commands expose karta hai.
 
-Optional robotics adapters are also available for MQTT and ROS2. They are loaded only when invoked.
+Optional robotics adapters:
+- MQTT
+- ROS2
+
+Ye adapters sirf invoke hone par load hote hain.
+
+MQTT configuration:
+
+```env
+JENEFAR_MQTT_HOST=
+JENEFAR_MQTT_PORT=1883
+JENEFAR_MQTT_COMMAND_TOPIC=jenefar/robot/command
+JENEFAR_MQTT_TELEMETRY_TOPIC=jenefar/robot/telemetry
+```
 
 ## Security execution profiles
 
-Authorized security execution is still deny-by-default. The constrained profiles now include `nmap`, `whatweb` and `nikto`; each target must pass `authorized_targets` and each execution requires confirmation.
+Authorized security execution abhi bhi deny-by-default hai.
 
-## Knowledge graph and evaluation
+Constrained profiles:
+- `nmap`
+- `whatweb`
+- `nikto`
 
-Search learned relations:
+Har target ko configured `authorized_targets` scope pass karna hota hai aur har execution ke liye confirmation required hota hai.
+
+## Knowledge graph aur evaluation
+
+Learned relations search karne ke liye:
 
 ```bash
 python run.py --graph-search Jenefar
 ```
 
-View recent runtime evaluation signals:
+Recent runtime evaluation signals dekhne ke liye:
 
 ```bash
 python run.py --evaluation-report
 python run.py --evaluation-dashboard
 ```
 
-The evaluation loop records quality signals but does not autonomously rewrite code or weaken security policy.
+Evaluation loop quality signals record karta hai, lekin khud se code rewrite ya security policy weakening nahi karta.
 
-## External research and RAG
+## External research aur RAG
 
-Index a public URL:
+Public URL index karne ke liye:
 
 ```bash
 python run.py --index-url "https://example.com/docs"
 ```
 
-Index a public GitHub repository:
+Public GitHub repository index karne ke liye:
 
 ```bash
 python run.py --index-github "owner/repository" --github-ref main --github-max-files 20
 ```
 
-Restrict GitHub indexing to a path:
+GitHub indexing ko specific path tak restrict karna ho:
 
 ```bash
 python run.py --index-github "owner/repository" --github-path docs --github-path README.md
 ```
 
-Search the accumulated knowledge:
+Accumulated knowledge search:
 
 ```bash
 python run.py --memory-search "authentication architecture"
 ```
 
-GitHub ingestion uses the public REST contents/tree APIs and only reads supported text/code files; it never writes to the remote repository or executes downloaded code. citeturn973821search0turn973821search1
+GitHub ingestion public REST contents/tree APIs use karta hai aur sirf supported text/code files read karta hai. Ye remote repository me write nahi karta aur downloaded code execute nahi karta.
 
-## Research/web search
+## Research / web search
 
-The research agent can enable the Responses API hosted `web_search` tool for current/source-sensitive queries. OpenAI documents `web_search` as the current Responses API web-search mechanism for new integrations.
+Research agent current aur source-sensitive queries ke liye Responses API ka hosted `web_search` tool enable kar sakta hai.
 
 ## Repository analysis
 
-Summarize a public repository without executing its code:
+Public repository ko execute kiye bina summarize karne ke liye:
 
 ```bash
 python run.py --analyze-github "owner/repository" --github-ref main
 ```
 
-Create a read-only change plan:
+Read-only change plan generate karne ke liye:
 
 ```bash
 python run.py --plan-github "owner/repository" --plan-task "add authentication tests"
 ```
 
-The repository engineering agent can perform the same analysis through the internal tool broker. It does not write to or execute code from remote repositories.
+Re­pository engineering agent bhi same analysis internal tool broker ke through kar sakta hai.
+
+Ye remote repository me code write nahi karta aur remote code execute nahi karta.
 
 ## Document ingestion
 
@@ -254,7 +336,7 @@ DOCX:
 python run.py --index-document ./docs/specification.docx
 ```
 
-The extracted text enters the same SQLite/FTS5 memory index used by conversation and web/GitHub research.
+Extracted text same SQLite/FTS5 memory index me store hota hai jise conversation aur web/GitHub research bhi use karte hain.
 
 ## Project layout
 
@@ -267,8 +349,8 @@ jenefar/
 ├── tools/         registry, terminal gate, Kali discovery
 ├── execution/     execution policy boundaries
 ├── memory/        SQLite/FTS5 persistent memory
-├── research/      URL/GitHub ingestion and fetching
-├── assets/        pinned external asset provisioning and provenance
+├── research/      URL/GitHub ingestion aur fetching
+├── assets/        pinned external asset provisioning aur provenance
 └── critic/        result verification
 
 tests/              automated tests
@@ -276,7 +358,7 @@ tests/              automated tests
 
 ## Authorized security scope
 
-Security testing is deny-by-default until you configure authorized targets in `config.yaml`:
+Security testing deny-by-default hai jab tak tum `config.yaml` me authorized targets configure nahi karte:
 
 ```yaml
 security:
@@ -285,31 +367,47 @@ security:
     - "192.168.1.0/24"
 ```
 
-Scope checks accept exact host/IP values and IP CIDRs. Every tool approval, execution, error, and scope check is written to the configured JSONL audit log.
+Scope checks exact host/IP values aur IPv4/IPv6 CIDRs accept karte hain.
+
+Har tool approval, execution, error aur scope check configured JSONL audit log me write hota hai.
 
 ## Safety boundary
 
-Jenefar's security tooling is intended for systems and targets you are authorized to test. Privileged, network-impacting, or otherwise high-impact actions remain behind explicit confirmation and policy controls. Tool discovery does not execute discovered tools.
+Jenefar ki security tooling un systems aur targets ke liye intended hai jinke liye tum authorized ho.
 
-## Roadmap
+Privileged, network-impacting ya otherwise high-impact actions explicit confirmation aur policy controls ke peeche rehte hain.
 
-Completed in the current runtime:
-- Specialist multi-agent routing and planner
+Tool discovery kisi discovered tool ko automatically execute nahi karti.
+
+## Current status
+
+Current runtime me ye major parts complete hain:
+
+- Specialist multi-agent routing aur planner
 - Approval-aware function-calling tool broker
-- Persistent SQLite/FTS5 memory plus knowledge graph
+- Persistent SQLite/FTS5 memory + knowledge graph
 - URL/GitHub/document research ingestion
-- Authorized security scope, audit logging and constrained nmap/WhatWeb/Nikto profiles
+- Authorized security scope, audit logging aur constrained nmap/WhatWeb/Nikto profiles
 - Continuous local VAD/STT/TTS voice runtime
 - Optional local openWakeWord integration
-- Particle avatar with runtime expressions and speech-reactive animation
+- Particle avatar with runtime expressions aur speech-reactive animation
 - Three.js/VRM renderer with phoneme-driven mouth animation
 - Browser WebRTC Realtime speech-to-speech transport
 - Approval-gated desktop automation primitives
 - Approval-gated serial robotics primitives
-- Runtime evaluation and quality-signal logging
+- MQTT/ROS2 robotics adapters
+- Semantic/embedding-backed knowledge graph support
+- Runtime evaluation aur quality-signal logging
+- Safe external asset provisioning
+- `Hello Jenefar` -> Hinglish response preference
 
-Current finalization items:
-1. Download and train the exact “Hi Jenefar” wake-word model locally using the provisioned resources
-2. Supply a production VRM chosen by you, or continue with the verified sample avatar
-3. Run live microphone, Realtime WebRTC, desktop automation and robot hardware smoke tests on the target machine
-4. Tune wake-word threshold and false-positive/false-reject metrics against your actual room and microphone
+## Final runtime steps
+
+Ab project ke remaining practical steps primarily runtime-side hain:
+
+1. Local machine par wake-word assets download karo.
+2. `Hi Jenefar` model ko local machine par train karo.
+3. Sample VRM ko use karo ya apna licensed production VRM configure karo.
+4. Target machine par live microphone, Realtime WebRTC, desktop automation aur robot hardware smoke tests run karo.
+5. Actual room/microphone conditions ke according wake-word threshold tune karo.
+6. False-positive aur false-reject behavior measure karke final threshold set karo.
