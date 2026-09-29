@@ -27,6 +27,34 @@ class Planner:
             "codebase",
             "architecture review",
         )
+        if "kali" in t or any(x in t for x in ("nmap", "hashcat", "metasploit", "burpsuite", "sqlmap")):
+            return Plan(
+                "kali",
+                "kali",
+                confidence=0.96,
+                reason="Kali/security-tool keyword match",
+            )
+
+        if any(x in t for x in ("youtube", "song", "mp3", "vlc", "browser", "music")):
+            return Plan(
+                "media_automation",
+                "automation",
+                confidence=0.95,
+                reason="browser/media automation keyword match",
+            )
+
+        if any(x in t for x in (
+            ".py", "python file", "python script", "fix error", "edit file",
+            "modify file", "add a feature", "custom feature", "run this file",
+            "check this file",
+        )):
+            return Plan(
+                "local_development",
+                "local_development",
+                confidence=0.96,
+                reason="local code/file task keyword match",
+            )
+
         if any(x in t for x in repository_terms):
             return Plan(
                 "repository",
