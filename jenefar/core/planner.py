@@ -35,6 +35,14 @@ class Planner:
                 reason="repository/GitHub keyword match",
             )
 
+        if any(x in t for x in ("desktop", "screen", "screenshot", "mouse", "keyboard", "click", "gui", "window")):
+            return Plan(
+                "automation",
+                "automation",
+                confidence=0.94,
+                reason="desktop automation keyword match",
+            )
+
         if any(x in t for x in ("python", "pip", "pytest", "django", "fastapi", "flask")):
             return Plan(
                 "coding",
