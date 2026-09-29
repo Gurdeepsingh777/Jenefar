@@ -4,6 +4,7 @@ import os
 
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
 from jenefar.core.llm import LLMClient
+from jenefar.core.model_router import ModelRouter
 
 
 class BaseLLMAgent(BaseAgent):
@@ -12,10 +13,17 @@ class BaseLLMAgent(BaseAgent):
     use_tools = False
     allow_action_tools = False
     model_env: str | None = None
+    model_role: str | None = None
+    max_tool_rounds: int = 4
 
     def __init__(self, tool_broker=None):
         configured_model = os.getenv(self.model_env, "").strip() if self.model_env else ""
-        self.llm = LLMClient(model=configured_model or None)
+        role = self.model_role or ModelRouter().role_for_agent(self.name)
+        self.model_role = role
+        self.llm = LLMClient(
+            model=configured_model or None,
+            model_role=role,
+        )
         self.tool_broker = tool_broker
 
     @staticmethod
@@ -23,7 +31,8 @@ class BaseLLMAgent(BaseAgent):
         if str(response_language or "").lower() != "hinglish":
             return ""
         return (
-            "\nResponse language preference: Hinglish. "
+            "
+Response language preference: Hinglish. "
             "Reply naturally in a Hindi-English mix using Roman Hindi, "
             "while keeping technical names, commands, code, filenames, APIs, "
             "and standard English terminology unchanged. "
@@ -34,7 +43,10 @@ class BaseLLMAgent(BaseAgent):
         history = context.metadata.get("history", [])
         history_text = ""
         if history:
-            history_text = "\nRecent conversation:\n" + "\n".join(
+            history_text = "
+Recent conversation:
+" + "
+".join(
                 f"{m.get('role', 'user')}: {m.get('content', '')}"
                 for m in history[-8:]
             )
@@ -42,7 +54,10 @@ class BaseLLMAgent(BaseAgent):
         retrieved = context.metadata.get("retrieved_memory", [])
         memory_text = ""
         if retrieved:
-            memory_text = "\nRelevant long-term memory:\n" + "\n".join(
+            memory_text = "
+Relevant long-term memory:
+" + "
+".join(
                 f"[{item.get('title', 'memory')}] {item.get('content', '')}"
                 for item in retrieved[:6]
             )
@@ -50,9 +65,13 @@ class BaseLLMAgent(BaseAgent):
         graph = context.metadata.get("knowledge_graph", [])
         runtime_text = context.metadata.get("runtime", {})
         capability_text = context.metadata.get("capabilities", [])
+        task_plan = context.metadata.get("task_plan", {})
         graph_text = ""
         if graph:
-            graph_text = "\nRelevant knowledge graph relations:\n" + "\n".join(
+            graph_text = "
+Relevant knowledge graph relations:
+" + "
+".join(
                 f"{item.get('subject')} --{item.get('predicate')}--> {item.get('object')}"
                 for item in graph[:8]
             )
@@ -61,15 +80,33 @@ class BaseLLMAgent(BaseAgent):
             context.metadata.get("response_language")
         )
         if runtime_text:
-            instructions += f"\nRuntime status: {runtime_text.get('connectivity', 'unknown')}. Offline limitations: {runtime_text.get('offline_limitations', [])}"
+            instructions += f"
+Runtime status: {runtime_text.get('connectivity', 'unknown')}. Offline limitations: {runtime_text.get('offline_limitations', [])}"
         if capability_text:
-            instructions += "\nUser-requested capability scope:\n" + "\n".join(f"- {item.get('capability', '')}" for item in capability_text[-20:])
+            instructions += "
+User-requested capability scope:
+" + "
+".join(
+                f"- {item.get('capability', '')}" for item in capability_text[-20:]
+            )
+        if task_plan:
+            plan_text = str(task_plan.get("prompt_text") or "").strip()
+            if plan_text:
+                instructions += "
+
+Hierarchical task plan:
+" + plan_text
+
+        role = str(context.metadata.get("model_role") or self.model_role)
         response = self.llm.complete(
-            f"Task:\n{context.task}{history_text}{memory_text}{graph_text}",
+            f"Task:
+{context.task}{history_text}{memory_text}{graph_text}",
             instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
             allow_action_tools=self.allow_action_tools,
+            max_tool_rounds=self.max_tool_rounds,
+            model_role=role,
         )
         return AgentResult(
             agent=self.name,
@@ -78,6 +115,8 @@ class BaseLLMAgent(BaseAgent):
                 "provider": response.provider,
                 "response_id": response.response_id,
                 "pending_tools": response.pending_tools,
+                "model": response.model,
+                "model_role": response.model_role,
             },
         )
 
@@ -86,25 +125,49 @@ class BaseLLMAgent(BaseAgent):
         task: str,
         tool_results: list[dict[str, object]],
         response_language: str | None = None,
+        *,
+        continue_tools: bool = False,
+        task_plan_text: str = "",
     ) -> AgentResult:
-        result_text = "\n\n".join(
-            f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
+        result_text = "
+
+".join(
+            f"Tool: {item.get('tool', 'unknown')}
+Result: {item.get('result', '')}"
             for item in tool_results
         )
         instructions = self.system_prompt + self._language_instruction(response_language)
+        plan_section = (
+            f"
+
+Hierarchical task plan to continue:
+{task_plan_text}"
+            if task_plan_text
+            else ""
+        )
         response = self.llm.complete(
             (
-                "Original user task:\n"
-                f"{task}\n\n"
+                "Original user task:
+"
+                f"{task}{plan_section}
+
+"
                 "Approved local tool results are available below. "
-                "Use them as execution evidence and provide the final answer. "
-                "Do not claim any tool action that is not represented in these results.\n\n"
+                "Continue the task from these verified results. "
+                "Do not repeat completed tools unless needed. "
+                "When more work is required, use the available tools and continue "
+                "the bounded plan. Do not claim any tool action that is not represented "
+                "in the results.
+
+"
                 f"{result_text}"
             ),
             instructions=instructions,
             use_web_search=self.use_web_search,
-            tool_broker=None,
-            allow_action_tools=False,
+            tool_broker=self.tool_broker if continue_tools and self.use_tools else None,
+            allow_action_tools=self.allow_action_tools if continue_tools else False,
+            max_tool_rounds=self.max_tool_rounds,
+            model_role=self.model_role,
         )
         return AgentResult(
             agent=self.name,
@@ -112,5 +175,8 @@ class BaseLLMAgent(BaseAgent):
             metadata={
                 "provider": response.provider,
                 "response_id": response.response_id,
+                "pending_tools": response.pending_tools,
+                "model": response.model,
+                "model_role": response.model_role,
             },
         )
