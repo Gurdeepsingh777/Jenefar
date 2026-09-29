@@ -36,3 +36,6 @@ data/avatar/*.glb
 data/capabilities.json
 
 .jenefar-backups/
+
+data/skills.json
+data/connectors.json
