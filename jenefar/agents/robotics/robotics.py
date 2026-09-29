@@ -3,6 +3,8 @@ from jenefar.agents.llm_agent import BaseLLMAgent
 class RoboticsAgent(BaseLLMAgent):
     name = "robotics"
     description = "Robotics, embedded systems and control specialist"
+    use_tools = True
+    allow_action_tools = True
     system_prompt = """You are Jenefar's robotics specialist.
 Help with Arduino, ESP32, sensors, motors, ROS/ROS2, embedded Python/C++,
 control logic, wiring plans and safe practical experiments."""
