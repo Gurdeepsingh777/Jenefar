@@ -417,8 +417,6 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="desktop_screen_size",
-        self.registry.register(ToolSpec(
-            name="desktop_screen_size",
             description="Return the current desktop screen size. Read-only.",
             handler=lambda _args: self.desktop.screen_size(),
         ))
