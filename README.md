@@ -379,6 +379,171 @@ Privileged, network-impacting ya otherwise high-impact actions explicit confirma
 
 Tool discovery kisi discovered tool ko automatically execute nahi karti.
 
+
+## Self-update, local files aur automation
+
+Ab Jenefar sirf questions ka answer nahi deta. User-requested local development scope ko persistent capability memory me save bhi kar sakta hai.
+
+Example:
+
+```text
+Hello Jenefar, apne scope me local Python files ko inspect, run, debug aur user-requested feature ke liye edit karna add karo.
+```
+
+Jenefar is request ko capability scope me persist karta hai. Security authorization aur high-impact execution rules isse bypass nahi hote.
+
+Authorized workspace roots default me current Jenefar project aur:
+
+```text
+/home/jenefar/Document/Tools
+```
+
+ko include karte hain. Extra roots `JENEFAR_WORKSPACE_ROOTS` se configure kiye ja sakte hain.
+
+Typical local-code request:
+
+```text
+Hello Jenefar, /home/jenefar/Document/Tools/example.py check karo, run karo,
+error aaye to fix karo.
+```
+
+Jenefar flow:
+
+1. File inspect karega.
+2. Existing code ko samjhega.
+3. Zarurat ho to backup banayega.
+4. Requested edit apply karega.
+5. Diff preserve karega.
+6. Python file ko run karke stdout/stderr check karega.
+7. Final result clearly report karega.
+
+Code modification aur Python execution explicit approval gate ke peeche hain; isse accidental arbitrary execution se protection milti hai.
+
+## Dedicated Kali specialist
+
+Kali/Linux requests ke liye dedicated `kali` specialist aur curated tool catalog add kiya gaya hai.
+
+Catalog me current common security workflows ke saath tactic-style metadata diya gaya hai, jaise:
+
+- Reconnaissance
+- Resource Development
+- Initial Access
+- Execution
+- Privilege Escalation
+- Credential Access
+- Discovery
+- Lateral Movement
+- Collection
+- Command and Control
+- Forensics
+
+Kali ke official metapackage ecosystem me information gathering, vulnerability, web, passwords, wireless, exploitation, post-exploitation, forensics, reverse-engineering, fuzzing, hardware aur sniffing/spoofing jaise tool groups available hain. citeturn525427search0turn525427search1
+
+Example:
+
+```text
+Hello Jenefar, Kali me nmap use karke mere authorized lab target ko check karo.
+```
+
+Network/security execution ke liye `authorized_targets` scope aur explicit approval dono apply hote hain.
+
+Dedicated Kali model configure karna ho to:
+
+```env
+JENEFAR_KALI_MODEL=
+```
+
+blank chhoda ja sakta hai; tab normal online model/local model fallback use hoga.
+
+## Online-first, offline fallback
+
+Jenefar runtime connectivity detect karta hai.
+
+Flow:
+
+```text
+Internet available
+    ↓
+Online model + online tools
+    ↓
+Internet unavailable
+    ↓
+Local OpenAI-compatible model
+    ↓
+Local tools continue
+```
+
+Local fallback ke liye Ollama ya llama.cpp jaise OpenAI-compatible local servers use kiye ja sakte hain. Ollama local `/v1/chat/completions` compatibility provide karta hai, aur llama.cpp OpenAI-compatible server ke saath tool calling support karta hai. citeturn881519search7turn881519search0turn881519search1
+
+Environment:
+
+```env
+JENEFAR_LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
+JENEFAR_LOCAL_LLM_MODEL=
+```
+
+Model name blank hone par Jenefar local server se available model discover karta hai.
+
+Offline condition me online-only capabilities ki list explicitly show ki ja sakti hai, jaise:
+
+- Web search
+- Remote downloads
+- YouTube
+- Online song recognition
+- Live GitHub retrieval
+
+Local file inspection, local Python execution, local media playback aur local model inference continue reh sakte hain.
+
+## YouTube, browser aur song recognition
+
+Browser selection automatically:
+
+```text
+Firefox
+  ↓
+Google Chrome / Chromium
+  ↓
+xdg-open
+```
+
+YouTube request me Jenefar optional `yt-dlp` backend ke through first search result ka video URL resolve karke preferred browser me open kar sakta hai; backend unavailable hone par YouTube search page fallback hota hai.
+
+Example:
+
+```text
+Hello Jenefar, YouTube par [song name] play karo.
+```
+
+Agar user kisi phone/device se song chala raha ho:
+
+```text
+Hello Jenefar, jo song main abhi baja raha hun use identify karo.
+```
+
+to optional microphone recognition backend short audio sample capture karke online recognition service se track identify kar sakta hai. ShazamIO current Python package file/bytes se track recognition support karta hai. citeturn599676search1turn599676search7
+
+Ye feature internet ke bina unavailable rahega aur offline notice me list ho jayega.
+
+## Local MP3 playback
+
+Example:
+
+```text
+Hello Jenefar, /home/music ke andar Osho folder me jao aur first MP3 VLC se play karo.
+```
+
+Jenefar authorized local folder ko inspect karke matching folder aur first MP3 identify kar sakta hai, phir VLC se playback start karta hai.
+
+## Offline list close
+
+Agar offline notice/list show hui ho aur user bole:
+
+```text
+Maine padh liya, list close kar do.
+```
+
+to Jenefar offline notice acknowledgement tool use karke us notice ko close kar sakta hai.
+
 ## Current status
 
 Current runtime me ye major parts complete hain:
