@@ -219,13 +219,20 @@ def main() -> int:
             avatar_server.stop()
         return 0
 
-    if args.voice:
-        from jenefar.voice.openai_voice import OpenAIVoiceRuntime
-        OpenAIVoiceRuntime(JenefarOrchestrator()).run()
-        return 0
+    try:
+        if args.voice:
+            from jenefar.voice.openai_voice import OpenAIVoiceRuntime
+            OpenAIVoiceRuntime(
+                JenefarOrchestrator(avatar=avatar),
+                avatar=avatar,
+            ).run()
+            return 0
 
-    JenefarOrchestrator().run()
-    return 0
+        JenefarOrchestrator(avatar=avatar).run()
+        return 0
+    finally:
+        if avatar_server is not None:
+            avatar_server.stop()
 
 if __name__ == "__main__":
     raise SystemExit(main())
