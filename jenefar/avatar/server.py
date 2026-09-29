@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
 from jenefar.avatar.controller import AvatarController
+from jenefar.realtime.server import RealtimeSessionError, create_ephemeral_session
 
 
 ASSET_DIR = Path(__file__).with_name("web")
@@ -14,6 +16,7 @@ ASSET_DIR = Path(__file__).with_name("web")
 
 class _AvatarHandler(BaseHTTPRequestHandler):
     controller: AvatarController
+    vrm_path: Path | None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -23,18 +26,24 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         path = urlparse(self.path).path
 
         if path == "/events":
             self._events()
             return
 
+        if path == "/avatar.vrm":
+            self._vrm()
+            return
+
         assets = {
             "/": ("index.html", "text/html; charset=utf-8"),
             "/index.html": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+            "/vrm.js": ("vrm.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
+            "/realtime.js": ("realtime.js", "text/javascript; charset=utf-8"),
         }
         asset = assets.get(path)
         if not asset:
@@ -48,6 +57,36 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             self._send(500, "text/plain; charset=utf-8", b"Avatar asset unavailable")
             return
         self._send(200, asset[1], body)
+
+    def do_POST(self) -> None:
+        if urlparse(self.path).path != "/realtime/session":
+            self._send(404, "text/plain; charset=utf-8", b"Not found")
+            return
+        try:
+            result = create_ephemeral_session()
+        except RealtimeSessionError as exc:
+            self._send(
+                503,
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(exc)}).encode("utf-8"),
+            )
+            return
+        self._send(
+            200,
+            "application/json; charset=utf-8",
+            json.dumps(result).encode("utf-8"),
+        )
+
+    def _vrm(self) -> None:
+        if not self.vrm_path or not self.vrm_path.is_file():
+            self._send(404, "text/plain; charset=utf-8", b"No VRM model configured")
+            return
+        try:
+            body = self.vrm_path.read_bytes()
+        except OSError:
+            self._send(500, "text/plain; charset=utf-8", b"VRM model unavailable")
+            return
+        self._send(200, "model/gltf-binary", body)
 
     def _events(self) -> None:
         subscriber = self.controller.subscribe()
@@ -83,12 +122,19 @@ class AvatarServer:
         controller: AvatarController,
         host: str = "127.0.0.1",
         port: int = 8787,
+        vrm_path: str | Path | None = None,
     ):
         self.controller = controller
         self.host = host
         self.port = port
+        configured = vrm_path or os.getenv("JENEFAR_AVATAR_VRM_PATH", "")
+        self.vrm_path = Path(configured).expanduser() if configured else None
+        if self.vrm_path and not self.vrm_path.is_absolute():
+            self.vrm_path = (Path.cwd() / self.vrm_path).resolve()
+
         self._server = ThreadingHTTPServer((host, port), _AvatarHandler)
         self._server.RequestHandlerClass.controller = controller
+        self._server.RequestHandlerClass.vrm_path = self.vrm_path
         self._thread: threading.Thread | None = None
 
     @property
