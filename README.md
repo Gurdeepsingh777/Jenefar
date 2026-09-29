@@ -11,7 +11,9 @@ The core now includes:
 - OpenAI Responses API adapter
 - Optional hosted web search for the research agent
 - Short-term session memory passed to specialists
+- Centralized tool broker with approval-gated function calls
 - Explicit permission boundary for terminal execution
+- Authorization-scope and JSONL audit logging
 - Safe discovery of common Kali/Linux security tools
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Text runtime for immediate testing
@@ -73,6 +75,19 @@ jenefar/
 
 tests/              automated tests
 ```
+
+## Authorized security scope
+
+Security testing is deny-by-default until you configure authorized targets in `config.yaml`:
+
+```yaml
+security:
+  authorized_targets:
+    - "lab.example.com"
+    - "192.168.1.0/24"
+```
+
+Scope checks accept exact host/IP values and IP CIDRs. Every tool approval, execution, error, and scope check is written to the configured JSONL audit log.
 
 ## Safety boundary
 
