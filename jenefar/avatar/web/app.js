@@ -44,6 +44,8 @@ function palette(state){
 }
 let currentState="idle";
 let speechLevel=0;
+let emotion="neutral";
+let emotionIntensity=0;
 
 function draw(t){
   ctx.clearRect(0,0,width,height);
@@ -79,7 +81,11 @@ function apply(event){
   currentState=event.state||"idle";
   speechLevel=Number(event.level||0);
   stage.dataset.state=currentState;
+  emotion=event.emotion||"neutral";
+  emotionIntensity=Number(event.intensity||0);
   stage.style.setProperty("--speech-level", speechLevel.toFixed(3));
+  stage.style.setProperty("--emotion-intensity", emotionIntensity.toFixed(3));
+  stage.dataset.emotion=emotion;
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
   stateEl.textContent=stateText;
   captionEl.textContent=event.text||caption;
