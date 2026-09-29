@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from jenefar.core.task_plan import HierarchicalTaskPlanner, TaskStep
+from jenefar.skills.manager import SkillManager
 
 
 @dataclass
@@ -22,8 +23,12 @@ class Plan:
 class Planner:
     """Deterministic intent planner plus bounded hierarchical decomposition."""
 
-    def __init__(self) -> None:
+    def __init__(self, skills: SkillManager | None = None) -> None:
         self.task_planner = HierarchicalTaskPlanner()
+        self.skills = skills or SkillManager()
+
+    def skill_enabled(self, skill_name: str) -> bool:
+        return self.skills.is_enabled(skill_name)
 
     def _make_plan(
         self,
