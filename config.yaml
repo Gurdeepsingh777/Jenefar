@@ -21,6 +21,7 @@ agents:
   coding: true
   repository: true
   cybersecurity: true
+  kali: true
   bugbounty: true
   robotics: true
   research: true
