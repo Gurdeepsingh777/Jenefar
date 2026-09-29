@@ -8,6 +8,8 @@ from typing import Any
 
 from jenefar.skills.manifest import BUILTIN_SKILLS, SkillManifest, load_manifest
 
+ROOT = Path(__file__).resolve().parents[2]
+
 
 class SkillManager:
     """Persistent, declarative skill registry.
@@ -34,7 +36,7 @@ class SkillManager:
             for item in (skill_roots or env_roots)
         ]
         if not self.skill_roots:
-            self.skill_roots = [Path.cwd().resolve() / "skills"]
+            self.skill_roots = [ROOT / "skills"]
         self._lock = threading.Lock()
         self._skills: dict[str, SkillManifest] = {
             skill.name: skill for skill in BUILTIN_SKILLS
