@@ -19,6 +19,7 @@ def test_avatar_controller_publishes_current_state():
 def test_avatar_unsubscribe():
     controller = AvatarController()
     subscriber = controller.subscribe()
+    subscriber.get_nowait()
     controller.unsubscribe(subscriber)
     controller.publish("speaking", "Hello")
     assert controller.current()["state"] == "speaking"
