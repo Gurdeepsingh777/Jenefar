@@ -1,0 +1,64 @@
+:root{
+  --bg:#05050b;
+  --cyan:#67e8ff;
+  --violet:#a78bfa;
+  --pink:#f0abff;
+  --text:#eef2ff;
+  --muted:#8e99b8;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:Inter,system-ui,sans-serif}
+body{color:var(--text)}
+#stage{position:relative;width:100%;height:100%;isolation:isolate}
+.backdrop{position:absolute;inset:0;background:
+ radial-gradient(circle at 50% 45%,rgba(83,44,145,.28),transparent 30%),
+ radial-gradient(circle at 25% 20%,rgba(32,200,255,.10),transparent 24%),
+ linear-gradient(150deg,#03040a 0%,#080713 52%,#04030a 100%)}
+#particles{position:absolute;inset:0;width:100%;height:100%;z-index:1}
+.avatar-shell{position:absolute;inset:0;display:grid;place-items:center;z-index:2}
+.avatar{width:min(48vw,520px);min-width:320px;filter:drop-shadow(0 0 35px rgba(94,120,255,.16));transition:transform .6s ease}
+.avatar svg{display:block;width:100%;height:auto}
+.hair{fill:url(#hair)}
+.hair-light{fill:#34206b;opacity:.58}
+.ear{fill:#c695a7;opacity:.7}
+.brow{fill:none;stroke:#5b3d53;stroke-width:9;stroke-linecap:round}
+.eye{fill:#f7fbff;stroke:#c4b5fd;stroke-width:2}
+.iris{fill:#80dcff;filter:url(#glow)}
+.nose{fill:none;stroke:#9c6f7f;stroke-width:4;stroke-linecap:round}
+.mouth{fill:#b04f83;transform-box:fill-box;transform-origin:center}
+.mark{fill:none;stroke:#8cf3ff;stroke-width:4;stroke-linecap:round;filter:url(#glow)}
+.neck{fill:#b57f91}
+.suit{stroke:#33415e;stroke-width:4}
+.collar{fill:none;stroke:#65dcff;stroke-width:5;filter:url(#glow)}
+.accent{fill:none;stroke:#906eff;stroke-width:4;opacity:.75}
+.core{fill:#8df3ff;opacity:.22}
+.core-dot{fill:#fff}
+.halo{position:absolute;border-radius:50%;border:1px solid rgba(117,104,255,.18);width:55vw;height:55vw;max-width:720px;max-height:720px;min-width:360px;min-height:360px;animation:spin 22s linear infinite}
+.halo-b{width:43vw;height:43vw;animation-direction:reverse;animation-duration:16s;border-color:rgba(75,229,255,.12)}
+.avatar-glow{position:absolute;width:26vw;height:26vw;max-width:360px;min-width:240px;min-height:240px;border-radius:50%;background:radial-gradient(circle,rgba(84,170,255,.17),transparent 66%);filter:blur(12px)}
+.status-card{position:absolute;bottom:7vh;left:50%;transform:translateX(-50%);min-width:280px;display:flex;gap:12px;align-items:center;padding:13px 18px;border:1px solid rgba(255,255,255,.1);background:rgba(7,8,18,.58);backdrop-filter:blur(18px);border-radius:18px;box-shadow:0 16px 50px rgba(0,0,0,.35)}
+.pulse-dot{width:10px;height:10px;border-radius:50%;background:var(--cyan);box-shadow:0 0 18px var(--cyan)}
+#state{font-size:11px;letter-spacing:.22em;font-weight:700}
+#caption{font-size:13px;color:var(--muted);margin-top:4px;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mode-pill{position:absolute;top:24px;left:50%;transform:translateX(-50%);z-index:3;padding:8px 13px;border:1px solid rgba(255,255,255,.09);border-radius:999px;background:rgba(7,8,18,.45);font-size:9px;letter-spacing:.2em;color:#9099b7}
+#stage[data-state="listening"] .avatar{transform:translateY(-4px) scale(1.008)}
+#stage[data-state="thinking"] .avatar{animation:think 2.8s ease-in-out infinite}
+#stage[data-state="speaking"] .avatar{animation:speak 1.25s ease-in-out infinite}
+#stage[data-state="waiting_approval"] .avatar{animation:wait 2.1s ease-in-out infinite}
+#stage[data-state="speaking"] .mouth{animation:mouth .12s ease-in-out infinite alternate}
+#stage[data-state="thinking"] .iris{animation:eye 2.2s ease-in-out infinite}
+#stage[data-state="speaking"] .core-dot{animation:core 1s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes think{0%,100%{transform:translateX(0)}50%{transform:translateX(7px)}}
+@keyframes speak{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-7px) scale(1.012)}}
+@keyframes wait{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes mouth{from{transform:scaleY(.7)}to{transform:scaleY(1.35)}}
+@keyframes eye{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+@keyframes core{from{opacity:.55;transform:scale(.8)}to{opacity:1;transform:scale(1.35)}}
+@media (max-width:700px){
+  .avatar{width:84vw;min-width:0}
+  .halo{width:100vw;height:100vw}
+  .halo-b{width:80vw;height:80vw}
+  .mode-pill{font-size:8px;top:15px}
+  .status-card{bottom:24px}
+}
