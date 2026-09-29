@@ -9,12 +9,15 @@ class WakeWord:
             if phrase.strip()
         ]
 
-    def detect(self, text: str) -> bool:
+    def matched_phrase(self, text: str) -> str | None:
         normalized = " ".join(text.lower().strip().split())
-        return any(
-            normalized == phrase or normalized.startswith(phrase + " ")
-            for phrase in self.phrases
-        )
+        for phrase in sorted(self.phrases, key=len, reverse=True):
+            if normalized == phrase or normalized.startswith(phrase + " "):
+                return phrase
+        return None
+
+    def detect(self, text: str) -> bool:
+        return self.matched_phrase(text) is not None
 
     def remove_wake_phrase(self, text: str) -> str:
         original = text.strip()
