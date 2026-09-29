@@ -17,7 +17,7 @@ The core now includes:
 - Safe discovery of common Kali/Linux security tools
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Text runtime for immediate testing
-- Bounded and continuous microphone -> STT -> orchestrator -> TTS runtimes
+- Bounded and continuous microphone -> STT -> orchestrator -> TTS runtimes\n- Local real-time AI avatar UI with state-driven particle animation
 - Persistent SQLite memory + FTS5 retrieval
 - URL and public GitHub research ingestion
 - Read-only URL/GitHub research tools for the model
@@ -65,6 +65,16 @@ python run.py --voice-continuous
 ```
 
 Continuous mode keeps the microphone open, uses local energy-based VAD to segment utterances, sends only detected utterances to STT, applies the same wake-word gate and orchestrator routing, then streams TTS back to the speakers. Tune the VAD with the `JENEFAR_VOICE_*` environment variables in `.env`.
+
+## Avatar mode
+
+Launch Jenefar with the local particle avatar:
+
+```bash
+python run.py --avatar --voice-continuous
+```
+
+The browser UI receives real-time `listening`, `thinking`, `speaking`, `waiting_approval` and `idle` events from the Python runtime. The avatar uses a procedural particle field and expressive motion layer, so it works without a dedicated GPU avatar model. The state bridge is intentionally isolated so a future model-backed renderer can replace the procedural layer without changing the orchestrator.
 
 ## External research and RAG
 
