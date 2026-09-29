@@ -90,6 +90,7 @@ class LLMClient:
 
                 next_input = list(getattr(response, "output", []) or [])
                 approval_required = False
+                pending_ids: list[str] = []
 
                 for call in calls:
                     try:
@@ -108,6 +109,8 @@ class LLMClient:
 
                     if parsed.get("status") == "approval_required":
                         approval_required = True
+                        if parsed.get("pending_id"):
+                            pending_ids.append(str(parsed["pending_id"]))
 
                     next_input.append({
                         "type": "function_call_output",
@@ -116,20 +119,10 @@ class LLMClient:
                     })
 
                 if approval_required:
-                    pending_ids = []
-                    try:
-                        pending_ids = [
-                            json.loads(
-                                tool_broker.invoke(
-                                    getattr(c, "name", ""),
-                                    json.loads(getattr(c, "arguments", "{}") or "{}"),
-                                )
-                            ).get("pending_id")
-                            for c in calls
-                        ]
-                    except Exception:
-                        pass
-                    suffix = f" Pending approval id(s): {', '.join(x for x in pending_ids if x)}." if pending_ids else ""
+                    suffix = (
+                        f" Pending approval id(s): {', '.join(pending_ids)}."
+                        if pending_ids else ""
+                    )
                     return LLMResponse(
                         "A local tool requested explicit confirmation before execution." + suffix,
                         "approval_required",
