@@ -10,6 +10,7 @@ from dataclasses import dataclass, asdict
 class AvatarEvent:
     state: str
     text: str = ""
+    level: float = 0.0
     timestamp: float = 0.0
 
     def payload(self) -> dict[str, object]:
@@ -26,8 +27,14 @@ class AvatarController:
         self._subscribers: set[queue.Queue[dict[str, object]]] = set()
         self._current = AvatarEvent("idle").payload()
 
-    def publish(self, state: str, text: str = "") -> None:
-        event = AvatarEvent(state=state, text=text, timestamp=time.time()).payload()
+    def publish(self, state: str, text: str = "", level: float = 0.0) -> None:
+        bounded_level = max(0.0, min(1.0, float(level)))
+        event = AvatarEvent(
+            state=state,
+            text=text,
+            level=bounded_level,
+            timestamp=time.time(),
+        ).payload()
         with self._lock:
             self._current = event
             dead: list[queue.Queue[dict[str, object]]] = []
