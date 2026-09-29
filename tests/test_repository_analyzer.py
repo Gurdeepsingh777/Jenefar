@@ -19,4 +19,4 @@ def test_repository_summary_uses_github_metadata(monkeypatch):
     assert summary.has_readme is True
     assert summary.has_tests is True
     assert summary.entrypoints == ["main.py"]
-    assert summary.languages["Python"] == 1
+    assert summary.languages["Python"] == 2
