@@ -17,6 +17,13 @@ from jenefar.automation.desktop import DesktopAutomation
 from jenefar.robotics.serial_controller import SerialRobotController
 from jenefar.robotics.mqtt import MqttRobotController
 from jenefar.robotics.ros2 import Ros2RobotController
+from jenefar.workspace.service import WorkspaceService
+from jenefar.capabilities.store import CapabilityStore
+from jenefar.offline.connectivity import internet_available
+from jenefar.offline.capabilities import unavailable_online_items, local_items
+from jenefar.automation.browser import play_youtube, first_mp3_in_folder
+from jenefar.media.song import record_and_recognize
+from jenefar.tools.kali import KaliToolManager
 
 
 @dataclass
@@ -42,6 +49,9 @@ class ToolBroker:
         self.robotics = SerialRobotController()
         self.mqtt_robot = MqttRobotController()
         self.ros2_robot = Ros2RobotController()
+        self.workspace = WorkspaceService()
+        self.capabilities = CapabilityStore()
+        self.kali = KaliToolManager(self.scope)
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
@@ -64,6 +74,187 @@ class ToolBroker:
                 for t in discover_tools()
             ],
         ))
+        self.registry.register(ToolSpec(
+            name="offline_status",
+            description="Report online/offline connectivity and which capabilities are unavailable when internet is not reachable.",
+            handler=lambda _args: {
+                "connectivity": "online" if internet_available() else "offline",
+                "online_only_unavailable": unavailable_online_items(),
+                "local_capabilities": local_items(),
+            },
+        ))
+        self.registry.register(ToolSpec(
+            name="scope_add_capability",
+            description="Persist a user-requested capability into Jenefar's learned capability scope. This changes descriptive capability memory only; security authorization and execution policies remain enforced.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "capability": {"type": "string", "maxLength": 500},
+                    "notes": {"type": "string", "maxLength": 2000},
+                },
+                "required": ["capability", "notes"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.capabilities.add(
+                str(args["capability"]),
+                str(args["notes"]),
+            ),
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_list_directory",
+            description="List files/directories inside Jenefar's authorized local workspace roots. Read-only.",
+            parameters={
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "max_items": {"type": "integer", "minimum": 1, "maximum": 500}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.list_directory(
+                str(args["path"]),
+                int(args.get("max_items", 200)),
+            ),
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_inspect_file",
+            description="Read an authorized local text/code file for analysis. Read-only.",
+            parameters={
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "max_bytes": {"type": "integer", "minimum": 1, "maximum": 500000}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.inspect_file(
+                str(args["path"]),
+                int(args.get("max_bytes", 200000)),
+            ),
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_run_python",
+            description="Run an authorized local .py file and return stdout/stderr. Execution requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
+                },
+                "required": ["path", "timeout"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.run_python(
+                str(args["path"]),
+                int(args["timeout"]),
+            ),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_edit_file",
+            description="Edit an authorized local text/code file by replacing its complete content. A timestamped backup and diff are created. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "new_content": {"type": "string", "maxLength": 500000},
+                },
+                "required": ["path", "new_content"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.edit_file(
+                str(args["path"]),
+                str(args["new_content"]),
+            ),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_diff",
+            description="Show the latest Jenefar backup diff for an authorized local file. Read-only.",
+            parameters={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.diff_file(str(args["path"])),
+        ))
+        self.registry.register(ToolSpec(
+            name="kali_catalog",
+            description="List the curated Kali Linux tool catalog with tactic/category and installed status. Read-only.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tactic": {"type": "string"},
+                    "category": {"type": "string"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.kali.catalog_list(
+                str(args.get("category") or "") or None,
+                str(args.get("tactic") or "") or None,
+            ),
+        ))
+        self.registry.register(ToolSpec(
+            name="kali_tool_execute",
+            description="Execute one installed tool from the curated Kali catalog with explicit confirmation. Network targets must be inside authorized_targets.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string"},
+                    "args": {"type": "array", "items": {"type": "string"}, "maxItems": 80},
+                    "target": {"type": "string"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
+                },
+                "required": ["tool", "args", "target", "timeout"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.kali.execute(
+                tool=str(args["tool"]),
+                args=[str(value) for value in args["args"]],
+                target=str(args["target"]),
+                timeout=int(args["timeout"]),
+            ),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="browser_play_youtube",
+            description="Search YouTube and open the first matching result in the preferred browser. Firefox is preferred, then Chrome/Chromium.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "maxLength": 300}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._browser_play_youtube(str(args["query"])),
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="play_local_mp3",
+            description="Play the first MP3 file found recursively under an authorized local folder using VLC.",
+            parameters={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: first_mp3_in_folder(str(args["path"])),
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="recognize_song_from_microphone",
+            description="Record a short microphone sample of a song playing nearby and recognize it using the optional online recognition backend.",
+            parameters={
+                "type": "object",
+                "properties": {"seconds": {"type": "integer", "minimum": 4, "maximum": 20}},
+                "required": ["seconds"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: record_and_recognize(int(args["seconds"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+
         self.registry.register(ToolSpec(
             name="terminal_execute",
             description="Execute one exact shell command on the local machine. This is high-impact and always requires explicit user confirmation.",
@@ -304,6 +495,29 @@ class ToolBroker:
             },
             handler=self._scope_check,
         ))
+
+    def _browser_play_youtube(self, query: str) -> dict[str, Any]:
+        try:
+            import shutil
+            import subprocess
+            ytdlp = shutil.which("yt-dlp")
+            if ytdlp and internet_available():
+                result = subprocess.run(
+                    [ytdlp, "ytsearch1:" + query, "--get-id", "--no-playlist"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                video_id = next(
+                    (line.strip() for line in result.stdout.splitlines() if line.strip()),
+                    "",
+                )
+                if video_id:
+                    from jenefar.automation.browser import open_url
+                    return open_url("https://www.youtube.com/watch?v=" + video_id)
+        except Exception:
+            pass
+        return play_youtube(query)
 
     def _security_tool_execute(self, args: dict[str, Any]) -> dict[str, Any]:
         result = self.security.run(
