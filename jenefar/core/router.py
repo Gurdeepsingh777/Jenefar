@@ -1,25 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Iterable
 
-
-class Agent(Protocol):
-    name: str
-    description: str
-
-    def can_handle(self, text: str) -> bool:
-        ...
-
-    def run(self, text: str) -> str:
-        ...
+from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
 
 
 @dataclass
 class AgentRouter:
-    agents: list[Agent]
+    agents: list[BaseAgent]
 
-    def route(self, text: str) -> Agent:
+    def route(self, text: str) -> BaseAgent:
         for agent in self.agents:
             if agent.can_handle(text):
                 return agent
@@ -27,3 +18,7 @@ class AgentRouter:
             (agent for agent in self.agents if agent.name == "research"),
             self.agents[-1],
         )
+
+    def dispatch(self, text: str, *, metadata: dict | None = None) -> AgentResult:
+        agent = self.route(text)
+        return agent.run(AgentContext(task=text, metadata=metadata or {}))
