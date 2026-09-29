@@ -43,9 +43,16 @@ body{color:var(--text)}
 .mode-pill{position:absolute;top:24px;left:50%;transform:translateX(-50%);z-index:3;padding:8px 13px;border:1px solid rgba(255,255,255,.09);border-radius:999px;background:rgba(7,8,18,.45);font-size:9px;letter-spacing:.2em;color:#9099b7}
 #stage[data-state="listening"] .avatar{transform:translateY(-4px) scale(1.008)}
 #stage[data-state="thinking"] .avatar{animation:think 2.8s ease-in-out infinite}
-#stage[data-state="speaking"] .avatar{animation:speak 1.25s ease-in-out infinite}
+#stage[data-state="speaking"] .avatar{
+  animation:speak 1.25s ease-in-out infinite;
+  filter:
+    drop-shadow(0 0 calc(28px + (var(--speech-level,0) * 55px)) rgba(94,120,255,.24))
+    saturate(calc(1 + var(--speech-level,0) * .32));
+}
 #stage[data-state="waiting_approval"] .avatar{animation:wait 2.1s ease-in-out infinite}
-#stage[data-state="speaking"] .mouth{animation:mouth .12s ease-in-out infinite alternate}
+#stage[data-state="speaking"] .mouth{
+  transform:scaleY(calc(.72 + (var(--speech-level,0) * 1.15)));
+}
 #stage[data-state="thinking"] .iris{animation:eye 2.2s ease-in-out infinite}
 #stage[data-state="speaking"] .core-dot{animation:core 1s ease-in-out infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -62,3 +69,7 @@ body{color:var(--text)}
   .mode-pill{font-size:8px;top:15px}
   .status-card{bottom:24px}
 }
+
+#stage[data-state="listening"] .avatar-glow{animation:listenGlow 1.2s ease-in-out infinite}
+#stage[data-state="speaking"] .avatar-glow{transform:scale(calc(1 + var(--speech-level,0) * .22))}
+@keyframes listenGlow{0%,100%{opacity:.55;transform:scale(.96)}50%{opacity:1;transform:scale(1.08)}}
