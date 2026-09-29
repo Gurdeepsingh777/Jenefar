@@ -30,7 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--graph-search", metavar="QUERY", help="search persistent knowledge-graph relations")
     parser.add_argument("--evaluation-report", action="store_true", help="show recent runtime evaluation records")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
+    parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
+    parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
     parser.add_argument("--wakeword-prepare", metavar="PHRASE", help="generate an openWakeWord training config for PHRASE")
+    parser.add_argument("--wakeword-prepare-validation", action="store_true", help="build the false-positive validation feature file from downloaded speech data")
+    parser.add_argument("--wakeword-validation-hours", type=float, default=11.3, help="validation duration used by the openWakeWord training workflow")
+    parser.add_argument("--wakeword-validation-audio", metavar="PATH", help="audio root used for wake-word validation feature extraction")
     parser.add_argument("--wakeword-config", metavar="PATH", help="training config path for --wakeword-train")
     parser.add_argument("--wakeword-train", choices=["clips", "augment", "train", "all", "tflite"], help="run a custom openWakeWord training stage")
     return parser
@@ -163,9 +168,42 @@ def main() -> int:
     if args.doctor:
         return doctor()
 
+    if args.setup_assets:
+        try:
+            if args.setup_assets in {"wakeword", "all"}:
+                from jenefar.assets.provisioning import setup_wakeword_assets
+                result = setup_wakeword_assets(profile=args.wakeword_asset_profile)
+                print(f"[JENEFAR] Wake-word assets: {result}")
+            if args.setup_assets in {"avatar", "all"}:
+                from jenefar.assets.provisioning import setup_avatar_asset
+                path = setup_avatar_asset()
+                print(f"[JENEFAR] Licensed sample VRM: {path}")
+            return 0
+        except Exception as exc:
+            print(f"[JENEFAR] Asset setup error: {type(exc).__name__}: {exc}")
+            return 1
+
+    if args.wakeword_prepare_validation:
+        try:
+            from jenefar.voice.wakeword_data import prepare_validation_features
+            audio_root = args.wakeword_validation_audio or "data/wakeword/assets/librispeech"
+            output = prepare_validation_features(
+                audio_root,
+                "data/wakeword/validation_set_features.npy",
+                hours=args.wakeword_validation_hours,
+            )
+            print(f"[JENEFAR] Wake-word validation features: {output}")
+            return 0
+        except Exception as exc:
+            print(f"[JENEFAR] Wake-word validation error: {type(exc).__name__}: {exc}")
+            return 1
+
     if args.wakeword_prepare:
         from jenefar.voice.wakeword_trainer import prepare_config
-        path = prepare_config(args.wakeword_prepare)
+        path = prepare_config(
+            args.wakeword_prepare,
+            rich_background=args.wakeword_asset_profile == "rich",
+        )
         print(f"[JENEFAR] Wake-word config: {path}")
         return 0
 
