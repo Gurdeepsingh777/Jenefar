@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from jenefar.core.model_router import ModelRouter
+
 
 @dataclass
 class LocalModelInfo:
@@ -15,18 +17,19 @@ class LocalModelInfo:
 
 
 class LocalLLMClient:
-    """OpenAI-compatible local chat-completions client.
+    """OpenAI-compatible local chat-completions client with role-aware models."""
 
-    Works with local servers such as Ollama's OpenAI-compatible endpoint or
-    llama.cpp's OpenAI-compatible server. No remote API key is required.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self, model_role: str | None = None) -> None:
         self.base_url = os.getenv(
             "JENEFAR_LOCAL_LLM_BASE_URL",
             "http://127.0.0.1:11434/v1",
         ).rstrip("/")
-        self.model = os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
+        self.model_role = (model_role or "fast").strip().lower()
+        role_env = ModelRouter().local_model_env(self.model_role)
+        self.model = (
+            os.getenv(role_env, "").strip()
+            or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
+        )
 
     def _get_json(self, url: str) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -36,7 +39,15 @@ class LocalLLMClient:
         with urllib.request.urlopen(request, timeout=1.5) as response:
             return json.loads(response.read().decode("utf-8"))
 
-    def detect(self) -> LocalModelInfo | None:
+    def detect(self, model_role: str | None = None) -> LocalModelInfo | None:
+        if model_role:
+            self.model_role = model_role.strip().lower()
+            role_env = ModelRouter().local_model_env(self.model_role)
+            self.model = (
+                os.getenv(role_env, "").strip()
+                or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
+            )
+
         bases = [self.base_url]
         if self.base_url == "http://127.0.0.1:11434/v1":
             bases.extend([
@@ -79,8 +90,9 @@ class LocalLLMClient:
         tools: list[dict[str, Any]] | None = None,
         tool_broker=None,
         max_tool_rounds: int = 4,
+        model_role: str | None = None,
     ) -> tuple[str, list[dict[str, str]]]:
-        info = self.detect()
+        info = self.detect(model_role=model_role)
         if info is None:
             raise RuntimeError(
                 "No local LLM server detected. Start Ollama or llama.cpp and install a local model."
@@ -92,7 +104,7 @@ class LocalLLMClient:
         ]
         local_tools = self._convert_tools(tools)
 
-        for _ in range(max_tool_rounds):
+        for _ in range(max(1, min(max_tool_rounds, 20))):
             payload: dict[str, Any] = {
                 "model": info.model,
                 "messages": messages,
