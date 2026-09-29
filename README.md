@@ -18,6 +18,9 @@ The core now includes:
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Text runtime for immediate testing
 - Optional microphone -> OpenAI transcription -> agent -> OpenAI TTS runtime
+- Persistent SQLite memory + FTS5 retrieval
+- URL and public GitHub research ingestion
+- Read-only URL/GitHub research tools for the model
 
 The LLM and voice integrations remain isolated behind adapters so providers can be changed later.
 
@@ -57,6 +60,34 @@ python run.py --voice
 ```
 
 Voice mode records a bounded turn, transcribes it, applies the same wake-word and routing flow, then speaks the response.
+
+## External research and RAG
+
+Index a public URL:
+
+```bash
+python run.py --index-url "https://example.com/docs"
+```
+
+Index a public GitHub repository:
+
+```bash
+python run.py --index-github "owner/repository" --github-ref main --github-max-files 20
+```
+
+Restrict GitHub indexing to a path:
+
+```bash
+python run.py --index-github "owner/repository" --github-path docs --github-path README.md
+```
+
+Search the accumulated knowledge:
+
+```bash
+python run.py --memory-search "authentication architecture"
+```
+
+GitHub ingestion uses the public REST contents/tree APIs and only reads supported text/code files; it never writes to the remote repository or executes downloaded code. citeturn973821search0turn973821search1
 
 ## Research/web search
 
@@ -99,7 +130,7 @@ Jenefar's security tooling is intended for systems and targets you are authorize
 2. Realtime speech-to-speech mode
 3. Function-calling tool router
 4. Sandboxed/authorized Kali tool execution with scope controls
-5. GitHub/document/RAG connectors
+5. Desktop automation
 6. Desktop automation
 7. Long-term memory and knowledge graph
 8. Robotics integrations
