@@ -7,6 +7,7 @@ class TerminalTool:
 
     def run(self, command: str, *, approved: bool = False, timeout: int = 30) -> str:
         request = ToolRequest(name="terminal", arguments={"command": command})
-        self.policy.authorize(request, approved=approved)
+        if not self.policy.authorize(request, confirmed=approved):
+            raise PermissionError("Terminal execution requires explicit confirmation.")
         completed = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return (completed.stdout + completed.stderr).strip()
