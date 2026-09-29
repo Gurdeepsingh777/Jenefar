@@ -369,9 +369,14 @@ class ToolBroker:
             str(args["command"]), approved=True, timeout=int(args["timeout"])
         )
 
-    def schemas(self, *, allow_action_tools: bool = False) -> list[dict[str, Any]]:
+    def schemas(
+        self,
+        *,
+        allow_action_tools: bool = False,
+        include_confirmation_tools: bool = True,
+    ) -> list[dict[str, Any]]:
         return self.registry.openai_tools(
-            include_confirmation_tools=True,
+            include_confirmation_tools=include_confirmation_tools,
             include_action_tools=allow_action_tools,
         )
 
