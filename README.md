@@ -345,11 +345,15 @@ jenefar/
 ├── core/          config, session, planner, routing, LLM
 ├── voice/         wake word, bounded/continuous voice runtimes
 ├── avatar/        live state bridge, expressions, particle UI
-├── agents/        specialist agents
+├── agents/        specialist agents (including local development + Kali)
 ├── tools/         registry, terminal gate, Kali discovery
 ├── execution/     execution policy boundaries
 ├── memory/        SQLite/FTS5 persistent memory
 ├── research/      URL/GitHub ingestion aur fetching
+├── workspace/     authorized local file inspection/edit/run
+├── automation/    desktop/browser/media automation
+├── offline/       connectivity + local-model fallback
+├── capabilities/  persistent user-requested capability scope
 ├── assets/        pinned external asset provisioning aur provenance
 └── critic/        result verification
 
