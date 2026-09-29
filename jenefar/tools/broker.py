@@ -65,6 +65,7 @@ class ToolBroker:
         self.connectors = ConnectorManager(
             workspace=self.workspace,
             desktop=self.desktop,
+            screen_vision=self.screen_vision,
             robotics=self.robotics,
             mqtt_robot=self.mqtt_robot,
             ros2_robot=self.ros2_robot,
