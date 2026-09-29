@@ -147,6 +147,22 @@ BUILTIN_SKILLS = (
         connectors=("web", "github"),
         permissions=("public_network_read",),
     ),
+    SkillManifest(
+        name="memory",
+        version="1.0",
+        description="Layered episodic, semantic and procedural local memory with fused retrieval.",
+        keywords=("remember", "memory", "recall", "forget", "procedure", "playbook"),
+        connectors=(),
+        permissions=("memory_read", "memory_write"),
+    ),
+    SkillManifest(
+        name="scheduling",
+        version="1.0",
+        description="Persistent schedules and explicit application-event watchers.",
+        keywords=("schedule", "remind", "every day", "every hour", "watch event", "trigger"),
+        connectors=(),
+        permissions=("schedule_read", "schedule_write"),
+    ),
 )
 
 
