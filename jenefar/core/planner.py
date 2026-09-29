@@ -40,6 +40,28 @@ class Planner:
         confidence: float,
         reason: str,
     ) -> Plan:
+        skill_for_agent = {
+            "local_development": "local_development",
+            "python": "local_development",
+            "repository": "github_research",
+            "gui_vision": "gui_vision",
+            "automation": "browser_media",
+            "kali": "security",
+            "cybersecurity": "security",
+            "bugbounty": "security",
+            "robotics": "robotics",
+            "research": "research",
+        }.get(agent)
+        if skill_for_agent and not self.skills.is_enabled(skill_for_agent):
+            disabled_reason = f"required skill '{skill_for_agent}' is disabled"
+            if agent != "research" and self.skills.is_enabled("research"):
+                return self._make_plan(
+                    text,
+                    "research",
+                    "research",
+                    confidence=0.4,
+                    reason=disabled_reason,
+                )
         task_plan = self.task_planner.build(text, intent, agent)
         return Plan(
             intent=intent,
