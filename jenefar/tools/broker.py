@@ -15,6 +15,8 @@ from jenefar.coding.repository import RepositoryAnalyzer
 from jenefar.tools.security import ScopedSecurityToolExecutor
 from jenefar.automation.desktop import DesktopAutomation
 from jenefar.robotics.serial_controller import SerialRobotController
+from jenefar.robotics.mqtt import MqttRobotController
+from jenefar.robotics.ros2 import Ros2RobotController
 
 
 @dataclass
@@ -38,6 +40,8 @@ class ToolBroker:
         self.terminal = TerminalTool()
         self.desktop = DesktopAutomation()
         self.robotics = SerialRobotController()
+        self.mqtt_robot = MqttRobotController()
+        self.ros2_robot = Ros2RobotController()
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
@@ -157,6 +161,50 @@ class ToolBroker:
             name="robot_list_ports",
             description="List visible serial ports for robotics hardware. Read-only.",
             handler=lambda _args: self.robotics.list_ports(),
+        ))
+        self.registry.register(ToolSpec(
+            name="robot_mqtt_telemetry",
+            description="Read the latest telemetry message from the configured MQTT robotics topic. Read-only.",
+            handler=lambda _args: self.mqtt_robot.telemetry(),
+        ))
+        self.registry.register(ToolSpec(
+            name="robot_mqtt_publish",
+            description="Publish a bounded robotics command to the configured MQTT topic. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {"command": {"type": "string", "maxLength": 200}},
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.mqtt_robot.publish_command(str(args["command"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="robot_ros2_topics",
+            description="List visible ROS2 topics and message types. Read-only.",
+            handler=lambda _args: self.ros2_robot.list_topics(),
+        ))
+        self.registry.register(ToolSpec(
+            name="robot_ros2_publish",
+            description="Publish a bounded ROS2 message with a data field. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "message_type": {"type": "string"},
+                    "payload": {"type": "string", "maxLength": 4000},
+                },
+                "required": ["topic", "message_type", "payload"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.ros2_robot.publish(
+                str(args["topic"]),
+                str(args["message_type"]),
+                str(args["payload"]),
+            ),
+            requires_confirmation=True,
+            action=True,
         ))
         self.registry.register(ToolSpec(
             name="robot_command",
