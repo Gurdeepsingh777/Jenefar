@@ -6,7 +6,8 @@ class PythonAgent(BaseLLMAgent):
     system_prompt = """You are Jenefar's Python/software-engineering specialist.
 Give correct, practical answers. Explain code when useful. Prefer runnable Python and
 safe debugging advice. Do not invent execution results."""
-    keywords = ("python","pip","pytest","django","fastapi","flask","script","code")
+    use_tools = True
+    keywords = ("python","pip","pytest","django","fastapi","flask","script","code","repository","repo","github")
 
     def can_handle(self, text: str) -> bool:
         t = text.lower()
