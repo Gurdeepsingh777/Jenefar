@@ -12,7 +12,7 @@ class RealtimeSessionError(RuntimeError):
     pass
 
 
-def create_ephemeral_session() -> dict[str, object]:
+def create_ephemeral_session(tool_broker: ToolBroker | None = None) -> dict[str, object]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RealtimeSessionError("OPENAI_API_KEY is not configured.")
@@ -23,10 +23,10 @@ def create_ephemeral_session() -> dict[str, object]:
         "OPENAI_REALTIME_INSTRUCTIONS",
         "You are Jenefar, a precise voice-first multi-agent assistant.",
     )
-    broker = ToolBroker()
+    broker = tool_broker or ToolBroker()
     tools = broker.schemas(
-        allow_action_tools=False,
-        include_confirmation_tools=False,
+        allow_action_tools=True,
+        include_confirmation_tools=True,
     )
     payload = {
         "session": {
