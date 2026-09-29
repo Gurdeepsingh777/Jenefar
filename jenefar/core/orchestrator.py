@@ -5,7 +5,9 @@ from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
 from jenefar.agents.coding.python import PythonAgent
 from jenefar.agents.coding.repository_agent import RepositoryAgent
+from jenefar.agents.coding.local_development import LocalDevelopmentAgent
 from jenefar.agents.cybersecurity.cyber import CybersecurityAgent
+from jenefar.agents.cybersecurity.kali import KaliSecurityAgent
 from jenefar.agents.research.research import ResearchAgent
 from jenefar.agents.robotics.robotics import RoboticsAgent
 from jenefar.core.config import load_config
@@ -21,6 +23,8 @@ from jenefar.tools.broker import ToolBroker
 from jenefar.execution.audit import AuditLogger
 from jenefar.execution.scope import ScopePolicy
 from jenefar.voice.wakeword import WakeWord
+from jenefar.capabilities.store import CapabilityStore
+from jenefar.offline.connectivity import internet_available
 
 class JenefarOrchestrator:
     def __init__(self, avatar=None):
@@ -29,6 +33,7 @@ class JenefarOrchestrator:
         self.session = Session()
         self.memory = MemoryStore()
         self.graph = KnowledgeGraph(self.memory.path)
+        self.capabilities = CapabilityStore()
         self.evaluator = EvaluationLoop()
         self.planner = Planner()
         self.audit = AuditLogger(self.config.audit_log_path)
@@ -40,7 +45,9 @@ class JenefarOrchestrator:
         )
         self.router = AgentRouter([
             RepositoryAgent(tool_broker=self.tool_broker),
+            LocalDevelopmentAgent(tool_broker=self.tool_broker),
             AutomationAgent(tool_broker=self.tool_broker),
+            KaliSecurityAgent(tool_broker=self.tool_broker),
             PythonAgent(tool_broker=self.tool_broker),
             CybersecurityAgent(tool_broker=self.tool_broker),
             BugBountyAgent(tool_broker=self.tool_broker),
@@ -114,6 +121,16 @@ class JenefarOrchestrator:
         retrieved = self.memory.search(text, limit=6)
         graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
         plan = self.planner.plan(text)
+        connected = internet_available()
+        runtime = {
+            "connectivity": "online" if connected else "offline",
+            "offline_limitations": [
+                "web search and remote downloads",
+                "YouTube",
+                "online song recognition",
+                "live GitHub retrieval",
+            ] if not connected else [],
+        }
         result = self.router.dispatch(
             text,
             metadata={
@@ -122,6 +139,8 @@ class JenefarOrchestrator:
                 "planned_agent": plan.agent,
                 "planner_reason": plan.reason,
                 "response_language": response_language,
+                "runtime": runtime,
+                "capabilities": self.capabilities.list(),
                 "history": self.session.recent(8),
                 "retrieved_memory": [
                     {"source": hit.source, "title": hit.title, "content": hit.content}
