@@ -3,6 +3,7 @@ from __future__ import annotations
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
 from jenefar.core.llm import LLMClient
 
+
 class BaseLLMAgent(BaseAgent):
     system_prompt = "You are a helpful Jenefar specialist."
     use_web_search = False
@@ -18,19 +19,28 @@ class BaseLLMAgent(BaseAgent):
         history_text = ""
         if history:
             history_text = "\nRecent conversation:\n" + "\n".join(
-                f"{m.get('role','user')}: {m.get('content','')}" for m in history[-8:]
+                f"{m.get('role', 'user')}: {m.get('content', '')}"
+                for m in history[-8:]
             )
 
         retrieved = context.metadata.get("retrieved_memory", [])
         memory_text = ""
         if retrieved:
             memory_text = "\nRelevant long-term memory:\n" + "\n".join(
-                f"[{item.get("title", "memory")}] {item.get("content", "")}"
+                f"[{item.get('title', 'memory')}] {item.get('content', '')}"
                 for item in retrieved[:6]
             )
 
+        graph = context.metadata.get("knowledge_graph", [])
+        graph_text = ""
+        if graph:
+            graph_text = "\nRelevant knowledge graph relations:\n" + "\n".join(
+                f"{item.get('subject')} --{item.get('predicate')}--> {item.get('object')}"
+                for item in graph[:8]
+            )
+
         response = self.llm.complete(
-            f"Task:\n{context.task}{history_text}{memory_text}",
+            f"Task:\n{context.task}{history_text}{memory_text}{graph_text}",
             instructions=self.system_prompt,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
@@ -51,7 +61,6 @@ class BaseLLMAgent(BaseAgent):
         task: str,
         tool_results: list[dict[str, object]],
     ) -> AgentResult:
-        """Turn approved tool results into the final user-facing answer."""
         result_text = "\n\n".join(
             f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
             for item in tool_results
