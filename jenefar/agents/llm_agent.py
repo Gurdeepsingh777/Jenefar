@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
 from jenefar.core.llm import LLMClient
 
@@ -9,9 +11,11 @@ class BaseLLMAgent(BaseAgent):
     use_web_search = False
     use_tools = False
     allow_action_tools = False
+    model_env: str | None = None
 
     def __init__(self, tool_broker=None):
-        self.llm = LLMClient()
+        configured_model = os.getenv(self.model_env, "").strip() if self.model_env else ""
+        self.llm = LLMClient(model=configured_model or None)
         self.tool_broker = tool_broker
 
     @staticmethod
@@ -44,6 +48,8 @@ class BaseLLMAgent(BaseAgent):
             )
 
         graph = context.metadata.get("knowledge_graph", [])
+        runtime_text = context.metadata.get("runtime", {})
+        capability_text = context.metadata.get("capabilities", [])
         graph_text = ""
         if graph:
             graph_text = "\nRelevant knowledge graph relations:\n" + "\n".join(
@@ -54,6 +60,10 @@ class BaseLLMAgent(BaseAgent):
         instructions = self.system_prompt + self._language_instruction(
             context.metadata.get("response_language")
         )
+        if runtime_text:
+            instructions += f"\nRuntime status: {runtime_text.get('connectivity', 'unknown')}. Offline limitations: {runtime_text.get('offline_limitations', [])}"
+        if capability_text:
+            instructions += "\nUser-requested capability scope:\n" + "\n".join(f"- {item.get('capability', '')}" for item in capability_text[-20:])
         response = self.llm.complete(
             f"Task:\n{context.task}{history_text}{memory_text}{graph_text}",
             instructions=instructions,
