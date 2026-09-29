@@ -12,6 +12,69 @@ function setState(text) {
   if (realtimeState) realtimeState.textContent = text;
 }
 
+function sendToolOutput(callId, payload) {
+  if (!dataChannel) return;
+  dataChannel.send(JSON.stringify({
+    type: "conversation.item.create",
+    item: {
+      type: "function_call_output",
+      call_id: callId,
+      output: JSON.stringify(payload),
+    },
+  }));
+  dataChannel.send(JSON.stringify({type: "response.create"}));
+}
+
+function approvalDialog(tool, args, pendingId, callId) {
+  const overlay = document.createElement("div");
+  overlay.className = "approval-overlay";
+  overlay.innerHTML = `
+    <div class="approval-card">
+      <div class="approval-title">JENEFAR ACTION APPROVAL</div>
+      <div class="approval-tool">${tool}</div>
+      <pre>${JSON.stringify(args, null, 2)}</pre>
+      <div class="approval-actions">
+        <button data-action="deny">DENY</button>
+        <button data-action="approve">APPROVE</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('[data-action="deny"]').onclick = () => {
+    close();
+    setState("LIVE • ACTION DENIED");
+    sendToolOutput(callId, {
+      status: "denied",
+      message: "User denied the requested local action.",
+    });
+  };
+
+  overlay.querySelector('[data-action="approve"]').onclick = async () => {
+    overlay.querySelectorAll("button").forEach(item => item.disabled = true);
+    setState("EXECUTING APPROVED ACTION…");
+    try {
+      const response = await fetch("/realtime/tool", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({approve_id: pendingId}),
+      }).then(result => result.json());
+
+      close();
+      sendToolOutput(callId, response.result || response);
+      setState("LIVE • REALTIME SPEECH");
+    } catch (error) {
+      close();
+      sendToolOutput(callId, {
+        status: "error",
+        error: String(error),
+      });
+      setState("LIVE • REALTIME SPEECH");
+    }
+  };
+}
+
 async function handleRealtimeEvent(raw) {
   try {
     const event = JSON.parse(raw);
@@ -36,28 +99,38 @@ async function handleRealtimeEvent(raw) {
     }
 
     if (event.type === "response.function_call_arguments.done") {
+      const args = JSON.parse(event.arguments || "{}");
       const response = await fetch("/realtime/tool", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           name: event.name,
-          arguments: JSON.parse(event.arguments || "{}"),
+          arguments: args,
         }),
       }).then(result => result.json());
 
-      dataChannel?.send(JSON.stringify({
-        type: "conversation.item.create",
-        item: {
-          type: "function_call_output",
-          call_id: event.call_id,
-          output: JSON.stringify(response.result || response),
-        },
-      }));
-      dataChannel?.send(JSON.stringify({type: "response.create"}));
+      const result = response.result || response;
+      if (result.status === "approval_required" && result.pending_id) {
+        avatarEvent({
+          state: "waiting_approval",
+          text: `Approval required for ${event.name}`,
+          level: 0.15,
+          emotion: "alert",
+        });
+        approvalDialog(
+          event.name,
+          args,
+          result.pending_id,
+          event.call_id,
+        );
+      } else {
+        sendToolOutput(event.call_id, result);
+      }
     }
 
     if (event.type === "response.done") {
       avatarEvent({ state: "idle", level: 0, emotion: "neutral" });
+      setState(peer ? "LIVE • REALTIME SPEECH" : "OFFLINE");
     }
   } catch (error) {
     console.error("Realtime event error", error);
