@@ -21,3 +21,14 @@ data/memory/*
 data/*.db
 data/*.db-*
 data/*.jsonl
+
+# External runtime assets and generated wake-word models
+data/wakeword/assets/
+data/wakeword/*.npy
+data/wakeword/models/
+data/avatar/*.vrm
+data/avatar/*.vrm.glb
+data/avatar/*.glb
+*.tflite
+*.onnx
+*.pt
