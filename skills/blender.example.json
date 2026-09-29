@@ -1,0 +1,10 @@
+{
+  "name": "blender",
+  "version": "1.0",
+  "description": "Declarative Blender automation skill example.",
+  "keywords": ["blender", "render", "animation"],
+  "connectors": ["desktop", "workspace"],
+  "permissions": ["screen_capture", "gui_action", "workspace_read"],
+  "system_prompt": "Use Blender's visible UI and authorized project files. Verify the visible result after GUI actions.",
+  "enabled_by_default": false
+}

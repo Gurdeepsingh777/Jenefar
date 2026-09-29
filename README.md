@@ -634,3 +634,59 @@ Hello Jenefar, search box me Jenefar AI type karo.
 Hello Jenefar, jo Submit button screen par hai use click karo.
 
 Current implementation semantic coordinates ko model output se derive karti hai; live desktop smoke-testing ke liye target machine par pyautogui aur vision-capable model configured hona zaroori hai.
+
+
+## Phase 3 — Dynamic Skills aur Universal Connector Layer
+
+Phase 3 me Jenefar ka extension architecture modular banaya gaya hai. Skills ab persistent enable/disable state ke saath declarative manifests ke form me manage ho sakti hain, aur service integrations ko central connector gateway ke through expose kiya gaya hai.
+
+### Dynamic skills
+
+Built-in skills me `local_development`, `gui_vision`, `browser_media`, `github_research`, `robotics`, `security` aur `research` shamil hain. `SkillManager` inki enabled state ko `data/skills.json` me persist karta hai.
+
+New declarative skill add karne ke liye `.json` manifest ko configured `JENEFAR_SKILL_ROOTS` directory me rakho. Manifest sirf metadata, keywords, permissions, connector dependencies aur optional system guidance define karta hai; arbitrary Python plugin code automatically execute nahi hota.
+
+Example natural-language commands:
+
+```text
+Hello Jenefar, available skills dikhao.
+Hello Jenefar, GUI vision skill enable karo.
+Hello Jenefar, GUI vision skill disable karo.
+Hello Jenefar, Blender skill manifest install karo.
+```
+
+Skill disable hone par planner us specialist ko directly use nahi karta aur enabled `research` skill par safe fallback karta hai. Skill enablement security authorization ko bypass nahi karta.
+
+### Universal connector layer
+
+`ConnectorManager` trusted adapters ko ek common interface deta hai. Current built-in connectors me:
+- `workspace` — authorized local file/directory reads
+- `browser` — public URL aur YouTube browser actions
+- `web` — public HTTP(S) read-only fetching
+- `github` — public GitHub repository reads
+- `robotics` — serial robotics
+- `mqtt` — robotics telemetry/commands
+- `ros2` — ROS2 topic discovery/publication
+- `security` — existing scoped security boundary
+
+Natural-language model tools `connector_catalog`, `connector_status` aur approval-gated `connector_execute` ke through is layer ko use karte hain.
+
+Online-required connectors internet unavailable hone par execute nahi karte aur explicit connection error return karte hain. Connector actions centralized audit log me record hote hain.
+
+Architecture:
+
+```text
+User Goal
+   ↓
+Agent / Planner
+   ↓
+Skill Registry
+   ↓
+Universal Connector Gateway
+   ↓
+Trusted Adapter
+   ↓
+Tool / Service
+```
+
+Is architecture ka main purpose ye hai ki nayi service integration ko core orchestrator ke andar hard-code karne ki jagah ek isolated connector adapter me add kiya ja sake.

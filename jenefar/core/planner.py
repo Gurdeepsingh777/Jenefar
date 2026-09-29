@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from jenefar.core.task_plan import HierarchicalTaskPlanner, TaskStep
+from jenefar.skills.manager import SkillManager
 
 
 @dataclass
@@ -22,8 +23,12 @@ class Plan:
 class Planner:
     """Deterministic intent planner plus bounded hierarchical decomposition."""
 
-    def __init__(self) -> None:
+    def __init__(self, skills: SkillManager | None = None) -> None:
         self.task_planner = HierarchicalTaskPlanner()
+        self.skills = skills or SkillManager()
+
+    def skill_enabled(self, skill_name: str) -> bool:
+        return self.skills.is_enabled(skill_name)
 
     def _make_plan(
         self,
@@ -35,6 +40,28 @@ class Planner:
         confidence: float,
         reason: str,
     ) -> Plan:
+        skill_for_agent = {
+            "local_development": "local_development",
+            "python": "local_development",
+            "repository": "github_research",
+            "gui_vision": "gui_vision",
+            "automation": "browser_media",
+            "kali": "security",
+            "cybersecurity": "security",
+            "bugbounty": "security",
+            "robotics": "robotics",
+            "research": "research",
+        }.get(agent)
+        if skill_for_agent and not self.skills.is_enabled(skill_for_agent):
+            disabled_reason = f"required skill '{skill_for_agent}' is disabled"
+            if agent != "research" and self.skills.is_enabled("research"):
+                return self._make_plan(
+                    text,
+                    "research",
+                    "research",
+                    confidence=0.4,
+                    reason=disabled_reason,
+                )
         task_plan = self.task_planner.build(text, intent, agent)
         return Plan(
             intent=intent,

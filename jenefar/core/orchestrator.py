@@ -26,6 +26,7 @@ from jenefar.execution.scope import ScopePolicy
 from jenefar.voice.wakeword import WakeWord
 from jenefar.capabilities.store import CapabilityStore
 from jenefar.offline.connectivity import internet_available
+from jenefar.skills.manager import SkillManager
 
 class JenefarOrchestrator:
     def __init__(self, avatar=None):
@@ -35,14 +36,16 @@ class JenefarOrchestrator:
         self.memory = MemoryStore()
         self.graph = KnowledgeGraph(self.memory.path)
         self.capabilities = CapabilityStore()
+        self.skills = SkillManager()
         self.evaluator = EvaluationLoop()
-        self.planner = Planner()
+        self.planner = Planner(skills=self.skills)
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
         self.tool_broker = ToolBroker(
             require_confirmation=self.config.require_confirmation_for_tools,
             audit=self.audit,
             scope=self.scope,
+            skills=self.skills,
         )
         self.router = AgentRouter([
             RepositoryAgent(tool_broker=self.tool_broker),
@@ -157,6 +160,11 @@ class JenefarOrchestrator:
                 "response_language": response_language,
                 "runtime": runtime,
                 "capabilities": self.capabilities.list(),
+                "skills": [
+                    item
+                    for item in self.skills.list()
+                    if item.get("enabled")
+                ],
                 "history": self.session.recent(8),
                 "retrieved_memory": [
                     {"source": hit.source, "title": hit.title, "content": hit.content}
