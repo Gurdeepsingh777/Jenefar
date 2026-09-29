@@ -103,6 +103,59 @@ class WorkspaceService:
             "stderr": completed.stderr[-20000:],
         }
 
+    def validate_python(self, path: str, timeout: int = 30) -> dict[str, object]:
+        """Compile-check an authorized Python file without running top-level logic."""
+        candidate = self.policy.require_allowed(path)
+        if not candidate.is_file():
+            raise FileNotFoundError(candidate)
+        if candidate.suffix.lower() != ".py":
+            raise ValueError("workspace_validate_python only validates .py files.")
+
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-m", "py_compile", str(candidate)],
+                cwd=str(candidate.parent),
+                capture_output=True,
+                text=True,
+                timeout=max(1, min(timeout, 120)),
+            )
+            return {
+                "path": str(candidate),
+                "returncode": completed.returncode,
+                "valid": completed.returncode == 0,
+                "stdout": completed.stdout[-10000:],
+                "stderr": completed.stderr[-10000:],
+            }
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "path": str(candidate),
+                "returncode": -1,
+                "valid": False,
+                "stdout": str(exc.stdout or "")[-10000:],
+                "stderr": "Python syntax validation timed out.",
+            }
+
+    def run_pytest(self, path: str, timeout: int = 120) -> dict[str, object]:
+        """Run pytest against an authorized file or directory."""
+        candidate = self.policy.require_allowed(path)
+        if not candidate.exists():
+            raise FileNotFoundError(candidate)
+
+        completed = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", str(candidate)],
+            cwd=str(candidate if candidate.is_dir() else candidate.parent),
+            capture_output=True,
+            text=True,
+            timeout=max(1, min(timeout, 300)),
+        )
+        return {
+            "path": str(candidate),
+            "returncode": completed.returncode,
+            "passed": completed.returncode == 0,
+            "stdout": completed.stdout[-20000:],
+            "stderr": completed.stderr[-20000:],
+        }
+
     def diff_file(self, path: str) -> dict[str, object]:
         candidate = self.policy.require_allowed(path)
         backup_dir = candidate.parent / ".jenefar-backups"
