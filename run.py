@@ -11,6 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--voice-continuous", action="store_true", help="run continuous microphone VAD -> STT -> agent -> TTS mode")
     parser.add_argument("--avatar", action="store_true", help="show Jenefar's local real-time particle avatar UI")
     parser.add_argument("--realtime", action="store_true", help="launch the avatar UI for browser Realtime speech-to-speech")
+    parser.add_argument("--desktop", action="store_true", help="launch Jenefar inside the optional native desktop shell")
     parser.add_argument("--avatar-port", type=int, default=8787, help="local avatar UI port")
     parser.add_argument("--discover-tools", action="store_true", help="list detected Kali/Linux tools without executing them")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
@@ -209,28 +210,46 @@ def main() -> int:
 
     from jenefar.core.orchestrator import JenefarOrchestrator
 
+    if args.realtime or args.desktop:
+        args.avatar = True
+
     avatar = None
     avatar_server = None
-    if args.realtime:
-        args.avatar = True
+    orchestrator = None
+
     if args.avatar:
         import webbrowser
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
 
         avatar = AvatarController()
-        avatar_server = AvatarServer(avatar, port=args.avatar_port)
+        orchestrator = JenefarOrchestrator(avatar=avatar)
+        avatar_server = AvatarServer(
+            avatar,
+            port=args.avatar_port,
+            tool_broker=orchestrator.tool_broker,
+        )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
+        if args.desktop:
+            from jenefar.avatar.desktop import launch_desktop
+        else:
+            launch_desktop = None
+
         try:
-            webbrowser.open(avatar_server.url)
+            if args.desktop and launch_desktop is not None:
+                launch_desktop(avatar_server.url)
+            else:
+                webbrowser.open(avatar_server.url)
         except Exception:
             pass
+    else:
+        orchestrator = JenefarOrchestrator()
 
     if args.voice_continuous:
         from jenefar.voice.continuous import ContinuousVoiceRuntime
         ContinuousVoiceRuntime(
-            JenefarOrchestrator(avatar=avatar),
+            orchestrator,
             avatar=avatar,
         ).run()
         if avatar_server is not None:
@@ -241,12 +260,23 @@ def main() -> int:
         if args.voice:
             from jenefar.voice.openai_voice import OpenAIVoiceRuntime
             OpenAIVoiceRuntime(
-                JenefarOrchestrator(avatar=avatar),
+                orchestrator,
                 avatar=avatar,
             ).run()
             return 0
 
-        JenefarOrchestrator(avatar=avatar).run()
+        if args.realtime or args.avatar or args.desktop:
+            if not args.desktop and args.realtime:
+                print("[JENEFAR] Realtime avatar UI is running. Use the browser control to start speech-to-speech.")
+            if args.desktop:
+                return 0
+            try:
+                orchestrator.run()
+            except KeyboardInterrupt:
+                return 0
+            return 0
+
+        orchestrator.run()
         return 0
     finally:
         if avatar_server is not None:
