@@ -5,3 +5,4 @@ pyserial>=3.5
 sentence-transformers>=5.0
 paho-mqtt>=2.1.0
 pywebview>=5.0
+soundfile>=0.12.1
