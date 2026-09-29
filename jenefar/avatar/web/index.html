@@ -5,11 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jenefar Avatar</title>
   <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <main id="stage" data-state="idle">
     <div class="backdrop"></div>
     <canvas id="particles" aria-hidden="true"></canvas>
+    <canvas id="vrm-canvas" aria-hidden="true"></canvas>
 
     <section class="avatar-shell">
       <div class="halo halo-a"></div>
@@ -76,8 +86,15 @@
       </div>
     </section>
 
-    <div class="mode-pill">REAL-TIME AVATAR • PARTICLE FIELD • LIVE STATE SYNC</div>
+    <div class="realtime-controls">
+      <button id="realtime-button">START REALTIME</button>
+      <span id="realtime-state">OFFLINE</span>
+      <span id="vrm-status">PROCEDURAL AVATAR</span>
+    </div>
+    <div class="mode-pill">3D VRM • PARTICLE FIELD • REALTIME VOICE</div>
   </main>
   <script src="/app.js"></script>
+  <script type="module" src="/vrm.js"></script>
+  <script src="/realtime.js"></script>
 </body>
 </html>
