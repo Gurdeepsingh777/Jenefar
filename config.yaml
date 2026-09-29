@@ -19,6 +19,7 @@ security:
 agents:
   master: true
   coding: true
+  repository: true
   cybersecurity: true
   bugbounty: true
   robotics: true
