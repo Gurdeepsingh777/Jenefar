@@ -199,7 +199,7 @@ class ToolBroker:
                     "path": {"type": "string"},
                     "max_files": {"type": "integer", "minimum": 1, "maximum": 10},
                 },
-                "required": ["repository", "ref", "path", "max_files"],
+                "required": ["repository", "ref", "max_files"],
                 "additionalProperties": False,
             },
             handler=self._research_fetch_github,
