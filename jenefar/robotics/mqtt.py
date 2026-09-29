@@ -28,14 +28,14 @@ class MqttRobotController:
         self._lock = threading.RLock()
 
     def _require_client(self):
+        if not self.host:
+            raise ValueError("JENEFAR_MQTT_HOST is not configured.")
         try:
             import paho.mqtt.client as mqtt
         except Exception as exc:
             raise RuntimeError("MQTT robotics integration requires optional 'paho-mqtt'.") from exc
 
         if self._client is None:
-            if not self.host:
-                raise ValueError("JENEFAR_MQTT_HOST is not configured.")
             self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
             self._client.on_message = self._on_message
             self._client.connect(self.host, self.port, 60)
