@@ -1,21 +1,23 @@
 # Jenefar AI
 
-Jenefar is a modular, voice-first multi-agent AI assistant designed to grow into a desktop automation, coding, cybersecurity, research, robotics, and tool-execution platform.
+Jenefar is a modular, voice-first multi-agent AI assistant designed to grow into a desktop automation, coding, cybersecurity, research, robotics, and authorized tool-execution platform.
 
 ## Current release
 
-This repository contains the first working Jenefar core:
+The core now includes:
 
-- Master orchestrator and agent router
-- Coding, cybersecurity, bug-bounty, robotics, and research agents
-- Dynamic tool registry
-- Explicit permission boundary for command execution
-- Short-term memory abstraction
-- Critic/verifier layer
+- Master orchestrator + deterministic planner + specialist router
+- Model-backed Python, cybersecurity, bug-bounty, robotics, and research agents
+- OpenAI Responses API adapter
+- Optional hosted web search for the research agent
+- Short-term session memory passed to specialists
+- Explicit permission boundary for terminal execution
+- Safe discovery of common Kali/Linux security tools
 - "Hi Jenefar" / "Hello Jenefar" activation logic
-- Text-mode runtime for immediate testing
+- Text runtime for immediate testing
+- Optional microphone -> OpenAI transcription -> agent -> OpenAI TTS runtime
 
-The voice layer is isolated so a real microphone/STT/TTS backend can be added without rewriting the agent architecture.
+The LLM and voice integrations remain isolated behind adapters so providers can be changed later.
 
 ## Quick start
 
@@ -29,46 +31,61 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 
 cp .env.example .env
+# Put your OpenAI API key in .env
 python run.py
 ```
 
 Then type:
 
-``	ext
+```text
 Hi Jenefar
 ```
 
-and Jenefar will wake. In the current single-turn mode, the response returns her to sleep after each command.
+and ask a question. Without an API key, the runtime reports that the model provider is not configured.
+
+## Voice mode
+
+The OpenAI Python SDK provides microphone and local audio helpers as an optional voice extra. citeturn657415search0turn657415search2
+
+Install the optional helper dependencies:
+
+```bash
+pip install "openai[voice_helpers]"
+python run.py --voice
+```
+
+Voice mode records a bounded turn, transcribes it, applies the same wake-word and routing flow, then speaks the response.
+
+## Research/web search
+
+The research agent can enable the Responses API hosted `web_search` tool for current/source-sensitive queries. OpenAI documents `web_search` as the current Responses API web-search mechanism for new integrations. citeturn325453search5
 
 ## Project layout
 
-``	ext
+```text
 jenefar/
-├── core/          orchestration, routing, state, configuration
-├── voice/         wake-word, microphone, STT, TTS interfaces
+├── core/          config, session, planner, routing, LLM
+├── voice/         wake word, voice adapters, OpenAI voice runtime
 ├── agents/        specialist agents
-├── tools/         tool registry and execution tools
-├── memory/        memory abstractions
-├── execution/     permission and audit boundaries
+├── tools/         registry, terminal gate, Kali discovery
+├── execution/     execution policy boundaries
 └── critic/        result verification
 
-scripts/            setup helpers
 tests/              automated tests
-data/               runtime data
 ```
 
 ## Safety boundary
 
-Jenefar's security tooling is intended for systems and targets you are authorized to test. Privileged, network-impacting, or otherwise high-impact actions should pass an explicit approval and policy layer before execution.
+Jenefar's security tooling is intended for systems and targets you are authorized to test. Privileged, network-impacting, or otherwise high-impact actions remain behind explicit confirmation and policy controls. Tool discovery does not execute discovered tools.
 
 ## Roadmap
 
-1. Real microphone + wake-word backend
-2. STT/TTS
-3. Model-backed Master Agent
-4. Web/GitHub/document research and RAG
-5. Kali/Linux tool discovery and sandboxed execution
+1. Native continuous wake-word detection
+2. Realtime speech-to-speech mode
+3. Function-calling tool router
+4. Sandboxed/authorized Kali tool execution with scope controls
+5. GitHub/document/RAG connectors
 6. Desktop automation
 7. Long-term memory and knowledge graph
 8. Robotics integrations
-9. Evaluation/self-improvement loops
+9. Evaluation and self-improvement loops
