@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+
+from jenefar.memory.semantic import SemanticEmbedder
 
 
 @dataclass(frozen=True)
@@ -14,11 +17,16 @@ class GraphRelation:
 
 
 class KnowledgeGraph:
-    """SQLite-backed entity/relation graph sharing the Jenefar memory DB."""
+    """SQLite-backed graph with optional semantic entity retrieval."""
 
-    def __init__(self, path: str | Path = "data/jenefar_memory.db"):
+    def __init__(
+        self,
+        path: str | Path = "data/jenefar_memory.db",
+        embedder: SemanticEmbedder | None = None,
+    ):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.embedder = embedder or SemanticEmbedder()
         self._init_db()
 
     def _connect(self):
@@ -33,7 +41,8 @@ class KnowledgeGraph:
                 CREATE TABLE IF NOT EXISTS kg_entities (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
-                    entity_type TEXT NOT NULL DEFAULT 'concept'
+                    entity_type TEXT NOT NULL DEFAULT 'concept',
+                    embedding TEXT
                 );
                 CREATE TABLE IF NOT EXISTS kg_relations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,12 +55,25 @@ class KnowledgeGraph:
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in con.execute("PRAGMA table_info(kg_entities)").fetchall()
+            }
+            if "embedding" not in columns:
+                con.execute("ALTER TABLE kg_entities ADD COLUMN embedding TEXT")
 
     def _entity_id(self, con, name: str, entity_type: str = "concept") -> int:
+        embedding = self.embedder.encode(name)
+        encoded = json.dumps(embedding) if embedding else None
         con.execute(
-            "INSERT OR IGNORE INTO kg_entities(name, entity_type) VALUES (?, ?)",
-            (name, entity_type),
+            "INSERT OR IGNORE INTO kg_entities(name, entity_type, embedding) VALUES (?, ?, ?)",
+            (name, entity_type, encoded),
         )
+        if encoded:
+            con.execute(
+                "UPDATE kg_entities SET embedding = COALESCE(embedding, ?) WHERE name = ?",
+                (encoded, name),
+            )
         row = con.execute("SELECT id FROM kg_entities WHERE name = ?", (name,)).fetchone()
         return int(row["id"])
 
@@ -90,14 +112,45 @@ class KnowledgeGraph:
         with self._connect() as con:
             rows = con.execute(
                 """
-                SELECT s.name AS subject, r.predicate AS predicate, o.name AS object
+                SELECT
+                    s.name AS subject,
+                    s.embedding AS subject_embedding,
+                    r.predicate AS predicate,
+                    o.name AS object
                 FROM kg_relations r
                 JOIN kg_entities s ON s.id = r.subject_id
                 JOIN kg_entities o ON o.id = r.object_id
-                WHERE lower(s.name) LIKE ? OR lower(o.name) LIKE ?
-                ORDER BY r.id DESC
-                LIMIT ?
-                """,
-                (f"%{name.lower()}%", f"%{name.lower()}%", limit),
+                """
             ).fetchall()
-        return [GraphRelation(row["subject"], row["predicate"], row["object"]) for row in rows]
+
+        query_embedding = self.embedder.encode(name)
+        scored: list[tuple[float, GraphRelation]] = []
+
+        for row in rows:
+            exact = name.lower() in row["subject"].lower() or name.lower() in row["object"].lower()
+            score = 1.0 if exact else 0.0
+            if query_embedding and row["subject_embedding"]:
+                try:
+                    score = max(
+                        score,
+                        self.embedder.cosine(
+                            query_embedding,
+                            json.loads(row["subject_embedding"]),
+                        ),
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    pass
+            if score > 0:
+                scored.append(
+                    (
+                        score,
+                        GraphRelation(
+                            row["subject"],
+                            row["predicate"],
+                            row["object"],
+                        ),
+                    )
+                )
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [relation for _score, relation in scored[:limit]]
