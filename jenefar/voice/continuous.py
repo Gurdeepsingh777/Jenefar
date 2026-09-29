@@ -30,8 +30,9 @@ class ContinuousVoiceRuntime:
     monitoring the microphone. Audio is only sent for detected utterances.
     """
 
-    def __init__(self, orchestrator, config: VoiceConfig | None = None):
+    def __init__(self, orchestrator, config: VoiceConfig | None = None, avatar=None):
         self.orchestrator = orchestrator
+        self.avatar = avatar
         self.config = config or VoiceConfig(
             sample_rate=int(os.getenv("JENEFAR_VOICE_SAMPLE_RATE", "24000")),
             block_ms=int(os.getenv("JENEFAR_VOICE_BLOCK_MS", "100")),
@@ -163,6 +164,8 @@ class ContinuousVoiceRuntime:
             return
 
         print(f"[USER/STT] {text}")
+        if self.avatar is not None:
+            self.avatar.publish("listening", text)
 
         lowered = text.lower().strip()
         if lowered == "exit":
@@ -181,10 +184,15 @@ class ContinuousVoiceRuntime:
             reply = self.orchestrator.handle(text)
 
         print(f"[JENEFAR] {reply}")
+        if self.avatar is not None:
+            self.avatar.publish("speaking", reply)
         try:
             await self._speak(reply)
         except Exception as exc:
             print(f"[JENEFAR] TTS error: {type(exc).__name__}: {exc}")
+        finally:
+            if self.avatar is not None:
+                self.avatar.publish("idle", "")
 
     async def run_async(self) -> None:
         if not os.getenv("OPENAI_API_KEY"):
