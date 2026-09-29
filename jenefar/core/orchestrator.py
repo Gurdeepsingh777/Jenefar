@@ -99,6 +99,8 @@ class JenefarOrchestrator:
             metadata={
                 "session_id": self.session.session_id,
                 "intent": plan.intent,
+                "planned_agent": plan.agent,
+                "planner_confidence": plan.confidence,
                 "planner_reason": plan.reason,
                 "history": self.session.recent(8),
                 "retrieved_memory": [
