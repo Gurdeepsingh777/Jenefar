@@ -39,5 +39,42 @@ class BaseLLMAgent(BaseAgent):
         return AgentResult(
             agent=self.name,
             content=response.text,
-            metadata={"provider": response.provider, "response_id": response.response_id},
+            metadata={
+                "provider": response.provider,
+                "response_id": response.response_id,
+                "pending_tools": response.pending_tools,
+            },
+        )
+
+    def continue_after_tools(
+        self,
+        task: str,
+        tool_results: list[dict[str, object]],
+    ) -> AgentResult:
+        """Turn approved tool results into the final user-facing answer."""
+        result_text = "\n\n".join(
+            f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
+            for item in tool_results
+        )
+        response = self.llm.complete(
+            (
+                "Original user task:\n"
+                f"{task}\n\n"
+                "Approved local tool results are available below. "
+                "Use them as execution evidence and provide the final answer. "
+                "Do not claim any tool action that is not represented in these results.\n\n"
+                f"{result_text}"
+            ),
+            instructions=self.system_prompt,
+            use_web_search=self.use_web_search,
+            tool_broker=None,
+            allow_action_tools=False,
+        )
+        return AgentResult(
+            agent=self.name,
+            content=response.text,
+            metadata={
+                "provider": response.provider,
+                "response_id": response.response_id,
+            },
         )
