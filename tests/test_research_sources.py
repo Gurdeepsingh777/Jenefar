@@ -18,3 +18,18 @@ def test_research_document_ingest(tmp_path: Path):
     )
     assert ingest_research_document(doc, store) == 1
     assert store.search("research connector")[0].source == "https://example.com"
+
+
+def test_source_validation():
+    from pytest import raises
+    from jenefar.research.sources import fetch_url, fetch_github_repository
+    with raises(ValueError):
+        fetch_url("ftp://example.com/file")
+    with raises(ValueError):
+        fetch_github_repository("invalid-repo")
+
+def test_read_only_tools_are_registered():
+    from jenefar.tools.broker import ToolBroker
+    names = {tool["name"] for tool in ToolBroker().schemas()}
+    assert "research_fetch_url" in names
+    assert "research_fetch_github" in names
