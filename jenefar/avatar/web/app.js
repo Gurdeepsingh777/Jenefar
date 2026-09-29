@@ -43,20 +43,22 @@ function palette(state){
   return [133,147,255];
 }
 let currentState="idle";
+let speechLevel=0;
 
 function draw(t){
   ctx.clearRect(0,0,width,height);
   const centerX=width/2,centerY=height*.46;
   const [r,g,b]=palette(currentState);
+  const activity = currentState==="speaking" ? speechLevel : currentState==="thinking" ? .22 : currentState==="listening" ? .10 : 0;
   particles.forEach((p,i)=>{
     p.a+=p.speed;
     p.phase+=.01;
-    const stateBoost=currentState==="speaking"?1.8:currentState==="thinking"?1.15:1;
+    const stateBoost=currentState==="speaking" ? 1.25 + activity * 1.7 : currentState==="thinking" ? 1.15 : 1;
     const rr=p.r + Math.sin(p.phase+t*.001)*18*stateBoost;
     const x=centerX+Math.cos(p.a)*rr;
     const y=centerY+Math.sin(p.a)*rr*.78;
     const alpha=.15+.18*(Math.sin(p.phase)+1)/2;
-    const size=p.size*(currentState==="speaking"?1.35:1);
+    const size=p.size*(currentState==="speaking" ? 1.05 + activity * 1.8 : 1);
     ctx.beginPath();
     ctx.arc(x,y,size,0,Math.PI*2);
     ctx.fillStyle=`rgba(${r},${g},${b},${alpha})`;
@@ -75,7 +77,9 @@ function draw(t){
 
 function apply(event){
   currentState=event.state||"idle";
+  speechLevel=Number(event.level||0);
   stage.dataset.state=currentState;
+  stage.style.setProperty("--speech-level", speechLevel.toFixed(3));
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
   stateEl.textContent=stateText;
   captionEl.textContent=event.text||caption;
