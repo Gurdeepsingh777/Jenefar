@@ -352,6 +352,7 @@ jenefar/
 ├── research/      URL/GitHub ingestion aur fetching
 ├── workspace/     authorized local file inspection/edit/run
 ├── automation/    desktop/browser/media automation
+├── vision/        multimodal screen understanding + semantic UI controls
 ├── offline/       connectivity + local-model fallback
 ├── capabilities/  persistent user-requested capability scope
 ├── assets/        pinned external asset provisioning aur provenance
