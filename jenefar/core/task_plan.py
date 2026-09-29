@@ -169,6 +169,43 @@ class HierarchicalTaskPlanner:
                 steps,
             )
 
+        if agent == "gui_vision":
+            steps = (
+                TaskStep(
+                    "observe",
+                    "Observe the current screen",
+                    "Use semantic vision to identify visible UI elements relevant to the user's goal.",
+                    "gui_vision",
+                    (),
+                    True,
+                    True,
+                ),
+                TaskStep(
+                    "act",
+                    "Perform the approved semantic action",
+                    "Use semantic click/type/hotkey/scroll tools rather than guessed coordinates.",
+                    "gui_vision",
+                    ("observe",),
+                    True,
+                ),
+                TaskStep(
+                    "verify",
+                    "Verify the GUI state",
+                    "Re-observe the screen when the task changes visible state and report the confirmed result.",
+                    "gui_vision",
+                    ("act",),
+                    True,
+                    True,
+                ),
+            )
+            return TaskPlan(
+                task,
+                intent,
+                agent,
+                "observe → semantic action → visual verification",
+                steps,
+            )
+
         if agent == "repository":
             steps = (
                 TaskStep(
