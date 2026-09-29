@@ -1,0 +1,19 @@
+assistant:
+  name: Jenefar
+  wake_phrases:
+    - "hi jenefar"
+    - "hello jenefar"
+  require_wake_phrase: true
+  single_turn_sleep: true
+
+runtime:
+  require_confirmation_for_tools: true
+  command_timeout_seconds: 30
+
+agents:
+  master: true
+  coding: true
+  cybersecurity: true
+  bugbounty: true
+  robotics: true
+  research: true
