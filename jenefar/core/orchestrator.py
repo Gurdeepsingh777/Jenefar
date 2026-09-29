@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
 from jenefar.agents.coding.python import PythonAgent
+from jenefar.agents.coding.repository_agent import RepositoryAgent
 from jenefar.agents.cybersecurity.cyber import CybersecurityAgent
 from jenefar.agents.research.research import ResearchAgent
 from jenefar.agents.robotics.robotics import RoboticsAgent
@@ -32,6 +33,7 @@ class JenefarOrchestrator:
             scope=self.scope,
         )
         self.router = AgentRouter([
+            RepositoryAgent(tool_broker=self.tool_broker),
             PythonAgent(tool_broker=self.tool_broker),
             CybersecurityAgent(tool_broker=self.tool_broker),
             BugBountyAgent(tool_broker=self.tool_broker),
