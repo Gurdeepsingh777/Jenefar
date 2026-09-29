@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import math
 import os
 import queue
 import threading
@@ -140,18 +141,44 @@ class ContinuousVoiceRuntime:
         )
         return result.text.strip()
 
+    async def _animate_speaking(self, text: str) -> None:
+        if self.avatar is None:
+            return
+
+        duration = max(0.8, len(text.split()) * 0.24)
+        started = time.monotonic()
+
+        while True:
+            elapsed = time.monotonic() - started
+            phase = (elapsed / duration) * 20.0
+            level = 0.10 + 0.72 * ((0.5 + 0.5 * math.sin(phase)) ** 1.7)
+            self.avatar.publish("speaking", text, level=level)
+            await asyncio.sleep(0.09)
+
     async def _speak(self, text: str) -> None:
         from openai import AsyncOpenAI
         from openai.helpers import LocalAudioPlayer
 
         client = AsyncOpenAI()
-        async with client.audio.speech.with_streaming_response.create(
-            model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
-            voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
-            response_format="pcm",
-            input=text,
-        ) as response:
-            await LocalAudioPlayer().play(response)
+        animation = None
+        if self.avatar is not None:
+            animation = asyncio.create_task(self._animate_speaking(text))
+
+        try:
+            async with client.audio.speech.with_streaming_response.create(
+                model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
+                voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
+                response_format="pcm",
+                input=text,
+            ) as response:
+                await LocalAudioPlayer().play(response)
+        finally:
+            if animation is not None:
+                animation.cancel()
+                try:
+                    await animation
+                except asyncio.CancelledError:
+                    pass
 
     async def _process_utterance(self, pcm: bytes) -> None:
         try:
@@ -185,7 +212,7 @@ class ContinuousVoiceRuntime:
 
         print(f"[JENEFAR] {reply}")
         if self.avatar is not None:
-            self.avatar.publish("speaking", reply)
+            self.avatar.publish("speaking", reply, level=0.2)
         try:
             await self._speak(reply)
         except Exception as exc:
