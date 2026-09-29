@@ -20,7 +20,7 @@ from jenefar.execution.scope import ScopePolicy
 from jenefar.voice.wakeword import WakeWord
 
 class JenefarOrchestrator:
-    def __init__(self):
+    def __init__(self, avatar=None):
         self.config = load_config()
         self.state = JenefarState.SLEEPING
         self.session = Session()
@@ -43,6 +43,7 @@ class JenefarOrchestrator:
         ])
         self.verifier = Verifier()
         self.wakeword = WakeWord(self.config.wake_phrases)
+        self.avatar = avatar
         self.pending_approval_workflows: dict[str, dict] = {}
 
     def run(self):
@@ -91,6 +92,7 @@ class JenefarOrchestrator:
 
     def handle(self, text: str) -> str:
         self.state = JenefarState.THINKING
+        self._avatar_state("thinking", "Processing your request…")
         self.session.add("user", text)
         self.memory.remember_message(self.session.session_id, "user", text)
         retrieved = self.memory.search(text, limit=6)
@@ -116,13 +118,19 @@ class JenefarOrchestrator:
         if result.metadata.get("provider") == "approval_required":
             self._register_pending_workflow(text, result)
             self.state = JenefarState.WAITING_APPROVAL
+            self._avatar_state("waiting_approval", output)
         else:
             self.state = (
                 JenefarState.SLEEPING
                 if self.config.single_turn_sleep
                 else JenefarState.AWAKE
             )
+            self._avatar_state("speaking", output)
         return output
+
+    def _avatar_state(self, state: str, text: str = "") -> None:
+        if self.avatar is not None:
+            self.avatar.publish(state, text)
 
 
     def _register_pending_workflow(self, task: str, result) -> None:
