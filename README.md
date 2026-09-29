@@ -145,10 +145,13 @@ The extracted text enters the same SQLite/FTS5 memory index used by conversation
 ```text
 jenefar/
 ├── core/          config, session, planner, routing, LLM
-├── voice/         wake word, voice adapters, OpenAI voice runtime
+├── voice/         wake word, bounded/continuous voice runtimes
+├── avatar/        live state bridge, expressions, particle UI
 ├── agents/        specialist agents
 ├── tools/         registry, terminal gate, Kali discovery
 ├── execution/     execution policy boundaries
+├── memory/        SQLite/FTS5 persistent memory
+├── research/      URL/GitHub ingestion and fetching
 └── critic/        result verification
 
 tests/              automated tests
@@ -173,12 +176,19 @@ Jenefar's security tooling is intended for systems and targets you are authorize
 
 ## Roadmap
 
-1. Native continuous wake-word detection
-2. Realtime speech-to-speech mode
-3. Function-calling tool router
-4. Sandboxed/authorized Kali tool execution with scope controls
-5. Desktop automation
-6. Desktop automation
-7. Long-term memory and knowledge graph
-8. Robotics integrations
-9. Evaluation and self-improvement loops
+Completed foundations:
+- Specialist multi-agent routing and planner
+- Function-calling tool broker with explicit approvals
+- Persistent SQLite/FTS5 memory and document/web/GitHub ingestion
+- Authorized security scope and audit logging
+- Continuous microphone VAD -> STT -> orchestrator -> TTS
+- Live particle avatar with runtime states, speech-reactive animation and expressions
+
+Next major milestones:
+1. Native low-latency wake-word engine
+2. Realtime speech-to-speech transport
+3. Full 3D/VRM avatar with neural/phoneme-aware lip-sync
+4. Desktop automation with approval/audit boundaries
+5. Broader sandboxed authorized security-tool profiles
+6. Robotics device integrations
+7. Evaluation/self-improvement and richer knowledge-graph memory
