@@ -122,6 +122,7 @@ class JenefarOrchestrator:
         retrieved = self.memory.search(text, limit=6)
         graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
         plan = self.planner.plan(text)
+        task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
         connected = internet_available()
         online_task = any(
             marker in text.lower()
@@ -148,6 +149,9 @@ class JenefarOrchestrator:
                 "intent": plan.intent,
                 "planned_agent": plan.agent,
                 "planner_reason": plan.reason,
+                "planner_confidence": plan.confidence,
+                "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
+                "model_role": self._model_role_for_plan(plan),
                 "response_language": response_language,
                 "runtime": runtime,
                 "capabilities": self.capabilities.list(),
@@ -193,6 +197,11 @@ class JenefarOrchestrator:
             self._avatar_state("speaking", output)
         return output
 
+    @staticmethod
+    def _model_role_for_plan(plan) -> str:
+        from jenefar.core.model_router import ModelRouter
+        return ModelRouter().role_for_intent(plan.intent, plan.agent)
+
     def _avatar_state(self, state: str, text: str = "") -> None:
         if self.avatar is not None:
             self.avatar.publish(state, text)
@@ -210,6 +219,11 @@ class JenefarOrchestrator:
             "task": task,
             "agent": result.agent,
             "response_language": response_language,
+            "task_plan_text": self.planner.task_planner.build(
+                task,
+                self.planner.plan(task).intent,
+                result.agent,
+            ).prompt_text(),
             "remaining": {str(item["pending_id"]) for item in pending_tools},
             "results": [],
         }
@@ -247,7 +261,10 @@ class JenefarOrchestrator:
             self.state = JenefarState.SLEEPING
             return raw_result
 
-        continue_kwargs = {}
+        continue_kwargs = {
+            "continue_tools": bool(getattr(agent, "use_tools", False)),
+            "task_plan_text": str(workflow.get("task_plan_text") or ""),
+        }
         if workflow.get("response_language"):
             continue_kwargs["response_language"] = workflow["response_language"]
         final_result = agent.continue_after_tools(
@@ -255,6 +272,23 @@ class JenefarOrchestrator:
             workflow["results"],
             **continue_kwargs,
         )
+        pending_tools = final_result.metadata.get("pending_tools", [])
+        if pending_tools:
+            workflow["remaining"] = {
+                str(item["pending_id"])
+                for item in pending_tools
+                if item.get("pending_id")
+            }
+            workflow["results"].append({
+                "tool": "continuation",
+                "result": final_result.content,
+            })
+            for item in pending_tools:
+                self.pending_approval_workflows[str(item["pending_id"])] = workflow
+            self.state = JenefarState.WAITING_APPROVAL
+            ids = ", ".join(sorted(workflow["remaining"]))
+            return final_result.content + (f" Remaining approval id(s): {ids}." if ids else "")
+
         output = self.verifier.verify(workflow["task"], final_result.content)
         self.session.add("assistant", output)
         self.memory.remember_message(self.session.session_id, "assistant", output)
