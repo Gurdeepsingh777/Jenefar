@@ -8,7 +8,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from jenefar.avatar.controller import AvatarController
-from jenefar.realtime.server import RealtimeSessionError, create_ephemeral_session
+from jenefar.realtime.server import (
+    RealtimeSessionError,
+    create_ephemeral_session,
+    invoke_realtime_tool,
+)
 
 
 ASSET_DIR = Path(__file__).with_name("web")
@@ -59,7 +63,11 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         self._send(200, asset[1], body)
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/realtime/session":
+        path = urlparse(self.path).path
+        if path == "/realtime/tool":
+            self._realtime_tool()
+            return
+        if path != "/realtime/session":
             self._send(404, "text/plain; charset=utf-8", b"Not found")
             return
         try:
@@ -75,6 +83,27 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             200,
             "application/json; charset=utf-8",
             json.dumps(result).encode("utf-8"),
+        )
+
+    def _realtime_tool(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            name = str(payload.get("name", ""))
+            arguments = payload.get("arguments") or {}
+            result = invoke_realtime_tool(name, arguments)
+        except Exception as exc:
+            self._send(
+                400,
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(exc)}).encode("utf-8"),
+            )
+            return
+
+        self._send(
+            200,
+            "application/json; charset=utf-8",
+            json.dumps({"result": json.loads(result)}).encode("utf-8"),
         )
 
     def _vrm(self) -> None:
