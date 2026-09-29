@@ -17,7 +17,9 @@ The core now includes:
 - Safe discovery of common Kali/Linux security tools
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Text runtime for immediate testing
-- Bounded and continuous microphone -> STT -> orchestrator -> TTS runtimes\n- Local real-time AI avatar UI with state-driven particle animation
+- Bounded and continuous microphone -> STT -> orchestrator -> TTS runtimes
+- Local particle avatar with optional Three.js/VRM rendering and expressions
+- Browser Realtime speech-to-speech transport using ephemeral client secrets
 - Persistent SQLite memory + FTS5 retrieval
 - URL and public GitHub research ingestion
 - Read-only URL/GitHub research tools for the model
@@ -66,15 +68,77 @@ python run.py --voice-continuous
 
 Continuous mode keeps the microphone open, uses local energy-based VAD to segment utterances, sends only detected utterances to STT, applies the same wake-word gate and orchestrator routing, then streams TTS back to the speakers. Tune the VAD with the `JENEFAR_VOICE_*` environment variables in `.env`.
 
-## Avatar mode
+## Avatar and realtime voice
 
-Launch Jenefar with the local particle avatar:
+Launch the avatar UI:
+
+```bash
+python run.py --avatar
+```
+
+Run continuous local VAD/STT/TTS with the avatar:
 
 ```bash
 python run.py --avatar --voice-continuous
 ```
 
-The browser UI receives real-time `listening`, `thinking`, `speaking`, `waiting_approval` and `idle` events from the Python runtime. The avatar uses a procedural particle field and expressive motion layer, so it works without a dedicated GPU avatar model. The state bridge is intentionally isolated so a future model-backed renderer can replace the procedural layer without changing the orchestrator.
+For the 3D path, put a licensed VRM model at a local path and set:
+
+```env
+JENEFAR_AVATAR_VRM_PATH=data/avatar.vrm
+```
+
+The browser loads the VRM with Three.js + `@pixiv/three-vrm` when the file is present and falls back to the procedural avatar when it is not. Runtime events drive expressions and mouth animation.
+
+For low-latency browser speech-to-speech, start `--avatar` and press **START REALTIME**. The server mints a short-lived Realtime client secret; the browser then establishes the WebRTC media session directly with OpenAI. The server never sends the long-lived API key to the browser.
+
+## Native wake word
+
+Install optional runtime integrations:
+
+```bash
+pip install -r requirements-optional.txt
+```
+
+Configure a custom openWakeWord model:
+
+```env
+JENEFAR_WAKEWORD_MODEL_PATH=/path/to/your/jenefar_wakeword.tflite
+JENEFAR_WAKEWORD_THRESHOLD=0.55
+```
+
+With a model configured, continuous voice detection performs local wake-word inference before sending an utterance to STT. Without a configured model, Jenefar keeps its transcript-based wake-word fallback.
+
+## Desktop automation and robotics
+
+Desktop primitives and robotics serial commands are approval-gated. Configure robotics hardware with:
+
+```env
+JENEFAR_ROBOT_SERIAL_PORT=/dev/ttyUSB0
+JENEFAR_ROBOT_BAUDRATE=115200
+```
+
+Jenefar exposes read-only screen/serial discovery plus confirmed click, typing, keyboard, screenshot and bounded robot commands.
+
+## Security execution profiles
+
+Authorized security execution is still deny-by-default. The constrained profiles now include `nmap`, `whatweb` and `nikto`; each target must pass `authorized_targets` and each execution requires confirmation.
+
+## Knowledge graph and evaluation
+
+Search learned relations:
+
+```bash
+python run.py --graph-search Jenefar
+```
+
+View recent runtime evaluation signals:
+
+```bash
+python run.py --evaluation-report
+```
+
+The evaluation loop records quality signals but does not autonomously rewrite code or weaken security policy.
 
 ## External research and RAG
 
