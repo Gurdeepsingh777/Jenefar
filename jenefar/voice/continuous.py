@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from jenefar.voice.wakeword_engine import WakeWordEngine
+
 
 @dataclass(frozen=True)
 class VoiceConfig:
@@ -49,6 +51,8 @@ class ContinuousVoiceRuntime:
         self._speaking = False
         self._buffers: list[np.ndarray] = []
         self._silence_started: float | None = None
+        self._wakeword = WakeWordEngine.from_environment()
+        self._wake_triggered = not self._wakeword.available
 
     @staticmethod
     def _rms(chunk: np.ndarray) -> float:
@@ -81,6 +85,17 @@ class ContinuousVoiceRuntime:
     def _consume_block(self, chunk: np.ndarray) -> bytes | None:
         now = time.monotonic()
         rms = self._rms(chunk)
+
+        if not self._wake_triggered:
+            detected, _score = self._wakeword.process(
+                chunk,
+                sample_rate=self.config.sample_rate,
+            )
+            if not detected:
+                return None
+            self._wake_triggered = True
+            if self.avatar is not None:
+                self.avatar.publish("listening", "Wake word detected", level=0.12)
         started = self._speaking
 
         if not self._speaking:
@@ -108,6 +123,8 @@ class ContinuousVoiceRuntime:
         if silence_elapsed * 1000 >= self.config.silence_ms or elapsed >= self.config.max_utterance_seconds:
             pcm = np.concatenate(self._buffers).astype(np.int16).tobytes()
             self._reset_utterance()
+            if self._wakeword.available:
+                self._wake_triggered = False
             return pcm
 
         # Keep the local variable useful for debugging and future metrics.
