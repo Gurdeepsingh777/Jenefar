@@ -58,9 +58,15 @@ def doctor() -> int:
 
     try:
         from jenefar.core.config import load_config
+        from jenefar.offline.connectivity import internet_available
+        from jenefar.offline.local_llm import LocalLLMClient
         config = load_config()
+        online = internet_available()
+        local_model = LocalLLMClient().detect()
         print(f"  config       OK ({config.name})")
         print(f"  api key      {'SET' if __import__('os').getenv('OPENAI_API_KEY') else 'NOT SET'}")
+        print(f"  internet     {'ONLINE' if online else 'OFFLINE'}")
+        print(f"  local model  {'OK (' + local_model.model + ')' if local_model else 'NOT DETECTED'}")
     except Exception as exc:
         print(f"  config       ERROR ({type(exc).__name__}: {exc})")
         failed = True
