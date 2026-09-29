@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 GITHUB_API = "https://api.github.com"
 DEFAULT_TIMEOUT = 20
 DEFAULT_MAX_BYTES = 2_000_000
+GITHUB_MAX_FILE_BYTES = 900_000
 TEXT_EXTENSIONS = {
     ".md", ".txt", ".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".c", ".h",
     ".cpp", ".hpp", ".go", ".rs", ".rb", ".php", ".sh", ".bash", ".yaml",
