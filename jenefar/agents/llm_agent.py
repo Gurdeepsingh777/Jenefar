@@ -14,6 +14,18 @@ class BaseLLMAgent(BaseAgent):
         self.llm = LLMClient()
         self.tool_broker = tool_broker
 
+    @staticmethod
+    def _language_instruction(response_language: str | None) -> str:
+        if str(response_language or "").lower() != "hinglish":
+            return ""
+        return (
+            "\nResponse language preference: Hinglish. "
+            "Reply naturally in a Hindi-English mix using Roman Hindi, "
+            "while keeping technical names, commands, code, filenames, APIs, "
+            "and standard English terminology unchanged. "
+            "Do not translate code or command syntax."
+        )
+
     def run(self, context: AgentContext) -> AgentResult:
         history = context.metadata.get("history", [])
         history_text = ""
@@ -39,9 +51,12 @@ class BaseLLMAgent(BaseAgent):
                 for item in graph[:8]
             )
 
+        instructions = self.system_prompt + self._language_instruction(
+            context.metadata.get("response_language")
+        )
         response = self.llm.complete(
             f"Task:\n{context.task}{history_text}{memory_text}{graph_text}",
-            instructions=self.system_prompt,
+            instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
             allow_action_tools=self.allow_action_tools,
@@ -60,11 +75,13 @@ class BaseLLMAgent(BaseAgent):
         self,
         task: str,
         tool_results: list[dict[str, object]],
+        response_language: str | None = None,
     ) -> AgentResult:
         result_text = "\n\n".join(
             f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
             for item in tool_results
         )
+        instructions = self.system_prompt + self._language_instruction(response_language)
         response = self.llm.complete(
             (
                 "Original user task:\n"
@@ -74,7 +91,7 @@ class BaseLLMAgent(BaseAgent):
                 "Do not claim any tool action that is not represented in these results.\n\n"
                 f"{result_text}"
             ),
-            instructions=self.system_prompt,
+            instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=None,
             allow_action_tools=False,
