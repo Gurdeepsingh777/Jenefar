@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from jenefar.core.model_router import ModelRouter
 from jenefar.offline.connectivity import internet_available
 from jenefar.offline.local_llm import LocalLLMClient
 
@@ -15,18 +16,29 @@ class LLMResponse:
     provider: str = "local"
     response_id: str | None = None
     pending_tools: list[dict[str, str]] = field(default_factory=list)
+    model: str | None = None
+    model_role: str | None = None
 
 
 class LLMClient:
-    """Online-first LLM boundary with automatic local-model fallback."""
+    """Online-first LLM boundary with role-aware model routing and local fallback."""
 
-    def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
+    def __init__(self, model: str | None = None, model_role: str | None = None):
+        self.explicit_model = model
+        self.default_role = model_role or "fast"
+        selected = ModelRouter().resolve(self.default_role, explicit_model=model)
+        self.model = selected.model
+        self.model_role = selected.role
         self._client = None
-        self.local = LocalLLMClient()
+        self.local = LocalLLMClient(model_role=self.default_role)
 
     def available(self) -> bool:
         return bool(os.getenv("OPENAI_API_KEY"))
+
+    def selected_model(self, model_role: str | None = None) -> tuple[str, str]:
+        role = (model_role or self.default_role or "fast").strip().lower()
+        selected = ModelRouter().resolve(role, explicit_model=self.explicit_model)
+        return selected.model, selected.role
 
     def _client_or_raise(self):
         if not self.available():
@@ -35,10 +47,6 @@ class LLMClient:
             from openai import OpenAI
             self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         return self._client
-
-    @staticmethod
-    def _tool_names(tools: list[dict[str, Any]]) -> list[str]:
-        return [str(item.get("name", "")) for item in tools]
 
     def _complete_online(
         self,
@@ -49,6 +57,8 @@ class LLMClient:
         tool_broker=None,
         allow_action_tools: bool,
         max_tool_rounds: int,
+        model: str,
+        model_role: str,
     ) -> LLMResponse:
         client = self._client_or_raise()
         tools: list[dict[str, Any]] = []
@@ -60,9 +70,9 @@ class LLMClient:
         request_input: Any = prompt
         last_response = None
 
-        for _ in range(max_tool_rounds):
+        for _ in range(max(1, min(max_tool_rounds, 20))):
             kwargs: dict[str, Any] = {
-                "model": self.model,
+                "model": model,
                 "instructions": instructions,
                 "input": request_input,
                 "store": False,
@@ -74,7 +84,8 @@ class LLMClient:
             last_response = response
 
             calls = [
-                item for item in (getattr(response, "output", []) or [])
+                item
+                for item in (getattr(response, "output", []) or [])
                 if getattr(item, "type", None) == "function_call"
             ]
 
@@ -83,6 +94,8 @@ class LLMClient:
                     text=response.output_text or "The model returned no text.",
                     provider="openai",
                     response_id=getattr(response, "id", None),
+                    model=model,
+                    model_role=model_role,
                 )
 
             if tool_broker is None:
@@ -90,6 +103,8 @@ class LLMClient:
                     "The model requested a tool, but no tool broker is configured.",
                     "tool_error",
                     getattr(response, "id", None),
+                    model=model,
+                    model_role=model_role,
                 )
 
             next_input = list(getattr(response, "output", []) or [])
@@ -132,6 +147,8 @@ class LLMClient:
                     "approval_required",
                     getattr(response, "id", None),
                     pending_tools=pending_tools,
+                    model=model,
+                    model_role=model_role,
                 )
 
             request_input = next_input
@@ -140,6 +157,8 @@ class LLMClient:
             "The tool loop reached its safety limit without producing a final response.",
             "tool_limit",
             getattr(last_response, "id", None) if last_response else None,
+            model=model,
+            model_role=model_role,
         )
 
     def _complete_local(
@@ -150,6 +169,7 @@ class LLMClient:
         tool_broker=None,
         allow_action_tools: bool,
         max_tool_rounds: int,
+        model_role: str,
     ) -> LLMResponse:
         tools = (
             tool_broker.schemas(
@@ -165,14 +185,22 @@ class LLMClient:
             tools=tools,
             tool_broker=tool_broker,
             max_tool_rounds=max_tool_rounds,
+            model_role=model_role,
         )
         if pending:
             return LLMResponse(
                 text,
                 "local_approval_required",
                 pending_tools=pending,
+                model=self.local.model,
+                model_role=model_role,
             )
-        return LLMResponse(text, "local")
+        return LLMResponse(
+            text,
+            "local",
+            model=self.local.model,
+            model_role=model_role,
+        )
 
     def complete(
         self,
@@ -183,9 +211,11 @@ class LLMClient:
         tool_broker=None,
         allow_action_tools: bool = False,
         max_tool_rounds: int = 4,
+        model_role: str | None = None,
     ) -> LLMResponse:
         online = internet_available()
         api_key = self.available()
+        selected_model, selected_role = self.selected_model(model_role)
 
         if api_key and online:
             try:
@@ -196,11 +226,11 @@ class LLMClient:
                     tool_broker=tool_broker,
                     allow_action_tools=allow_action_tools,
                     max_tool_rounds=max_tool_rounds,
+                    model=selected_model,
+                    model_role=selected_role,
                 )
             except Exception as exc:
                 online_error = f"{type(exc).__name__}: {exc}"
-            else:
-                online_error = ""
         else:
             online_error = (
                 "internet unavailable"
@@ -213,7 +243,8 @@ class LLMClient:
                 prompt,
                 instructions=(
                     instructions
-                    + "\\nYou are operating in local/offline mode. "
+                    + "
+You are operating in local/offline mode. "
                     "Do not claim internet access or successful remote actions. "
                     "When an online-only task is requested, clearly list the blocked "
                     "online capability and continue with any local part that is possible."
@@ -221,13 +252,8 @@ class LLMClient:
                 tool_broker=tool_broker,
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds,
+                model_role=selected_role,
             )
-            if fallback.provider == "local":
-                fallback.text = (
-                    f"{fallback.text}"
-                    if not online_error
-                    else f"{fallback.text}"
-                )
             return fallback
         except Exception as exc:
             if online_error:
@@ -237,4 +263,9 @@ class LLMClient:
                 )
             else:
                 message = f"Local model unavailable ({type(exc).__name__}: {exc})."
-            return LLMResponse(message, "offline_unavailable")
+            return LLMResponse(
+                message,
+                "offline_unavailable",
+                model=selected_model,
+                model_role=selected_role,
+            )
