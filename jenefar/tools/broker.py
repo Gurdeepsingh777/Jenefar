@@ -45,6 +45,7 @@ class ToolBroker:
         require_confirmation: bool = True,
         audit: AuditLogger | None = None,
         scope: ScopePolicy | None = None,
+        skills: SkillManager | None = None,
     ):
         self.registry = ToolRegistry()
         self.terminal = TerminalTool()
@@ -55,7 +56,7 @@ class ToolBroker:
         self.ros2_robot = Ros2RobotController()
         self.workspace = WorkspaceService()
         self.capabilities = CapabilityStore()
-        self.skills = SkillManager()
+        self.skills = skills or SkillManager()
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
