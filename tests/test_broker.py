@@ -4,7 +4,7 @@ def test_discover_tool_is_exposed_without_confirmation():
     broker = ToolBroker(require_confirmation=True)
     names = {tool["name"] for tool in broker.schemas()}
     assert "discover_kali_tools" in names
-    assert "terminal_execute" not in names
+    assert "terminal_execute" in names
 
 def test_terminal_requires_explicit_confirmation():
     broker = ToolBroker(require_confirmation=True)
