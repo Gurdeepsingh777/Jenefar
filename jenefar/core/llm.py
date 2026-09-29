@@ -243,8 +243,7 @@ class LLMClient:
                 prompt,
                 instructions=(
                     instructions
-                    + "
-You are operating in local/offline mode. "
+                    + "\nYou are operating in local/offline mode. "
                     "Do not claim internet access or successful remote actions. "
                     "When an online-only task is requested, clearly list the blocked "
                     "online capability and continue with any local part that is possible."
