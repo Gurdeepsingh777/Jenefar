@@ -346,6 +346,7 @@ class ToolBroker:
             },
             handler=lambda args: self._desktop_observe(str(args["query"]), bool(args.get("save", False))),
             requires_confirmation=True,
+            action=True,
         ))
         self.registry.register(ToolSpec(
             name="desktop_find_element",
@@ -357,6 +358,8 @@ class ToolBroker:
                 "additionalProperties": False,
             },
             handler=lambda args: self.screen_vision.locate(str(args["query"])),
+            requires_confirmation=True,
+            action=True,
         ))
         self.registry.register(ToolSpec(
             name="desktop_click_element",
