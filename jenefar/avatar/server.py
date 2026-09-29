@@ -89,7 +89,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"Not found")
             return
         try:
-            result = create_ephemeral_session()
+            result = create_ephemeral_session(self.tool_broker)
         except RealtimeSessionError as exc:
             self._send(
                 503,
