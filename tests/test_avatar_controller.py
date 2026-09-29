@@ -7,11 +7,13 @@ def test_avatar_controller_publishes_current_state():
 
     initial = subscriber.get_nowait()
     assert initial["state"] == "idle"
+    assert initial["level"] == 0.0
 
-    controller.publish("thinking", "Processing…")
+    controller.publish("thinking", "Processing…", level=0.4)
     event = subscriber.get_nowait()
     assert event["state"] == "thinking"
     assert event["text"] == "Processing…"
+    assert event["level"] == 0.4
 
 
 def test_avatar_unsubscribe():
