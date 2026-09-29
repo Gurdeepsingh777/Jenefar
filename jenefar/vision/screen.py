@@ -46,7 +46,11 @@ class ScreenVision:
         confidence_threshold: float | None = None,
     ) -> None:
         self.desktop = desktop
-        self.max_dimension = max(640, min(int(max_dimension), 2560))
+        configured_dimension = os.getenv("JENEFAR_VISION_MAX_DIMENSION", "").strip()
+        self.max_dimension = max(
+            640,
+            min(int(configured_dimension or max_dimension), 2560),
+        )
         env_threshold = os.getenv("JENEFAR_VISION_CONFIDENCE", "").strip()
         self.confidence_threshold = (
             float(confidence_threshold)
@@ -175,9 +179,10 @@ class ScreenVision:
     ) -> list[ScreenElement]:
         from openai import OpenAI
 
-        model = os.getenv("JENEFAR_VISION_MODEL", "").strip() or os.getenv(
-            "OPENAI_MODEL",
-            "gpt-5.6-luna",
+        model = (
+            os.getenv("JENEFAR_VISION_MODEL", "").strip()
+            or os.getenv("JENEFAR_MODEL_VISION", "").strip()
+            or os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
         )
         prompt = (
             "Analyze this desktop screenshot for semantic UI control. "
