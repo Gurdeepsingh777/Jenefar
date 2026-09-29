@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from jenefar.workspace.policy import WorkspacePolicy
@@ -49,7 +50,7 @@ class WorkspaceService:
             raise FileNotFoundError(candidate)
         backup_dir = candidate.parent / ".jenefar-backups"
         backup_dir.mkdir(exist_ok=True)
-        backup = backup_dir / f"{candidate.name}.{os.getpid()}.bak"
+        backup = backup_dir / f"{candidate.name}.{os.getpid()}.{time.time_ns()}.bak"
         shutil.copy2(candidate, backup)
         return str(backup)
 
