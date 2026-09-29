@@ -60,6 +60,20 @@ class Planner:
         if "kali" in t or any(x in t for x in ("nmap", "hashcat", "metasploit", "burpsuite", "sqlmap")):
             return self._make_plan(text, "kali", "kali", confidence=0.96, reason="Kali/security-tool keyword match", needs_tool=True)
 
+        if any(x in t for x in (
+            "find on screen", "locate on screen", "click the", "click on",
+            "press the button", "find the button", "search box", "address bar",
+            "what is on my screen", "semantic gui", "semantic click",
+        )):
+            return self._make_plan(
+                text,
+                "semantic_gui",
+                "gui_vision",
+                confidence=0.97,
+                reason="semantic GUI/vision keyword match",
+                needs_tool=True,
+            )
+
         if any(x in t for x in ("youtube", "song", "mp3", "vlc", "browser", "music")):
             return self._make_plan(text, "media_automation", "automation", confidence=0.95, reason="browser/media automation keyword match", needs_tool=True)
 
