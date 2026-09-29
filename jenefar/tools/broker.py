@@ -51,10 +51,10 @@ class ToolBroker:
         self.ros2_robot = Ros2RobotController()
         self.workspace = WorkspaceService()
         self.capabilities = CapabilityStore()
-        self.kali = KaliToolManager(self.scope)
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
+        self.kali = KaliToolManager(self.scope)
         self.security = ScopedSecurityToolExecutor(self.scope)
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
