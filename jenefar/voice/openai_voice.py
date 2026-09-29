@@ -10,9 +10,10 @@ class OpenAIVoiceRuntime:
     text command path used by the normal orchestrator.
     """
 
-    def __init__(self, orchestrator, seconds: int = 8):
+    def __init__(self, orchestrator, seconds: int = 8, avatar=None):
         self.orchestrator = orchestrator
         self.seconds = seconds
+        self.avatar = avatar
 
     async def _listen(self) -> str:
         from openai import AsyncOpenAI
@@ -45,7 +46,9 @@ class OpenAIVoiceRuntime:
         print("[JENEFAR] Say 'Hi Jenefar' or 'Hello Jenefar' in the recording.")
         while True:
             try:
-                text = asyncio.run(self._listen())
+                if self.avatar is not None:
+                self.avatar.publish("listening", "Listening…")
+            text = asyncio.run(self._listen())
             except KeyboardInterrupt:
                 print("\n[JENEFAR] Voice mode stopped.")
                 return
@@ -72,7 +75,12 @@ class OpenAIVoiceRuntime:
 
             print(f"[USER/STT] {text}")
             print(f"[JENEFAR] {answer}")
+            if self.avatar is not None:
+                self.avatar.publish("speaking", answer)
             try:
                 asyncio.run(self._speak(answer))
             except Exception as exc:
                 print(f"[JENEFAR] TTS unavailable: {type(exc).__name__}: {exc}")
+            finally:
+                if self.avatar is not None:
+                    self.avatar.publish("idle", "")
