@@ -7,7 +7,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Jenefar modular multi-agent AI assistant"
     )
-    parser.add_argument("--voice", action="store_true", help="run microphone -> STT -> agent -> TTS mode")
+    parser.add_argument("--voice", action="store_true", help="run bounded microphone -> STT -> agent -> TTS mode")\n    parser.add_argument("--voice-continuous", action="store_true", help="run continuous microphone VAD -> STT -> agent -> TTS mode")
     parser.add_argument("--discover-tools", action="store_true", help="list detected Kali/Linux tools without executing them")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
@@ -189,6 +189,11 @@ def main() -> int:
         return 0
 
     from jenefar.core.orchestrator import JenefarOrchestrator
+
+    if args.voice_continuous:
+        from jenefar.voice.continuous import ContinuousVoiceRuntime
+        ContinuousVoiceRuntime(JenefarOrchestrator()).run()
+        return 0
 
     if args.voice:
         from jenefar.voice.openai_voice import OpenAIVoiceRuntime
