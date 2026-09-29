@@ -3,7 +3,9 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+
+from jenefar.avatar.expression import ExpressionEngine
 
 
 @dataclass(frozen=True)
@@ -11,6 +13,8 @@ class AvatarEvent:
     state: str
     text: str = ""
     level: float = 0.0
+    emotion: str = "neutral"
+    intensity: float = 0.0
     timestamp: float = 0.0
 
     def payload(self) -> dict[str, object]:
@@ -25,14 +29,18 @@ class AvatarController:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._subscribers: set[queue.Queue[dict[str, object]]] = set()
+        self._expressions = ExpressionEngine()
         self._current = AvatarEvent("idle").payload()
 
     def publish(self, state: str, text: str = "", level: float = 0.0) -> None:
         bounded_level = max(0.0, min(1.0, float(level)))
+        expression = self._expressions.classify(state, text)
         event = AvatarEvent(
             state=state,
             text=text,
             level=bounded_level,
+            emotion=expression.name,
+            intensity=expression.intensity,
             timestamp=time.time(),
         ).payload()
         with self._lock:
