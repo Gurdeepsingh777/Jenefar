@@ -28,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--github-max-files", type=int, default=40, help="Maximum GitHub files to index")
     parser.add_argument("--memory-search", metavar="QUERY", help="search persistent Jenefar memory/RAG index")
     parser.add_argument("--graph-search", metavar="QUERY", help="search persistent knowledge-graph relations")
+    parser.add_argument("--gui-smoke-test", action="store_true", help="run a safe headless semantic GUI smoke test without pyautogui/display/model")
+    parser.add_argument("--events-list", action="store_true", help="list persistent scheduled events and watchers")
+    parser.add_argument("--events-run", action="store_true", help="run the persistent scheduler loop; normal tool approvals remain active")
+    parser.add_argument("--events-poll-seconds", type=float, default=1.0, help="scheduler polling delay in seconds")
     parser.add_argument("--evaluation-report", action="store_true", help="show recent runtime evaluation records")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
@@ -219,6 +223,57 @@ def main() -> int:
             return 2
         from jenefar.voice.wakeword_trainer import train
         return train(args.wakeword_config, stage=args.wakeword_train)
+
+    if args.gui_smoke_test:
+        try:
+            from jenefar.automation.headless import HeadlessDesktopAutomation
+            from jenefar.vision.screen import ScreenVision
+
+            desktop = HeadlessDesktopAutomation()
+            vision = ScreenVision(desktop)
+            print("[JENEFAR] Safe headless GUI smoke test")
+            print(vision.analyze("find the search box"))
+            print(vision.locate_and_type("search box", "Jenefar AI"))
+            print(vision.locate_and_click("submit button"))
+            print(vision.analyze("verify submit"))
+            print("[JENEFAR] Headless GUI smoke test completed without host GUI access.")
+            return 0
+        except Exception as exc:
+            print(f"[JENEFAR] GUI smoke test error: {type(exc).__name__}: {exc}")
+            return 1
+
+    if args.events_list:
+        try:
+            from jenefar.events.engine import EventEngine
+            for item in EventEngine().list():
+                print(item)
+            return 0
+        except Exception as exc:
+            print(f"[JENEFAR] Event list error: {type(exc).__name__}: {exc}")
+            return 1
+
+    if args.events_run:
+        import time
+        from jenefar.core.orchestrator import JenefarOrchestrator
+
+        if args.events_poll_seconds <= 0:
+            print("[JENEFAR] --events-poll-seconds must be > 0")
+            return 2
+
+        orchestrator = JenefarOrchestrator()
+        print("[JENEFAR] Persistent event scheduler is running. Press Ctrl+C to stop.")
+        try:
+            while True:
+                results = orchestrator.events.run_due(
+                    orchestrator._handle_scheduled_event,
+                    max_jobs=10,
+                )
+                for item in results:
+                    print(f"[JENEFAR] Event: {item}")
+                time.sleep(args.events_poll_seconds)
+        except KeyboardInterrupt:
+            print("[JENEFAR] Scheduler stopped.")
+            return 0
 
     if args.evaluation_dashboard:
         import webbrowser
