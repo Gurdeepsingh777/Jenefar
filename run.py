@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--github-path", action="append", default=[], help="Restrict --index-github to this file/directory path; repeatable")
     parser.add_argument("--github-max-files", type=int, default=40, help="Maximum GitHub files to index")
     parser.add_argument("--memory-search", metavar="QUERY", help="search persistent Jenefar memory/RAG index")
+    parser.add_argument("--graph-search", metavar="QUERY", help="search persistent knowledge-graph relations")
+    parser.add_argument("--evaluation-report", action="store_true", help="show recent runtime evaluation records")
     return parser
 
 def doctor() -> int:
@@ -173,7 +175,20 @@ def main() -> int:
         args.index_url,
         args.index_github,
         args.memory_search,
+        args.graph_search,
     ]
+    if args.evaluation_report:
+        from jenefar.evaluation.loop import EvaluationLoop
+        for item in EvaluationLoop().recent():
+            print(item)
+        return 0
+
+    if args.graph_search:
+        from jenefar.memory.graph import KnowledgeGraph
+        for relation in KnowledgeGraph().search(args.graph_search):
+            print(f"{relation.subject} --{relation.predicate}--> {relation.object}")
+        return 0
+
     if any(value is not None for value in memory_values):
         if sum(value is not None for value in memory_values) != 1:
             print("[JENEFAR] Use only one memory/index option at a time.")
