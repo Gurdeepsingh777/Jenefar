@@ -31,8 +31,7 @@ class BaseLLMAgent(BaseAgent):
         if str(response_language or "").lower() != "hinglish":
             return ""
         return (
-            "
-Response language preference: Hinglish. "
+            "\nResponse language preference: Hinglish. "
             "Reply naturally in a Hindi-English mix using Roman Hindi, "
             "while keeping technical names, commands, code, filenames, APIs, "
             "and standard English terminology unchanged. "
@@ -43,10 +42,7 @@ Response language preference: Hinglish. "
         history = context.metadata.get("history", [])
         history_text = ""
         if history:
-            history_text = "
-Recent conversation:
-" + "
-".join(
+            history_text = "\nRecent conversation:\n" + "\n".join(
                 f"{m.get('role', 'user')}: {m.get('content', '')}"
                 for m in history[-8:]
             )
@@ -54,10 +50,7 @@ Recent conversation:
         retrieved = context.metadata.get("retrieved_memory", [])
         memory_text = ""
         if retrieved:
-            memory_text = "
-Relevant long-term memory:
-" + "
-".join(
+            memory_text = "\nRelevant long-term memory:\n" + "\n".join(
                 f"[{item.get('title', 'memory')}] {item.get('content', '')}"
                 for item in retrieved[:6]
             )
@@ -68,10 +61,7 @@ Relevant long-term memory:
         task_plan = context.metadata.get("task_plan", {})
         graph_text = ""
         if graph:
-            graph_text = "
-Relevant knowledge graph relations:
-" + "
-".join(
+            graph_text = "\nRelevant knowledge graph relations:\n" + "\n".join(
                 f"{item.get('subject')} --{item.get('predicate')}--> {item.get('object')}"
                 for item in graph[:8]
             )
@@ -80,27 +70,22 @@ Relevant knowledge graph relations:
             context.metadata.get("response_language")
         )
         if runtime_text:
-            instructions += f"
-Runtime status: {runtime_text.get('connectivity', 'unknown')}. Offline limitations: {runtime_text.get('offline_limitations', [])}"
+            instructions += (
+                f"\nRuntime status: {runtime_text.get('connectivity', 'unknown')}. "
+                f"Offline limitations: {runtime_text.get('offline_limitations', [])}"
+            )
         if capability_text:
-            instructions += "
-User-requested capability scope:
-" + "
-".join(
+            instructions += "\nUser-requested capability scope:\n" + "\n".join(
                 f"- {item.get('capability', '')}" for item in capability_text[-20:]
             )
         if task_plan:
             plan_text = str(task_plan.get("prompt_text") or "").strip()
             if plan_text:
-                instructions += "
-
-Hierarchical task plan:
-" + plan_text
+                instructions += "\n\nHierarchical task plan:\n" + plan_text
 
         role = str(context.metadata.get("model_role") or self.model_role)
         response = self.llm.complete(
-            f"Task:
-{context.task}{history_text}{memory_text}{graph_text}",
+            f"Task:\n{context.task}{history_text}{memory_text}{graph_text}",
             instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
@@ -129,37 +114,26 @@ Hierarchical task plan:
         continue_tools: bool = False,
         task_plan_text: str = "",
     ) -> AgentResult:
-        result_text = "
-
-".join(
-            f"Tool: {item.get('tool', 'unknown')}
-Result: {item.get('result', '')}"
+        result_text = "\n\n".join(
+            f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
             for item in tool_results
         )
         instructions = self.system_prompt + self._language_instruction(response_language)
         plan_section = (
-            f"
-
-Hierarchical task plan to continue:
-{task_plan_text}"
+            f"\n\nHierarchical task plan to continue:\n{task_plan_text}"
             if task_plan_text
             else ""
         )
         response = self.llm.complete(
             (
-                "Original user task:
-"
-                f"{task}{plan_section}
-
-"
+                "Original user task:\n"
+                f"{task}{plan_section}\n\n"
                 "Approved local tool results are available below. "
                 "Continue the task from these verified results. "
                 "Do not repeat completed tools unless needed. "
                 "When more work is required, use the available tools and continue "
                 "the bounded plan. Do not claim any tool action that is not represented "
-                "in the results.
-
-"
+                "in the results.\n\n"
                 f"{result_text}"
             ),
             instructions=instructions,
