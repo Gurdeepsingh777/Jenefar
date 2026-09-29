@@ -217,13 +217,24 @@ class ContinuousVoiceRuntime:
             return
 
         if self.orchestrator.state.name == "SLEEPING":
-            if not self.orchestrator.wakeword.detect(text):
+            matched_phrase = self.orchestrator.wakeword.matched_phrase(text)
+            if matched_phrase is None:
                 return
             command = self.orchestrator.wakeword.remove_wake_phrase(text)
+            response_language = (
+                "Hinglish" if matched_phrase == "hello jenefar" else None
+            )
             if not command:
-                reply = "Yes, I'm listening."
+                reply = (
+                    "Haan, boliye. Main sun rahi hoon."
+                    if response_language == "Hinglish"
+                    else "Yes, I'm listening."
+                )
             else:
-                reply = self.orchestrator.handle(command)
+                reply = self.orchestrator.handle(
+                    command,
+                    response_language=response_language,
+                )
         else:
             reply = self.orchestrator.handle(text)
 
