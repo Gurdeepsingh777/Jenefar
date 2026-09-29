@@ -82,6 +82,18 @@ Run continuous local VAD/STT/TTS with the avatar:
 python run.py --avatar --voice-continuous
 ```
 
+Native desktop shell:
+
+```bash
+python run.py --desktop
+```
+
+Direct realtime mode:
+
+```bash
+python run.py --realtime
+```
+
 For the 3D path, put a licensed VRM model at a local path and set:
 
 ```env
@@ -91,6 +103,10 @@ JENEFAR_AVATAR_VRM_PATH=data/avatar.vrm
 The browser loads the VRM with Three.js + `@pixiv/three-vrm` when the file is present and falls back to the procedural avatar when it is not. Runtime events drive expressions and mouth animation.
 
 For low-latency browser speech-to-speech, start `--avatar` and press **START REALTIME**. The server mints a short-lived Realtime client secret; the browser then establishes the WebRTC media session directly with OpenAI. The server never sends the long-lived API key to the browser.
+
+## Production desktop shell and settings
+
+The local avatar server exposes non-secret UI settings and an evaluation dashboard. The optional `pywebview` shell wraps the same UI in a native desktop window. The settings store allowlists only UI preferences; API keys are never written to it.
 
 ## Native wake word
 
@@ -109,6 +125,15 @@ JENEFAR_WAKEWORD_THRESHOLD=0.55
 
 With a model configured, continuous voice detection performs local wake-word inference before sending an utterance to STT. Without a configured model, Jenefar keeps its transcript-based wake-word fallback.
 
+Prepare a reproducible custom wake-word training config:
+
+```bash
+python run.py --wakeword-prepare "Hi Jenefar"
+python run.py --wakeword-train all --wakeword-config data/wakeword/jenefar.yaml
+```
+
+The trainer wraps the upstream openWakeWord training entry point. Training still requires the local Piper sample generator, room-impulse responses, background clips and feature datasets; the upstream example documents those configuration inputs and its large-sample training workflow. citeturn100035search0turn100035search1
+
 ## Desktop automation and robotics
 
 Desktop primitives and robotics serial commands are approval-gated. Configure robotics hardware with:
@@ -119,6 +144,8 @@ JENEFAR_ROBOT_BAUDRATE=115200
 ```
 
 Jenefar exposes read-only screen/serial discovery plus confirmed click, typing, keyboard, screenshot and bounded robot commands.
+
+Optional robotics adapters are also available for MQTT and ROS2. They are loaded only when invoked.
 
 ## Security execution profiles
 
@@ -136,6 +163,7 @@ View recent runtime evaluation signals:
 
 ```bash
 python run.py --evaluation-report
+python run.py --evaluation-dashboard
 ```
 
 The evaluation loop records quality signals but does not autonomously rewrite code or weaken security policy.
