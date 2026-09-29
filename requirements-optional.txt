@@ -11,3 +11,5 @@ audiomentations>=0.37.0
 espeak-phonemizer>=1.0.0
 torch>=2.0
 webrtcvad>=2.0.10
+shazamio>=0.8.1
+yt-dlp>=2025.1.1
