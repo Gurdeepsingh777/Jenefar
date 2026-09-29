@@ -10,6 +10,12 @@ runtime:
   require_confirmation_for_tools: true
   command_timeout_seconds: 30
 
+security:
+  # Keep empty until you explicitly configure assets you are authorized to test.
+  # Supports exact host/IP values and IPv4/IPv6 CIDRs.
+  authorized_targets: []
+  audit_log_path: "data/audit.jsonl"
+
 agents:
   master: true
   coding: true
