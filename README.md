@@ -94,10 +94,18 @@ Direct realtime mode:
 python run.py --realtime
 ```
 
-For the 3D path, put a licensed VRM model at a local path and set:
+The repository includes a safe first-run asset provisioner for a redistributable sample avatar. Run:
+
+```bash
+python run.py --setup-assets avatar
+```
+
+This downloads the VRM Consortium sample `AvatarSample_A_1.0.vrm.glb` from the pinned upstream commit, records provenance in `data/avatar/AVATAR_LICENSE.txt`, and the avatar server auto-detects it. The source project documents redistribution permission for this fixture and attributes it to pixiv VRoid Project.
+
+For your own VRM, set:
 
 ```env
-JENEFAR_AVATAR_VRM_PATH=data/avatar.vrm
+JENEFAR_AVATAR_VRM_PATH=/absolute/path/to/your/avatar.vrm
 ```
 
 The browser loads the VRM with Three.js + `@pixiv/three-vrm` when the file is present and falls back to the procedural avatar when it is not. Runtime events drive expressions and mouth animation.
@@ -125,14 +133,30 @@ JENEFAR_WAKEWORD_THRESHOLD=0.55
 
 With a model configured, continuous voice detection performs local wake-word inference before sending an utterance to STT. Without a configured model, Jenefar keeps its transcript-based wake-word fallback.
 
-Prepare a reproducible custom wake-word training config:
+Provision the real training resources from pinned, license-documented sources:
 
 ```bash
+pip install -r requirements-optional.txt
+python run.py --setup-assets wakeword
 python run.py --wakeword-prepare "Hi Jenefar"
+python run.py --wakeword-prepare-validation --wakeword-validation-hours 11.3
 python run.py --wakeword-train all --wakeword-config data/wakeword/jenefar.yaml
 ```
 
-The trainer wraps the upstream openWakeWord training entry point. Training still requires the local Piper sample generator, room-impulse responses, background clips and feature datasets; the upstream example documents those configuration inputs and its large-sample training workflow. citeturn100035search0turn100035search1
+The safe profile downloads:
+- the openWakeWord-compatible `dscripka/piper-sample-generator` fork plus its LibriTTS generator model
+- OpenSLR SLR26 simulated RIRs (Apache-2.0)
+- OpenSLR SLR12 LibriSpeech dev-clean/dev-other (CC BY 4.0) for real speech/background and validation material
+
+For a larger room/noise pool, use:
+
+```bash
+python run.py --setup-assets wakeword --wakeword-asset-profile rich
+```
+
+The rich profile also downloads OpenSLR SLR28, whose RIR/noise database is Apache-2.0. Jenefar deliberately does not use the public openWakeWord ACAV100M feature file by default because that dataset is distributed under CC-BY-NC-SA-4.0.
+
+The validation-preparation step creates the `validation_set_features.npy` required by the current openWakeWord training entry point. It uses the downloaded LibriSpeech audio and deterministic noise only as a remainder when the requested validation window is not completely filled. The actual `Hi Jenefar` model is trained locally on your machine and is intentionally not committed to this public repository.
 
 ## Desktop automation and robotics
 
@@ -244,6 +268,7 @@ jenefar/
 ├── execution/     execution policy boundaries
 ├── memory/        SQLite/FTS5 persistent memory
 ├── research/      URL/GitHub ingestion and fetching
+├── assets/        pinned external asset provisioning and provenance
 └── critic/        result verification
 
 tests/              automated tests
@@ -283,10 +308,8 @@ Completed in the current runtime:
 - Approval-gated serial robotics primitives
 - Runtime evaluation and quality-signal logging
 
-Next major milestones:
-1. Native custom wake-word training/packaging for the exact “Hi Jenefar” phrase
-2. Full action-tool approval UX inside the Realtime data channel
-3. Production desktop app shell and persistent settings UI
-4. Expanded robotics adapters (MQTT/ROS2) and device telemetry
-5. Stronger semantic/embedding-backed knowledge graph retrieval
-6. Automated evaluation suites and regression dashboards
+Current finalization items:
+1. Download and train the exact “Hi Jenefar” wake-word model locally using the provisioned resources
+2. Supply a production VRM chosen by you, or continue with the verified sample avatar
+3. Run live microphone, Realtime WebRTC, desktop automation and robot hardware smoke tests on the target machine
+4. Tune wake-word threshold and false-positive/false-reject metrics against your actual room and microphone
