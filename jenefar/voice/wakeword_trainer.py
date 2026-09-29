@@ -42,6 +42,11 @@ def prepare_config(
         "rir_paths": [rir_path],
         "background_paths": [background_path],
         "background_paths_duplication_rate": [1],
+        "false_positive_validation_data_path": "./validation_set_features.npy",
+        "augmentation_rounds": 1,
+        "feature_data_files": {
+            "ACAV100M_sample": "./openwakeword_features_ACAV100M_2000_hrs_16bit.npy",
+        },
         "batch_n_per_class": {
             "ACAV100M_sample": 1024,
             "adversarial_negative": 50,
@@ -52,7 +57,6 @@ def prepare_config(
         "steps": int(steps),
         "max_negative_weight": 1500,
         "target_false_positives_per_hour": 0.2,
-        "total_length": 32000,
     }
     path = root / f"{model_name}.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
