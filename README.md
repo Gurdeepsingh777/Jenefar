@@ -189,7 +189,7 @@ python run.py --wakeword-prepare-validation --wakeword-validation-hours 11.3
 python run.py --wakeword-train all --wakeword-config data/wakeword/jenefar.yaml
 ```
 
-S­afe profile me Jenefar ye resources arrange karta hai:
+Safe profile me Jenefar ye resources arrange karta hai:
 - `dscripka/piper-sample-generator` aur uska LibriTTS generator model
 - OpenSLR SLR26 simulated RIRs
 - OpenSLR SLR12 LibriSpeech dev-clean/dev-other speech material
@@ -318,7 +318,7 @@ Read-only change plan generate karne ke liye:
 python run.py --plan-github "owner/repository" --plan-task "add authentication tests"
 ```
 
-Re­pository engineering agent bhi same analysis internal tool broker ke through kar sakta hai.
+Repository engineering agent bhi same analysis internal tool broker ke through kar sakta hai.
 
 Ye remote repository me code write nahi karta aur remote code execute nahi karta.
 
