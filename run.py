@@ -12,9 +12,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
     parser.add_argument("--index-dir", metavar="PATH", help="index supported text/code files under a directory")
+    parser.add_argument("--index-document", metavar="PATH", help="extract PDF/DOCX/text content and index it")
     parser.add_argument("--index-url", metavar="URL", help="fetch one HTTP(S) page/API response and index it")
     parser.add_argument("--index-github", metavar="OWNER/REPO", help="fetch a public GitHub repository and index supported text/code files")
-    parser.add_argument("--github-ref", default="main", help="GitHub branch/tag/commit for --index-github")
+    parser.add_argument("--analyze-github", metavar="OWNER/REPO", help="summarize a public GitHub repository without executing code")
+    parser.add_argument("--plan-github", metavar="OWNER/REPO", help="create a read-only repository change plan")
+    parser.add_argument("--plan-task", help="task description used with --plan-github")
+    parser.add_argument("--github-ref", default="main", help="GitHub branch/tag/commit")
     parser.add_argument("--github-path", action="append", default=[], help="Restrict --index-github to this file/directory path; repeatable")
     parser.add_argument("--github-max-files", type=int, default=40, help="Maximum GitHub files to index")
     parser.add_argument("--memory-search", metavar="QUERY", help="search persistent Jenefar memory/RAG index")
@@ -27,6 +31,8 @@ def doctor() -> int:
         "dotenv": "dotenv",
         "openai": "openai",
         "sounddevice": "sounddevice",
+        "pypdf": "pypdf",
+        "docx": "docx",
     }
     failed = False
     for label, module in checks.items():
@@ -49,6 +55,42 @@ def doctor() -> int:
     print("[JENEFAR] Doctor checks passed.")
     return 0
 
+def github_command(args: argparse.Namespace) -> int:
+    from jenefar.coding.repository import RepositoryAnalyzer
+
+    analyzer = RepositoryAnalyzer()
+
+    if args.analyze_github:
+        summary = analyzer.summarize(args.analyze_github, ref=args.github_ref)
+        print(f"Repository: {summary.repository}@{summary.ref}")
+        print(f"Default branch: {summary.default_branch}")
+        print(f"Files: {len(summary.files)}")
+        print(f"Languages: {summary.languages}")
+        print(f"Tests: {'yes' if summary.has_tests else 'no'}")
+        print(f"README: {'yes' if summary.has_readme else 'no'}")
+        print(f"Entrypoints: {summary.entrypoints}")
+        for item in summary.files[:50]:
+            print(f"{item.category:12} {item.language:12} {item.size:8} {item.path}")
+        return 0
+
+    if not args.plan_task:
+        print("[JENEFAR] --plan-github requires --plan-task")
+        return 2
+
+    plan = analyzer.plan_change(args.plan_github, args.plan_task, ref=args.github_ref)
+    print(f"Repository: {plan.repository}")
+    print(f"Task: {plan.task}")
+    print("Likely files:")
+    for path in plan.likely_files:
+        print(f"  - {path}")
+    print("Checks:")
+    for check in plan.checks:
+        print(f"  - {check}")
+    print("Risks:")
+    for risk in plan.risks:
+        print(f"  - {risk}")
+    return 0
+
 def memory_command(args: argparse.Namespace) -> int:
     from jenefar.memory.ingest import ingest_directory, ingest_file
     from jenefar.memory.store import MemoryStore
@@ -64,6 +106,12 @@ def memory_command(args: argparse.Namespace) -> int:
     if args.index_dir:
         added = ingest_directory(args.index_dir, store)
         print(f"[JENEFAR] Indexed {added} chunk(s) from {args.index_dir}")
+        return 0
+
+    if args.index_document:
+        from jenefar.docs.ingest import ingest_document
+        added = ingest_document(args.index_document, store)
+        print(f"[JENEFAR] Indexed {added} chunk(s) from {args.index_document}")
         return 0
 
     if args.index_url:
@@ -104,8 +152,24 @@ def main() -> int:
     if args.doctor:
         return doctor()
 
+    if args.analyze_github and args.plan_github:
+        print("[JENEFAR] Use only one GitHub analysis option at a time.")
+        return 2
+
+    if args.analyze_github or args.plan_github:
+        try:
+            return github_command(args)
+        except Exception as exc:
+            print(f"[JENEFAR] GitHub analysis error: {type(exc).__name__}: {exc}")
+            return 1
+
     memory_values = [
-        args.index_file, args.index_dir, args.index_url, args.index_github, args.memory_search
+        args.index_file,
+        args.index_dir,
+        args.index_document,
+        args.index_url,
+        args.index_github,
+        args.memory_search,
     ]
     if any(value is not None for value in memory_values):
         if sum(value is not None for value in memory_values) != 1:
