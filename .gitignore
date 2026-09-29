@@ -16,3 +16,8 @@ data/memory/*
 !data/logs/.gitkeep
 !data/sessions/.gitkeep
 !data/memory/.gitkeep
+
+# Runtime memory/audit database
+data/*.db
+data/*.db-*
+data/*.jsonl
