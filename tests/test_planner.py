@@ -13,6 +13,6 @@ def test_planner_routes_python_requests():
 
 
 def test_planner_falls_back_to_research():
-    plan = Planner().plan("what is the history of robotics?")
+    plan = Planner().plan("what is the history of computers?")
     assert plan.agent == "research"
     assert plan.confidence < 0.6
