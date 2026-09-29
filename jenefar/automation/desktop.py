@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import io
 import os
 from pathlib import Path
 
 
 class DesktopAutomation:
-    """Explicit, approval-gated desktop primitives."""
+    """Desktop primitives plus screenshot frames for semantic vision control."""
 
     SAFE_KEYS = {
         "enter", "esc", "tab", "space", "backspace", "delete",
         "left", "right", "up", "down", "home", "end",
         "ctrl", "shift", "alt", "win",
         *{f"f{i}" for i in range(1, 13)},
+    }
+    SAFE_HOTKEY_KEYS = SAFE_KEYS | {
+        "a", "c", "v", "x", "z", "y", "w", "t", "l", "r", "s", "f"
     }
 
     def __init__(self, screenshot_dir: str | os.PathLike[str] = "data/screenshots"):
@@ -33,11 +37,49 @@ class DesktopAutomation:
         size = self._pyautogui().size()
         return {"width": int(size.width), "height": int(size.height)}
 
+    def capture_frame(self, *, max_dimension: int = 1600, save: bool = False):
+        from jenefar.vision.screen import ScreenFrame
+
+        image = self._pyautogui().screenshot()
+        width, height = int(image.width), int(image.height)
+        max_dimension = max(640, min(int(max_dimension), 2560))
+        encoded = image
+        longest = max(width, height)
+        if longest > max_dimension:
+            scale = max_dimension / float(longest)
+            encoded = image.resize(
+                (
+                    max(1, int(round(width * scale))),
+                    max(1, int(round(height * scale))),
+                )
+            )
+
+        buffer = io.BytesIO()
+        encoded.save(buffer, format="PNG")
+
+        path = None
+        if save:
+            filename = self.screenshot_dir / "semantic_screen.png"
+            image.save(filename)
+            path = str(filename)
+
+        return ScreenFrame(
+            png_bytes=buffer.getvalue(),
+            width=width,
+            height=height,
+            encoded_width=int(encoded.width),
+            encoded_height=int(encoded.height),
+            path=path,
+        )
+
     def click(self, x: int, y: int, button: str = "left") -> dict[str, object]:
         if x < 0 or y < 0:
             raise ValueError("Coordinates must be non-negative.")
         if button not in {"left", "right", "middle"}:
             raise ValueError("Unsupported mouse button.")
+        size = self._pyautogui().size()
+        if x >= int(size.width) or y >= int(size.height):
+            raise ValueError("Click coordinates are outside the current screen.")
         self._pyautogui().click(x=int(x), y=int(y), button=button)
         return {"action": "click", "x": int(x), "y": int(y), "button": button}
 
@@ -53,6 +95,22 @@ class DesktopAutomation:
             raise ValueError(f"Unsupported key: {key}")
         self._pyautogui().press(key)
         return {"action": "press", "key": key}
+
+    def hotkey(self, keys: list[str]) -> dict[str, object]:
+        normalized = [str(key).strip().lower() for key in keys if str(key).strip()]
+        if not normalized or len(normalized) > 4:
+            raise ValueError("A hotkey must contain 1 to 4 keys.")
+        if any(key not in self.SAFE_HOTKEY_KEYS for key in normalized):
+            raise ValueError("Hotkey contains an unsupported key.")
+        self._pyautogui().hotkey(*normalized)
+        return {"action": "hotkey", "keys": normalized}
+
+    def scroll(self, clicks: int) -> dict[str, object]:
+        amount = max(-20, min(20, int(clicks)))
+        if amount == 0:
+            raise ValueError("Scroll amount cannot be zero.")
+        self._pyautogui().scroll(amount)
+        return {"action": "scroll", "clicks": amount}
 
     def screenshot(self, filename: str = "screen.png") -> dict[str, object]:
         clean = Path(filename).name
