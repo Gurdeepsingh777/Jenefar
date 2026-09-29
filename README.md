@@ -7,7 +7,7 @@ Jenefar is a modular, voice-first multi-agent AI assistant designed to grow into
 The core now includes:
 
 - Master orchestrator + deterministic planner + specialist router
-- Model-backed Python, cybersecurity, bug-bounty, robotics, and research agents
+- Model-backed Python, repository, cybersecurity, bug-bounty, robotics, and research agents
 - OpenAI Responses API adapter
 - Optional hosted web search for the research agent
 - Short-term session memory passed to specialists
@@ -21,6 +21,8 @@ The core now includes:
 - Persistent SQLite memory + FTS5 retrieval
 - URL and public GitHub research ingestion
 - Read-only URL/GitHub research tools for the model
+- GitHub repository architecture analysis and change planning
+- PDF/DOCX/text document extraction and RAG ingestion
 
 The LLM and voice integrations remain isolated behind adapters so providers can be changed later.
 
@@ -92,6 +94,38 @@ GitHub ingestion uses the public REST contents/tree APIs and only reads supporte
 ## Research/web search
 
 The research agent can enable the Responses API hosted `web_search` tool for current/source-sensitive queries. OpenAI documents `web_search` as the current Responses API web-search mechanism for new integrations.
+
+## Repository analysis
+
+Summarize a public repository without executing its code:
+
+```bash
+python run.py --analyze-github "owner/repository" --github-ref main
+```
+
+Create a read-only change plan:
+
+```bash
+python run.py --plan-github "owner/repository" --plan-task "add authentication tests"
+```
+
+The repository engineering agent can perform the same analysis through the internal tool broker. It does not write to or execute code from remote repositories.
+
+## Document ingestion
+
+PDF:
+
+```bash
+python run.py --index-document ./docs/manual.pdf
+```
+
+DOCX:
+
+```bash
+python run.py --index-document ./docs/specification.docx
+```
+
+The extracted text enters the same SQLite/FTS5 memory index used by conversation and web/GitHub research.
 
 ## Project layout
 
