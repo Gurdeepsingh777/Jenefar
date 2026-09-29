@@ -1,5 +1,9 @@
-class TextToSpeech:
-    """Interface for a text-to-speech provider."""
+from __future__ import annotations
+from typing import Protocol
 
+class TextToSpeech(Protocol):
+    def speak(self, text: str) -> None: ...
+
+class ConsoleTTS:
     def speak(self, text: str) -> None:
-        raise NotImplementedError
+        print(f"Jenefar > {text}")
