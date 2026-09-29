@@ -12,6 +12,8 @@ from jenefar.core.session import Session
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
+from jenefar.execution.audit import AuditLogger
+from jenefar.execution.scope import ScopePolicy
 from jenefar.voice.wakeword import WakeWord
 
 class JenefarOrchestrator:
@@ -20,8 +22,12 @@ class JenefarOrchestrator:
         self.state = JenefarState.SLEEPING
         self.session = Session()
         self.planner = Planner()
+        self.audit = AuditLogger(self.config.audit_log_path)
+        self.scope = ScopePolicy(self.config.authorized_targets)
         self.tool_broker = ToolBroker(
-            require_confirmation=self.config.require_confirmation_for_tools
+            require_confirmation=self.config.require_confirmation_for_tools,
+            audit=self.audit,
+            scope=self.scope,
         )
         self.router = AgentRouter([
             PythonAgent(tool_broker=self.tool_broker),
