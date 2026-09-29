@@ -25,3 +25,5 @@ agents:
   bugbounty: true
   robotics: true
   research: true
+  automation: true
+  gui_vision: true
