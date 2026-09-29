@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
 from jenefar.agents.coding.python import PythonAgent
 from jenefar.agents.coding.repository_agent import RepositoryAgent
@@ -42,6 +43,7 @@ class JenefarOrchestrator:
         ])
         self.verifier = Verifier()
         self.wakeword = WakeWord(self.config.wake_phrases)
+        self.pending_approval_workflows: dict[str, dict] = {}
 
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
@@ -64,9 +66,8 @@ class JenefarOrchestrator:
             if lowered.startswith("approve "):
                 pending_id = raw.split(maxsplit=1)[1].strip()
                 if pending_id:
-                    result = self.tool_broker.approve(pending_id)
+                    result = self._approve_pending(pending_id)
                     print(f"Jenefar > {result}")
-                    self.state = JenefarState.SLEEPING
                 continue
 
             if self.state == JenefarState.WAITING_APPROVAL:
@@ -113,6 +114,7 @@ class JenefarOrchestrator:
         self.memory.remember_message(self.session.session_id, "assistant", output)
 
         if result.metadata.get("provider") == "approval_required":
+            self._register_pending_workflow(text, result)
             self.state = JenefarState.WAITING_APPROVAL
         else:
             self.state = (
@@ -120,4 +122,59 @@ class JenefarOrchestrator:
                 if self.config.single_turn_sleep
                 else JenefarState.AWAKE
             )
+        return output
+
+
+    def _register_pending_workflow(self, task: str, result) -> None:
+        pending_tools = result.metadata.get("pending_tools", [])
+        if not pending_tools:
+            return
+        workflow = {
+            "task": task,
+            "agent": result.agent,
+            "remaining": {str(item["pending_id"]) for item in pending_tools},
+            "results": [],
+        }
+        for item in pending_tools:
+            self.pending_approval_workflows[str(item["pending_id"])] = workflow
+
+    def _approve_pending(self, pending_id: str) -> str:
+        workflow = self.pending_approval_workflows.get(pending_id)
+        raw_result = self.tool_broker.approve(pending_id)
+
+        if workflow is None:
+            self.state = JenefarState.SLEEPING
+            return raw_result
+
+        workflow["remaining"].discard(pending_id)
+        try:
+            parsed = json.loads(raw_result)
+        except json.JSONDecodeError:
+            parsed = {"result": raw_result}
+
+        tool_name = parsed.get("tool", "unknown")
+        workflow["results"].append({
+            "tool": tool_name,
+            "result": parsed.get("result", parsed),
+        })
+        self.pending_approval_workflows.pop(pending_id, None)
+
+        if workflow["remaining"]:
+            self.state = JenefarState.WAITING_APPROVAL
+            remaining = ", ".join(sorted(workflow["remaining"]))
+            return f"Tool approval completed. Remaining approval id(s): {remaining}"
+
+        agent = self.router.agent_by_name(workflow["agent"])
+        if agent is None or not hasattr(agent, "continue_after_tools"):
+            self.state = JenefarState.SLEEPING
+            return raw_result
+
+        final_result = agent.continue_after_tools(
+            workflow["task"],
+            workflow["results"],
+        )
+        output = self.verifier.verify(workflow["task"], final_result.content)
+        self.session.add("assistant", output)
+        self.memory.remember_message(self.session.session_id, "assistant", output)
+        self.state = JenefarState.SLEEPING
         return output
