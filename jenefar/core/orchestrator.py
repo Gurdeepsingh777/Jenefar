@@ -58,6 +58,7 @@ class JenefarOrchestrator:
         self.wakeword = WakeWord(self.config.wake_phrases)
         self.avatar = avatar
         self.pending_approval_workflows: dict[str, dict] = {}
+        self.offline_notice_open = False
 
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
@@ -122,6 +123,15 @@ class JenefarOrchestrator:
         graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
         plan = self.planner.plan(text)
         connected = internet_available()
+        online_task = any(
+            marker in text.lower()
+            for marker in (
+                "youtube", "online", "download", "internet", "web search",
+                "search the web", "github", "recognize this song",
+            )
+        )
+        if not connected and online_task:
+            self.offline_notice_open = True
         runtime = {
             "connectivity": "online" if connected else "offline",
             "offline_limitations": [
@@ -166,7 +176,7 @@ class JenefarOrchestrator:
             provider=str(result.metadata.get("provider", "")),
         )
 
-        if result.metadata.get("provider") == "approval_required":
+        if result.metadata.get("provider") in {"approval_required", "local_approval_required"}:
             self._register_pending_workflow(
                 text,
                 result,
