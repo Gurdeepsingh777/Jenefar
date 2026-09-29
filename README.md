@@ -17,7 +17,7 @@ The core now includes:
 - Safe discovery of common Kali/Linux security tools
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Text runtime for immediate testing
-- Optional microphone -> OpenAI transcription -> agent -> OpenAI TTS runtime
+- Bounded and continuous microphone -> STT -> orchestrator -> TTS runtimes
 - Persistent SQLite memory + FTS5 retrieval
 - URL and public GitHub research ingestion
 - Read-only URL/GitHub research tools for the model
@@ -52,16 +52,19 @@ and ask a question. Without an API key, the runtime reports that the model provi
 
 ## Voice mode
 
-The OpenAI Python SDK provides microphone and local audio helpers as an optional voice extra.
-
-Install the optional helper dependencies:
+Bounded voice mode:
 
 ```bash
-pip install "openai[voice_helpers]"
 python run.py --voice
 ```
 
-Voice mode records a bounded turn, transcribes it, applies the same wake-word and routing flow, then speaks the response.
+Continuous voice mode:
+
+```bash
+python run.py --voice-continuous
+```
+
+Continuous mode keeps the microphone open, uses local energy-based VAD to segment utterances, sends only detected utterances to STT, applies the same wake-word gate and orchestrator routing, then streams TTS back to the speakers. Tune the VAD with the `JENEFAR_VOICE_*` environment variables in `.env`.
 
 ## External research and RAG
 
