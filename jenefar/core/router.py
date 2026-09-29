@@ -13,7 +13,7 @@ class AgentRouter:
         return next((agent for agent in self.agents if agent.name == name), None)
 
     def route(self, text: str, preferred_agent: str | None = None) -> BaseAgent:
-        if preferred_agent:
+        if preferred_agent and preferred_agent != "research":
             planned = self.agent_by_name(preferred_agent)
             if planned is not None:
                 return planned
