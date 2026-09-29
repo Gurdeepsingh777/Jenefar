@@ -73,3 +73,8 @@ body{color:var(--text)}
 #stage[data-state="listening"] .avatar-glow{animation:listenGlow 1.2s ease-in-out infinite}
 #stage[data-state="speaking"] .avatar-glow{transform:scale(calc(1 + var(--speech-level,0) * .22))}
 @keyframes listenGlow{0%,100%{opacity:.55;transform:scale(.96)}50%{opacity:1;transform:scale(1.08)}}
+
+#stage[data-emotion="happy"] .avatar{transform:translateY(-3px) scale(calc(1 + var(--emotion-intensity,0) * .008))}
+#stage[data-emotion="curious"] .avatar{filter:drop-shadow(0 0 42px rgba(103,232,255,.22))}
+#stage[data-emotion="focused"] .avatar{filter:drop-shadow(0 0 45px rgba(167,139,250,.24))}
+#stage[data-emotion="alert"] .avatar{filter:drop-shadow(0 0 52px rgba(255,160,92,.30))}
