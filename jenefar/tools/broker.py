@@ -24,6 +24,7 @@ from jenefar.offline.capabilities import unavailable_online_items, local_items
 from jenefar.automation.browser import play_youtube, first_mp3_in_folder
 from jenefar.media.song import record_and_recognize
 from jenefar.tools.kali import KaliToolManager
+from jenefar.vision.screen import ScreenVision
 
 
 @dataclass
@@ -46,6 +47,7 @@ class ToolBroker:
         self.registry = ToolRegistry()
         self.terminal = TerminalTool()
         self.desktop = DesktopAutomation()
+        self.screen_vision = ScreenVision(self.desktop)
         self.robotics = SerialRobotController()
         self.mqtt_robot = MqttRobotController()
         self.ros2_robot = Ros2RobotController()
@@ -331,6 +333,91 @@ class ToolBroker:
             action=True,
         ))
         self.registry.register(ToolSpec(
+            name="desktop_observe",
+            description="Capture the current screen and use a vision model to identify visible semantic UI elements relevant to a user query. Privacy-sensitive; requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": 500},
+                    "save": {"type": "boolean"},
+                },
+                "required": ["query", "save"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._desktop_observe(str(args["query"]), bool(args.get("save", False))),
+            requires_confirmation=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_find_element",
+            description="Use current screen vision to locate a semantic UI element such as an address bar, button, menu or search box. Read-only.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "maxLength": 500}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.screen_vision.locate(str(args["query"])),
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_click_element",
+            description="Analyze the current screen and click a semantic UI element matching the user query. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "maxLength": 500}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.screen_vision.locate_and_click(str(args["query"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_type_into_element",
+            description="Analyze the current screen, click a semantic input element, and type text into it. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": 500},
+                    "text": {"type": "string", "maxLength": 4000},
+                },
+                "required": ["query", "text"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.screen_vision.locate_and_type(str(args["query"]), str(args["text"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_hotkey",
+            description="Press a bounded safe keyboard shortcut such as ctrl+l or ctrl+c. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "keys": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4},
+                },
+                "required": ["keys"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.desktop.hotkey([str(item) for item in args["keys"]]),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_scroll",
+            description="Scroll the current desktop by a bounded number of clicks. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {"clicks": {"type": "integer", "minimum": -20, "maximum": 20}},
+                "required": ["clicks"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.desktop.scroll(int(args["clicks"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_screen_size",
+        self.registry.register(ToolSpec(
             name="desktop_screen_size",
             description="Return the current desktop screen size. Read-only.",
             handler=lambda _args: self.desktop.screen_size(),
@@ -575,6 +662,14 @@ class ToolBroker:
             profile=result["profile"],
             returncode=result["returncode"],
         )
+        return result
+
+    def _desktop_observe(self, query: str, save: bool = False) -> dict[str, Any]:
+        result = self.screen_vision.analyze(query)
+        if save:
+            frame = self.screen_vision.capture(save=True)
+            result["saved_path"] = frame.path
+        self.audit.record("desktop_screen_observed", query=query, provider=result.get("provider", "unknown"))
         return result
 
     def _desktop_click(self, args: dict[str, Any]) -> dict[str, object]:
