@@ -5,6 +5,7 @@ from typing import Any
 from jenefar.automation.browser import open_url, play_youtube
 from jenefar.execution.scope import ScopePolicy
 from jenefar.research.sources import fetch_github_repository, fetch_url
+from jenefar.offline.connectivity import internet_available
 
 
 class ConnectorManager:
@@ -244,9 +245,14 @@ class ConnectorManager:
 
     def status(self, name: str) -> dict[str, Any]:
         connector = self.get(name)
+        available = (
+            True
+            if not connector.manifest.online_required
+            else internet_available()
+        )
         return {
             **connector.manifest.as_dict(),
-            "available": True,
+            "available": available,
         }
 
     def get(self, name: str):
@@ -258,6 +264,10 @@ class ConnectorManager:
 
     def execute(self, name: str, action: str, arguments: dict[str, Any]) -> Any:
         connector = self.get(name)
+        if connector.manifest.online_required and not internet_available():
+            raise ConnectionError(
+                f"Connector '{connector.manifest.name}' requires an internet connection."
+            )
         return connector.execute(action, arguments)
 
     def action_requires_confirmation(self, name: str, action: str) -> bool:
