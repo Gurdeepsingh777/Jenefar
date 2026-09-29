@@ -15,6 +15,12 @@ def test_rms_detects_quiet_and_loud_audio():
     assert runtime._rms(loud) > 0.4
 
 
+def test_voice_config_limits_are_reasonable():
+    config = VoiceConfig()
+    assert config.start_threshold > config.stop_threshold
+    assert config.max_utterance_seconds >= 5
+
+
 def test_utterance_starts_on_loud_block():
     runtime = ContinuousVoiceRuntime(
         object(),
