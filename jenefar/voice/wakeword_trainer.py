@@ -12,12 +12,14 @@ def prepare_config(
     *,
     model_name: str = "jenefar",
     output_dir: str = "data/wakeword",
-    piper_path: str = "./piper-sample-generator",
-    rir_path: str = "./mit_rirs",
-    background_path: str = "./background",
-    samples: int = 20000,
-    validation_samples: int = 2000,
-    steps: int = 50000,
+    piper_path: str | None = None,
+    rir_path: str | None = None,
+    background_path: str | None = None,
+    validation_features_path: str | None = None,
+    samples: int = 20_000,
+    validation_samples: int = 2_000,
+    steps: int = 50_000,
+    rich_background: bool = False,
 ) -> Path:
     phrase = phrase.strip()
     if not phrase:
@@ -25,6 +27,18 @@ def prepare_config(
 
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
+    assets = root / "assets"
+    piper = Path(piper_path or assets / "piper-sample-generator")
+    rir = Path(rir_path or assets / "rir")
+    background = Path(
+        background_path or (
+            assets / "background_rich" if rich_background else assets / "background"
+        )
+    )
+    validation = Path(
+        validation_features_path or root / "validation_set_features.npy"
+    )
+
     config = {
         "model_name": model_name,
         "target_phrase": [phrase],
@@ -32,23 +46,21 @@ def prepare_config(
             "hello jen",
             "hey jenefar",
             "hello general",
+            "hi jen",
         ],
         "n_samples": int(samples),
         "n_samples_val": int(validation_samples),
         "tts_batch_size": 50,
         "augmentation_batch_size": 16,
-        "piper_sample_generator_path": piper_path,
-        "output_dir": str(root / "models"),
-        "rir_paths": [rir_path],
-        "background_paths": [background_path],
+        "piper_sample_generator_path": str(piper.resolve()),
+        "output_dir": str((root / "models").resolve()),
+        "rir_paths": [str(rir.resolve())],
+        "background_paths": [str(background.resolve())],
         "background_paths_duplication_rate": [1],
-        "false_positive_validation_data_path": "./validation_set_features.npy",
+        "false_positive_validation_data_path": str(validation.resolve()),
         "augmentation_rounds": 1,
-        "feature_data_files": {
-            "ACAV100M_sample": "./openwakeword_features_ACAV100M_2000_hrs_16bit.npy",
-        },
+        "feature_data_files": {},
         "batch_n_per_class": {
-            "ACAV100M_sample": 1024,
             "adversarial_negative": 50,
             "positive": 50,
         },
@@ -68,17 +80,35 @@ def train(config_path: str | Path, *, stage: str = "all") -> int:
     if not path.is_file():
         raise FileNotFoundError(path)
 
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    required = {
+        "piper_sample_generator_path": "Piper sample generator",
+        "rir_paths": "RIR directory",
+        "background_paths": "background directory",
+        "false_positive_validation_data_path": "validation feature file",
+    }
+    for key, label in required.items():
+        value = config.get(key)
+        candidate = value[0] if isinstance(value, list) else value
+        if not candidate or not Path(candidate).exists():
+            raise RuntimeError(
+                f"{label} is missing: {candidate}. "
+                "Run the wake-word asset setup command first."
+            )
+
     try:
         import openwakeword  # noqa: F401
     except Exception as exc:
-        raise RuntimeError("Install openwakeword and training dependencies first.") from exc
+        raise RuntimeError(
+            "Install openwakeword plus its training dependencies before training."
+        ) from exc
 
     package_root = Path(__import__("openwakeword").__file__).resolve().parent
     train_py = package_root / "train.py"
     if not train_py.is_file():
         raise RuntimeError(
             "Installed openwakeword package does not expose train.py. "
-            "Clone the upstream repository training source and run it with the generated config."
+            "Use the official openWakeWord repository training entry point."
         )
 
     flags = {
