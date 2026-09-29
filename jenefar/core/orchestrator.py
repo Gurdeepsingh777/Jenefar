@@ -82,21 +82,30 @@ class JenefarOrchestrator:
                 continue
 
             if self.state == JenefarState.SLEEPING:
-                if not self.wakeword.detect(raw):
+                matched_phrase = self.wakeword.matched_phrase(raw)
+                if matched_phrase is None:
                     print("[JENEFAR] (sleeping)")
                     continue
                 self.state = JenefarState.AWAKE
                 command = self.wakeword.remove_wake_phrase(raw)
+                response_language = (
+                    "Hinglish" if matched_phrase == "hello jenefar" else None
+                )
                 if not command:
-                    print("[JENEFAR] Yes, I'm listening.")
+                    if response_language == "Hinglish":
+                        print("[JENEFAR] Haan, boliye. Main sun rahi hoon.")
+                    else:
+                        print("[JENEFAR] Yes, I'm listening.")
                     continue
-                print(f"Jenefar > {self.handle(command)}")
+                print(
+                    f"Jenefar > {self.handle(command, response_language=response_language)}"
+                )
                 continue
 
             if raw:
                 print(f"Jenefar > {self.handle(raw)}")
 
-    def handle(self, text: str) -> str:
+    def handle(self, text: str, response_language: str | None = None) -> str:
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "Processing your request…")
         self.session.add("user", text)
@@ -112,18 +121,11 @@ class JenefarOrchestrator:
                 "intent": plan.intent,
                 "planned_agent": plan.agent,
                 "planner_reason": plan.reason,
+                "response_language": response_language,
                 "history": self.session.recent(8),
                 "retrieved_memory": [
                     {"source": hit.source, "title": hit.title, "content": hit.content}
                     for hit in retrieved
-                ],
-                "knowledge_graph": [
-                    {
-                        "subject": relation.subject,
-                        "predicate": relation.predicate,
-                        "object": relation.object,
-                    }
-                    for relation in graph_hits
                 ],
                 "knowledge_graph": [
                     {
@@ -146,7 +148,11 @@ class JenefarOrchestrator:
         )
 
         if result.metadata.get("provider") == "approval_required":
-            self._register_pending_workflow(text, result)
+            self._register_pending_workflow(
+                text,
+                result,
+                response_language=response_language,
+            )
             self.state = JenefarState.WAITING_APPROVAL
             self._avatar_state("waiting_approval", output)
         else:
@@ -162,14 +168,19 @@ class JenefarOrchestrator:
         if self.avatar is not None:
             self.avatar.publish(state, text)
 
-
-    def _register_pending_workflow(self, task: str, result) -> None:
+    def _register_pending_workflow(
+        self,
+        task: str,
+        result,
+        response_language: str | None = None,
+    ) -> None:
         pending_tools = result.metadata.get("pending_tools", [])
         if not pending_tools:
             return
         workflow = {
             "task": task,
             "agent": result.agent,
+            "response_language": response_language,
             "remaining": {str(item["pending_id"]) for item in pending_tools},
             "results": [],
         }
@@ -210,6 +221,7 @@ class JenefarOrchestrator:
         final_result = agent.continue_after_tools(
             workflow["task"],
             workflow["results"],
+            response_language=workflow.get("response_language"),
         )
         output = self.verifier.verify(workflow["task"], final_result.content)
         self.session.add("assistant", output)
