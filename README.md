@@ -240,19 +240,25 @@ Jenefar's security tooling is intended for systems and targets you are authorize
 
 ## Roadmap
 
-Completed foundations:
+Completed in the current runtime:
 - Specialist multi-agent routing and planner
-- Function-calling tool broker with explicit approvals
-- Persistent SQLite/FTS5 memory and document/web/GitHub ingestion
-- Authorized security scope and audit logging
-- Continuous microphone VAD -> STT -> orchestrator -> TTS
-- Live particle avatar with runtime states, speech-reactive animation and expressions
+- Approval-aware function-calling tool broker
+- Persistent SQLite/FTS5 memory plus knowledge graph
+- URL/GitHub/document research ingestion
+- Authorized security scope, audit logging and constrained nmap/WhatWeb/Nikto profiles
+- Continuous local VAD/STT/TTS voice runtime
+- Optional local openWakeWord integration
+- Particle avatar with runtime expressions and speech-reactive animation
+- Three.js/VRM renderer with phoneme-driven mouth animation
+- Browser WebRTC Realtime speech-to-speech transport
+- Approval-gated desktop automation primitives
+- Approval-gated serial robotics primitives
+- Runtime evaluation and quality-signal logging
 
 Next major milestones:
-1. Native low-latency wake-word engine
-2. Realtime speech-to-speech transport
-3. Full 3D/VRM avatar with neural/phoneme-aware lip-sync
-4. Desktop automation with approval/audit boundaries
-5. Broader sandboxed authorized security-tool profiles
-6. Robotics device integrations
-7. Evaluation/self-improvement and richer knowledge-graph memory
+1. Native custom wake-word training/packaging for the exact “Hi Jenefar” phrase
+2. Full action-tool approval UX inside the Realtime data channel
+3. Production desktop app shell and persistent settings UI
+4. Expanded robotics adapters (MQTT/ROS2) and device telemetry
+5. Stronger semantic/embedding-backed knowledge graph retrieval
+6. Automated evaluation suites and regression dashboards
