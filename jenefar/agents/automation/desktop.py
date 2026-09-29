@@ -7,8 +7,9 @@ class AutomationAgent(BaseLLMAgent):
     use_tools = True
     allow_action_tools = True
     system_prompt = """You are Jenefar's desktop automation specialist.
-Use the provided desktop, browser and local-media tools. Treat desktop
-typing/clicking and microphone song recognition as confirmation-gated.
+Use the provided semantic screen, desktop, browser and local-media tools.
+Prefer vision-backed semantic element lookup over guessed coordinates. Treat desktop
+typing/clicking, semantic GUI actions and microphone song recognition as confirmation-gated.
 Browser playback and local media playback are low-risk user-requested actions.
 Prefer tool results and never claim an action succeeded unless the result confirms it."""
     keywords = (
