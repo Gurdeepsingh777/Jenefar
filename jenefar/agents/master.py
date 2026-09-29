@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from jenefar.core.agent import AgentContext, AgentResult
+from jenefar.core.agent import AgentResult
 from jenefar.core.router import AgentRouter
 
 
 class MasterAgent:
-    """Deterministic orchestration shell; model-backed planning is added next."""
+    """Thin orchestration facade over the shared AgentRouter."""
 
     name = "master"
 
@@ -13,5 +13,4 @@ class MasterAgent:
         self.router = router
 
     def dispatch(self, task: str) -> AgentResult:
-        agent = self.router.route(task)
-        return agent.run(AgentContext(task=task, metadata={"routed_by": self.name}))
+        return self.router.dispatch(task, metadata={"routed_by": self.name})
