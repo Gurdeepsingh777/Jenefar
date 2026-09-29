@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from jenefar.agents.automation.desktop import AutomationAgent
+from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
 from jenefar.agents.coding.python import PythonAgent
 from jenefar.agents.coding.repository_agent import RepositoryAgent
@@ -46,6 +47,7 @@ class JenefarOrchestrator:
         self.router = AgentRouter([
             RepositoryAgent(tool_broker=self.tool_broker),
             LocalDevelopmentAgent(tool_broker=self.tool_broker),
+            VisionGUIAgent(tool_broker=self.tool_broker),
             AutomationAgent(tool_broker=self.tool_broker),
             KaliSecurityAgent(tool_broker=self.tool_broker),
             PythonAgent(tool_broker=self.tool_broker),
