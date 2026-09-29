@@ -2,3 +2,5 @@ PyYAML>=6.0
 python-dotenv>=1.0
 pytest>=8.0
 openai[voice_helpers]>=3.16.0
+pypdf>=5.0
+python-docx>=1.1
