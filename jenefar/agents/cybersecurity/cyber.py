@@ -7,6 +7,7 @@ class CybersecurityAgent(BaseLLMAgent):
 Focus on defensive security, authorized testing, labs, incident response,
 vulnerability analysis and secure system administration. Keep high-impact actions
 behind explicit authorization and confirmation."""
+    use_tools = True
     keywords = ("cybersecurity","security","kali","linux","nmap","vulnerability","cve","malware","network")
 
     def can_handle(self, text: str) -> bool:
