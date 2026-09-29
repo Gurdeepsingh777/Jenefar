@@ -9,6 +9,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--voice", action="store_true", help="run bounded microphone -> STT -> agent -> TTS mode")
     parser.add_argument("--voice-continuous", action="store_true", help="run continuous microphone VAD -> STT -> agent -> TTS mode")
+    parser.add_argument("--avatar", action="store_true", help="show Jenefar's local real-time particle avatar UI")
+    parser.add_argument("--avatar-port", type=int, default=8787, help="local avatar UI port")
     parser.add_argument("--discover-tools", action="store_true", help="list detected Kali/Linux tools without executing them")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
@@ -191,9 +193,30 @@ def main() -> int:
 
     from jenefar.core.orchestrator import JenefarOrchestrator
 
+    avatar = None
+    avatar_server = None
+    if args.avatar:
+        import webbrowser
+        from jenefar.avatar.controller import AvatarController
+        from jenefar.avatar.server import AvatarServer
+
+        avatar = AvatarController()
+        avatar_server = AvatarServer(avatar, port=args.avatar_port)
+        avatar_server.start()
+        print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
+        try:
+            webbrowser.open(avatar_server.url)
+        except Exception:
+            pass
+
     if args.voice_continuous:
         from jenefar.voice.continuous import ContinuousVoiceRuntime
-        ContinuousVoiceRuntime(JenefarOrchestrator()).run()
+        ContinuousVoiceRuntime(
+            JenefarOrchestrator(avatar=avatar),
+            avatar=avatar,
+        ).run()
+        if avatar_server is not None:
+            avatar_server.stop()
         return 0
 
     if args.voice:
