@@ -27,6 +27,8 @@ if (canvas) {
   let targetLevel = 0;
   let mouthLevel = 0;
   let targetEmotion = "neutral";
+  let speechText = "";
+  let lastBlink = performance.now();
 
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -57,6 +59,7 @@ if (canvas) {
     const data = event.detail || {};
     targetLevel = Number(data.level || 0);
     targetEmotion = data.emotion || "neutral";
+    if (typeof data.text === "string" && data.text) speechText = data.text;
   });
 
   function setExpression(name, value) {
@@ -66,12 +69,28 @@ if (canvas) {
     } catch (_) {}
   }
 
+  function phonemeForText(text, phase) {
+    const vowels = [...text.toLowerCase()].filter(ch => "aeiou".includes(ch));
+    if (!vowels.length) return "aa";
+    const vowel = vowels[Math.floor(phase % vowels.length)];
+    return ({a: "aa", e: "ee", i: "ih", o: "oh", u: "ou"})[vowel] || "aa";
+  }
+
   function animate() {
     requestAnimationFrame(animate);
     mouthLevel += (targetLevel - mouthLevel) * 0.18;
     if (vrm?.expressionManager) {
-      setExpression("aa", Math.min(1, mouthLevel));
-      setExpression("blink", 0);
+      const now = performance.now();
+      const phase = now * 0.018;
+      const phoneme = phonemeForText(speechText, phase / 12);
+      for (const name of ["aa", "ee", "ih", "oh", "ou"]) setExpression(name, 0);
+      if (mouthLevel > 0.06) setExpression(phoneme, Math.min(1, mouthLevel));
+      if (mouthLevel <= 0.06 && now - lastBlink > 2800) {
+        setExpression("blink", 0.95);
+        lastBlink = now;
+      } else if (mouthLevel <= 0.06) {
+        setExpression("blink", 0);
+      }
       if (targetEmotion === "happy") setExpression("happy", 0.45);
       else if (targetEmotion === "sad") setExpression("sad", 0.35);
       else if (targetEmotion === "alert") setExpression("angry", 0.28);
