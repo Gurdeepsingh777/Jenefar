@@ -12,12 +12,17 @@ from jenefar.tools.registry import ToolRegistry, ToolSpec
 from jenefar.tools.terminal import TerminalTool
 from jenefar.research.sources import fetch_github_repository, fetch_url
 from jenefar.coding.repository import RepositoryAnalyzer
+from jenefar.tools.security import ScopedSecurityToolExecutor
+from jenefar.automation.desktop import DesktopAutomation
+from jenefar.robotics.serial_controller import SerialRobotController
+
 
 @dataclass
 class PendingToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+
 
 class ToolBroker:
     """Single gateway between model function-calls and local tools."""
@@ -31,9 +36,12 @@ class ToolBroker:
     ):
         self.registry = ToolRegistry()
         self.terminal = TerminalTool()
+        self.desktop = DesktopAutomation()
+        self.robotics = SerialRobotController()
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
+        self.security = ScopedSecurityToolExecutor(self.scope)
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
 
@@ -58,8 +66,8 @@ class ToolBroker:
             parameters={
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "Exact shell command to execute."},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds.", "minimum": 1, "maximum": 120},
+                    "command": {"type": "string"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 120},
                 },
                 "required": ["command", "timeout"],
                 "additionalProperties": False,
@@ -68,8 +76,107 @@ class ToolBroker:
             requires_confirmation=True,
         ))
         self.registry.register(ToolSpec(
+            name="security_tool_execute",
+            description="Run a constrained non-shell security profile against a target inside authorized_targets. Profiles are nmap service scan, WhatWeb fingerprinting, and Nikto web-server scanning.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "enum": ["nmap", "whatweb", "nikto"]},
+                    "target": {"type": "string"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 120},
+                },
+                "required": ["tool", "target", "timeout"],
+                "additionalProperties": False,
+            },
+            handler=self._security_tool_execute,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_screen_size",
+            description="Return the current desktop screen size. Read-only.",
+            handler=lambda _args: self.desktop.screen_size(),
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_click",
+            description="Click a desktop coordinate. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer", "minimum": 0, "maximum": 20000},
+                    "y": {"type": "integer", "minimum": 0, "maximum": 20000},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"]},
+                },
+                "required": ["x", "y", "button"],
+                "additionalProperties": False,
+            },
+            handler=self._desktop_click,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_type",
+            description="Type text into the focused desktop application. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {"text": {"type": "string", "maxLength": 4000}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.desktop.type_text(str(args["text"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_press",
+            description="Press one safe keyboard key. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+                "required": ["key"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.desktop.press(str(args["key"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_screenshot",
+            description="Capture a desktop screenshot into Jenefar's local data/screenshots directory. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {"filename": {"type": "string"}},
+                "required": ["filename"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.desktop.screenshot(str(args["filename"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="robot_list_ports",
+            description="List visible serial ports for robotics hardware. Read-only.",
+            handler=lambda _args: self.robotics.list_ports(),
+        ))
+        self.registry.register(ToolSpec(
+            name="robot_command",
+            description="Send a bounded robotics command over the configured serial port. Allowed commands: status, stop, forward, backward, left, right, home, servo. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "enum": ["status", "stop", "forward", "backward", "left", "right", "home", "servo"]},
+                    "argument": {"type": "string"},
+                },
+                "required": ["command", "argument"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.robotics.command(str(args["command"]), str(args["argument"])),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
             name="research_fetch_url",
-            description="Fetch a public HTTP(S) URL as read-only research text. Does not execute code or modify the remote resource.",
+            description="Fetch a public HTTP(S) URL as read-only research text.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -83,27 +190,27 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="research_fetch_github",
-            description="Read a public GitHub repository's text/code files for research. Does not modify the repository or execute downloaded code.",
+            description="Read a public GitHub repository's text/code files for research.",
             parameters={
                 "type": "object",
                 "properties": {
-                    "repository": {"type": "string", "description": "owner/repository"},
+                    "repository": {"type": "string"},
                     "ref": {"type": "string"},
                     "path": {"type": "string"},
                     "max_files": {"type": "integer", "minimum": 1, "maximum": 10},
                 },
-                "required": ["repository", "ref", "max_files"],
+                "required": ["repository", "ref", "path", "max_files"],
                 "additionalProperties": False,
             },
             handler=self._research_fetch_github,
         ))
         self.registry.register(ToolSpec(
             name="analyze_github_repository",
-            description="Summarize a public GitHub repository: files, languages, tests, README and entrypoints. Read-only; downloaded code is never executed.",
+            description="Summarize a public GitHub repository without executing downloaded code.",
             parameters={
                 "type": "object",
                 "properties": {
-                    "repository": {"type": "string", "description": "owner/repository"},
+                    "repository": {"type": "string"},
                     "ref": {"type": "string"},
                 },
                 "required": ["repository", "ref"],
@@ -113,11 +220,11 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="plan_github_change",
-            description="Create a read-only implementation plan for a requested change in a public GitHub repository. It suggests likely files and checks but never edits the remote repository.",
+            description="Create a read-only implementation plan for a requested public GitHub repository change.",
             parameters={
                 "type": "object",
                 "properties": {
-                    "repository": {"type": "string", "description": "owner/repository"},
+                    "repository": {"type": "string"},
                     "ref": {"type": "string"},
                     "task": {"type": "string"},
                 },
@@ -128,12 +235,10 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="extract_local_document",
-            description="Read a local PDF, DOCX, Markdown or text document and return extracted text. This is privacy-sensitive and requires explicit confirmation.",
+            description="Read a local PDF, DOCX, Markdown or text document. Privacy-sensitive and requires confirmation.",
             parameters={
                 "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                },
+                "properties": {"path": {"type": "string"}},
                 "required": ["path"],
                 "additionalProperties": False,
             },
@@ -142,28 +247,39 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="scope_check",
-            description="Check whether a hostname, IP address, URL host, or CIDR target is in Jenefar's configured authorized testing scope.",
+            description="Check whether a target is in configured authorized security-testing scope.",
             parameters={
                 "type": "object",
-                "properties": {
-                    "target": {"type": "string"},
-                },
+                "properties": {"target": {"type": "string"}},
                 "required": ["target"],
                 "additionalProperties": False,
             },
             handler=self._scope_check,
         ))
 
-    def _analyze_github_repository(self, args: dict[str, Any]) -> dict[str, Any]:
-        summary = RepositoryAnalyzer().summarize(
-            str(args["repository"]),
-            ref=str(args["ref"]),
+    def _security_tool_execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        result = self.security.run(
+            tool=str(args["tool"]),
+            target=str(args["target"]),
+            timeout=int(args["timeout"]),
         )
         self.audit.record(
-            "github_repository_analyzed",
-            repository=summary.repository,
-            ref=summary.ref,
+            "security_tool_executed",
+            tool=result["tool"],
+            target=result["target"],
+            profile=result["profile"],
+            returncode=result["returncode"],
         )
+        return result
+
+    def _desktop_click(self, args: dict[str, Any]) -> dict[str, object]:
+        return self.desktop.click(
+            int(args["x"]), int(args["y"]), str(args["button"])
+        )
+
+    def _analyze_github_repository(self, args: dict[str, Any]) -> dict[str, Any]:
+        summary = RepositoryAnalyzer().summarize(str(args["repository"]), ref=str(args["ref"]))
+        self.audit.record("github_repository_analyzed", repository=summary.repository, ref=summary.ref)
         return {
             "repository": summary.repository,
             "ref": summary.ref,
@@ -190,11 +306,7 @@ class ToolBroker:
             str(args["task"]),
             ref=str(args["ref"]),
         )
-        self.audit.record(
-            "github_change_plan",
-            repository=plan.repository,
-            task=plan.task,
-        )
+        self.audit.record("github_change_plan", repository=plan.repository, task=plan.task)
         return {
             "repository": plan.repository,
             "task": plan.task,
@@ -206,17 +318,13 @@ class ToolBroker:
 
     def _extract_local_document(self, args: dict[str, Any]) -> dict[str, Any]:
         from jenefar.docs.ingest import read_document
-
         path = str(args["path"])
         content = read_document(path)
         self.audit.record("local_document_extracted", path=path)
         return {"path": path, "content": content[:120000]}
 
     def _research_fetch_url(self, args: dict[str, Any]) -> dict[str, Any]:
-        document = fetch_url(
-            str(args["url"]),
-            max_bytes=int(args["max_bytes"]),
-        )
+        document = fetch_url(str(args["url"]), max_bytes=int(args["max_bytes"]))
         self.audit.record("research_fetch_url", source=document.source)
         return {
             "source": document.source,
@@ -227,11 +335,10 @@ class ToolBroker:
 
     def _research_fetch_github(self, args: dict[str, Any]) -> list[dict[str, Any]]:
         path = str(args.get("path") or "").strip()
-        paths = [path] if path else None
         documents = fetch_github_repository(
             str(args["repository"]),
             ref=str(args["ref"]),
-            paths=paths,
+            paths=[path] if path else None,
             max_files=min(int(args["max_files"]), 10),
         )
         self.audit.record(
@@ -259,15 +366,14 @@ class ToolBroker:
 
     def _terminal_execute(self, args: dict[str, Any]) -> str:
         return self.terminal.run(
-            str(args["command"]),
-            approved=True,
-            timeout=int(args["timeout"]),
+            str(args["command"]), approved=True, timeout=int(args["timeout"])
         )
 
     def schemas(self, *, allow_action_tools: bool = False) -> list[dict[str, Any]]:
-        # Confirmation is enforced by invoke(); hiding the schema would prevent the
-        # model from ever requesting an approval-gated action.
-        return self.registry.openai_tools(include_confirmation_tools=True)
+        return self.registry.openai_tools(
+            include_confirmation_tools=True,
+            include_action_tools=allow_action_tools,
+        )
 
     def invoke(self, name: str, arguments: dict[str, Any], *, confirmed: bool = False) -> str:
         try:
