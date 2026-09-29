@@ -12,19 +12,56 @@ function setState(text) {
   if (realtimeState) realtimeState.textContent = text;
 }
 
-function handleRealtimeEvent(raw) {
+async function handleRealtimeEvent(raw) {
   try {
     const event = JSON.parse(raw);
-    if (event.type && event.type.includes("audio")) {
-      avatarEvent({ state: "speaking", level: event.type.includes("done") ? 0.08 : 0.65, emotion: "neutral" });
+
+    if (event.type && event.type.includes("audio_transcript.delta")) {
+      avatarEvent({
+        state: "speaking",
+        text: event.delta || "",
+        level: 0.58,
+        emotion: "neutral",
+      });
+    } else if (event.type && event.type.includes("audio") && !event.type.includes("transcript")) {
+      avatarEvent({
+        state: "speaking",
+        level: event.type.includes("done") ? 0.08 : 0.65,
+        emotion: "neutral",
+      });
     }
-    if (event.type === "response.done") {
-      avatarEvent({ state: "idle", level: 0, emotion: "neutral" });
-    }
+
     if (event.type && event.type.includes("input_audio")) {
       avatarEvent({ state: "listening", level: 0.12, emotion: "curious" });
     }
-  } catch (_) {}
+
+    if (event.type === "response.function_call_arguments.done") {
+      const response = await fetch("/realtime/tool", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          name: event.name,
+          arguments: JSON.parse(event.arguments || "{}"),
+        }),
+      }).then(result => result.json());
+
+      dataChannel?.send(JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: event.call_id,
+          output: JSON.stringify(response.result || response),
+        },
+      }));
+      dataChannel?.send(JSON.stringify({type: "response.create"}));
+    }
+
+    if (event.type === "response.done") {
+      avatarEvent({ state: "idle", level: 0, emotion: "neutral" });
+    }
+  } catch (error) {
+    console.error("Realtime event error", error);
+  }
 }
 
 async function startRealtime() {
