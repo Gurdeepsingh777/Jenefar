@@ -65,8 +65,7 @@ class TaskPlan:
                 f"{index}. {step.id}: {step.title} — {step.instruction}"
                 f"{dependencies}{suffix}"
             )
-        return "
-".join(lines)
+        return "\n".join(lines)
 
 
 class HierarchicalTaskPlanner:
@@ -86,50 +85,202 @@ class HierarchicalTaskPlanner:
             )
             if needs_repair:
                 steps = (
-                    TaskStep("inspect", "Inspect the target", "Read the target file and relevant local context before editing.", "local_development"),
-                    TaskStep("baseline", "Run a baseline check", "Validate syntax and run the target or relevant tests to capture the current failure.", "local_development", ("inspect",), True, True),
-                    TaskStep("diagnose", "Diagnose the failure", "Use the traceback, test output, and inspected code to identify the smallest correct fix.", "local_development", ("baseline",)),
-                    TaskStep("repair", "Apply the repair", "Edit only the authorized workspace file(s), create backups, and keep the diff focused.", "local_development", ("diagnose",), True),
-                    TaskStep("retest", "Retest and self-heal", "Run validation/tests again. If a new failure appears, repeat diagnosis and repair up to the configured attempt limit.", "local_development", ("repair",), True, True),
-                    TaskStep("report", "Verify final state", "Review the final result and diff, then report exactly what changed and what passed or failed.", "local_development", ("retest",), False, True),
+                    TaskStep(
+                        "inspect",
+                        "Inspect the target",
+                        "Read the target file and relevant local context before editing.",
+                        "local_development",
+                    ),
+                    TaskStep(
+                        "baseline",
+                        "Run a baseline check",
+                        "Validate syntax and run the target or relevant tests to capture the current failure.",
+                        "local_development",
+                        ("inspect",),
+                        True,
+                        True,
+                    ),
+                    TaskStep(
+                        "diagnose",
+                        "Diagnose the failure",
+                        "Use the traceback, test output, and inspected code to identify the smallest correct fix.",
+                        "local_development",
+                        ("baseline",),
+                    ),
+                    TaskStep(
+                        "repair",
+                        "Apply the repair",
+                        "Edit only the authorized workspace file(s), create backups, and keep the diff focused.",
+                        "local_development",
+                        ("diagnose",),
+                        True,
+                    ),
+                    TaskStep(
+                        "retest",
+                        "Retest and self-heal",
+                        "Run validation/tests again. If a new failure appears, repeat diagnosis and repair up to the configured attempt limit.",
+                        "local_development",
+                        ("repair",),
+                        True,
+                        True,
+                    ),
+                    TaskStep(
+                        "report",
+                        "Verify final state",
+                        "Review the final result and diff, then report exactly what changed and what passed or failed.",
+                        "local_development",
+                        ("retest",),
+                        False,
+                        True,
+                    ),
                 )
             else:
                 steps = (
-                    TaskStep("inspect", "Inspect the target", "Read the requested local file/folder and establish its current state.", "local_development"),
-                    TaskStep("execute", "Execute the requested local check", "Run the requested Python program or validation only inside the authorized workspace.", "local_development", ("inspect",), True, True),
-                    TaskStep("report", "Report verified results", "Summarize the observed output, errors, and next state without inventing success.", "local_development", ("execute",), False, True),
+                    TaskStep(
+                        "inspect",
+                        "Inspect the target",
+                        "Read the requested local file/folder and establish its current state.",
+                        "local_development",
+                    ),
+                    TaskStep(
+                        "execute",
+                        "Execute the requested local check",
+                        "Run the requested Python program or validation only inside the authorized workspace.",
+                        "local_development",
+                        ("inspect",),
+                        True,
+                        True,
+                    ),
+                    TaskStep(
+                        "report",
+                        "Report verified results",
+                        "Summarize the observed output, errors, and next state without inventing success.",
+                        "local_development",
+                        ("execute",),
+                        False,
+                        True,
+                    ),
                 )
-            return TaskPlan(task, intent, agent, "bounded inspect → execute/repair → verify workflow", steps)
+            return TaskPlan(
+                task,
+                intent,
+                agent,
+                "bounded inspect → execute/repair → verify workflow",
+                steps,
+            )
 
         if agent == "repository":
             steps = (
-                TaskStep("inspect_repo", "Inspect repository", "Understand repository structure, entrypoints, tests, and relevant files.", "repository"),
-                TaskStep("plan_change", "Plan the change", "Identify the smallest affected files, dependencies, risks, and verification checks.", "repository", ("inspect_repo",)),
-                TaskStep("verify", "Verify evidence", "Use repository evidence and available tests/checks before presenting the result.", "repository", ("plan_change",), False, True),
+                TaskStep(
+                    "inspect_repo",
+                    "Inspect repository",
+                    "Understand repository structure, entrypoints, tests, and relevant files.",
+                    "repository",
+                ),
+                TaskStep(
+                    "plan_change",
+                    "Plan the change",
+                    "Identify the smallest affected files, dependencies, risks, and verification checks.",
+                    "repository",
+                    ("inspect_repo",),
+                ),
+                TaskStep(
+                    "verify",
+                    "Verify evidence",
+                    "Use repository evidence and available tests/checks before presenting the result.",
+                    "repository",
+                    ("plan_change",),
+                    False,
+                    True,
+                ),
             )
-            return TaskPlan(task, intent, agent, "repository discovery → scoped change plan → verification", steps)
+            return TaskPlan(
+                task,
+                intent,
+                agent,
+                "repository discovery → scoped change plan → verification",
+                steps,
+            )
 
         if agent in {"kali", "cybersecurity", "bugbounty"}:
             steps = (
-                TaskStep("scope", "Confirm scope", "Check that the requested target and action are within configured authorization.", agent, (), False, True),
-                TaskStep("inspect", "Gather bounded evidence", "Use only the relevant approved security tooling and collect evidence needed for the task.", agent, ("scope",), True),
-                TaskStep("analyze", "Analyze findings", "Interpret tool output without escalating beyond the requested and authorized scope.", agent, ("inspect",), False, True),
+                TaskStep(
+                    "scope",
+                    "Confirm scope",
+                    "Check that the requested target and action are within configured authorization.",
+                    agent,
+                    (),
+                    False,
+                    True,
+                ),
+                TaskStep(
+                    "inspect",
+                    "Gather bounded evidence",
+                    "Use only the relevant approved security tooling and collect evidence needed for the task.",
+                    agent,
+                    ("scope",),
+                    True,
+                ),
+                TaskStep(
+                    "analyze",
+                    "Analyze findings",
+                    "Interpret tool output without escalating beyond the requested and authorized scope.",
+                    agent,
+                    ("inspect",),
+                    False,
+                    True,
+                ),
             )
-            return TaskPlan(task, intent, agent, "scope → bounded evidence collection → analysis", steps)
+            return TaskPlan(
+                task,
+                intent,
+                agent,
+                "scope → bounded evidence collection → analysis",
+                steps,
+            )
 
         if agent == "research":
             steps = (
-                TaskStep("retrieve", "Retrieve evidence", "Gather relevant local memory or public online sources.", "research"),
-                TaskStep("synthesize", "Synthesize", "Cross-check the retrieved evidence and distinguish facts from uncertainty.", "research", ("retrieve",), False, True),
+                TaskStep(
+                    "retrieve",
+                    "Retrieve evidence",
+                    "Gather relevant local memory or public online sources.",
+                    "research",
+                ),
+                TaskStep(
+                    "synthesize",
+                    "Synthesize",
+                    "Cross-check the retrieved evidence and distinguish facts from uncertainty.",
+                    "research",
+                    ("retrieve",),
+                    False,
+                    True,
+                ),
             )
-            return TaskPlan(task, intent, agent, "evidence retrieval → synthesis", steps)
+            return TaskPlan(
+                task,
+                intent,
+                agent,
+                "evidence retrieval → synthesis",
+                steps,
+            )
 
         return TaskPlan(
             task,
             intent,
             agent,
             "single specialist execution",
-            (TaskStep("execute", "Execute the specialist task", "Complete the requested task using the specialist's available tools and verify the result.", agent, (), False, True),),
+            (
+                TaskStep(
+                    "execute",
+                    "Execute the specialist task",
+                    "Complete the requested task using the specialist's available tools and verify the result.",
+                    agent,
+                    (),
+                    False,
+                    True,
+                ),
+            ),
         )
 
 
