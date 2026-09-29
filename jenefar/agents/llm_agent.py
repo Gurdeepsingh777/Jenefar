@@ -21,8 +21,16 @@ class BaseLLMAgent(BaseAgent):
                 f"{m.get('role','user')}: {m.get('content','')}" for m in history[-8:]
             )
 
+        retrieved = context.metadata.get("retrieved_memory", [])
+        memory_text = ""
+        if retrieved:
+            memory_text = "\nRelevant long-term memory:\n" + "\n".join(
+                f"[{item.get("title", "memory")}] {item.get("content", "")}"
+                for item in retrieved[:6]
+            )
+
         response = self.llm.complete(
-            f"Task:\n{context.task}{history_text}",
+            f"Task:\n{context.task}{history_text}{memory_text}",
             instructions=self.system_prompt,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
