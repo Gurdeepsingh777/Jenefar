@@ -580,3 +580,11 @@ Ab project ke remaining practical steps primarily runtime-side hain:
 4. Target machine par live microphone, Realtime WebRTC, desktop automation aur robot hardware smoke tests run karo.
 5. Actual room/microphone conditions ke according wake-word threshold tune karo.
 6. False-positive aur false-reject behavior measure karke final threshold set karo.
+
+## Phase 1 — Hierarchical Planning, Model Routing aur Self-Healing Coding
+
+Phase 1 me Jenefar compound requests ke liye bounded multi-step execution plan banata hai. Local Python repair work ke liye normal flow inspect → baseline validation/run → diagnose → repair → retest → report hai. Failure aane par specialist configured repair-attempt limit ke andar diagnosis aur retest continue kar sakta hai.
+
+Model routing role-based hai: coding (local development, Python, repository), security (Kali, cybersecurity, bug-bounty), research, robotics, automation, aur fast/general. Online profiles JENEFAR_MODEL_* aur optional local profiles JENEFAR_LOCAL_LLM_MODEL_* se override kiye ja sakte hain. Unset profiles global model configuration par fall back karte hain.
+
+Local edits, Python execution aur pytest ab bhi authorized workspace aur explicit approval boundaries ke andar hi hote hain.
