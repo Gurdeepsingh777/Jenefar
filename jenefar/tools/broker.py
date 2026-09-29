@@ -10,6 +10,7 @@ from jenefar.execution.scope import ScopePolicy
 from jenefar.tools.discovery import discover_tools
 from jenefar.tools.registry import ToolRegistry, ToolSpec
 from jenefar.tools.terminal import TerminalTool
+from jenefar.research.sources import fetch_github_repository, fetch_url
 
 @dataclass
 class PendingToolCall:
@@ -66,6 +67,36 @@ class ToolBroker:
             requires_confirmation=True,
         ))
         self.registry.register(ToolSpec(
+            name="research_fetch_url",
+            description="Fetch a public HTTP(S) URL as read-only research text. Does not execute code or modify the remote resource.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "max_bytes": {"type": "integer", "minimum": 1, "maximum": 2000000},
+                },
+                "required": ["url", "max_bytes"],
+                "additionalProperties": False,
+            },
+            handler=self._research_fetch_url,
+        ))
+        self.registry.register(ToolSpec(
+            name="research_fetch_github",
+            description="Read a public GitHub repository's text/code files for research. Does not modify the repository or execute downloaded code.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repository": {"type": "string", "description": "owner/repository"},
+                    "ref": {"type": "string"},
+                    "path": {"type": "string"},
+                    "max_files": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                "required": ["repository", "ref", "path", "max_files"],
+                "additionalProperties": False,
+            },
+            handler=self._research_fetch_github,
+        ))
+        self.registry.register(ToolSpec(
             name="scope_check",
             description="Check whether a hostname, IP address, URL host, or CIDR target is in Jenefar's configured authorized testing scope.",
             parameters={
@@ -78,6 +109,45 @@ class ToolBroker:
             },
             handler=self._scope_check,
         ))
+
+    def _research_fetch_url(self, args: dict[str, Any]) -> dict[str, Any]:
+        document = fetch_url(
+            str(args["url"]),
+            max_bytes=int(args["max_bytes"]),
+        )
+        self.audit.record("research_fetch_url", source=document.source)
+        return {
+            "source": document.source,
+            "title": document.title,
+            "content": document.content[:100000],
+            "metadata": document.metadata,
+        }
+
+    def _research_fetch_github(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        path = str(args.get("path") or "").strip()
+        paths = [path] if path else None
+        documents = fetch_github_repository(
+            str(args["repository"]),
+            ref=str(args["ref"]),
+            paths=paths,
+            max_files=min(int(args["max_files"]), 10),
+        )
+        self.audit.record(
+            "research_fetch_github",
+            repository=str(args["repository"]),
+            ref=str(args["ref"]),
+            path=path,
+            files=len(documents),
+        )
+        return [
+            {
+                "source": document.source,
+                "title": document.title,
+                "content": document.content[:50000],
+                "metadata": document.metadata,
+            }
+            for document in documents
+        ]
 
     def _scope_check(self, args: dict[str, Any]) -> dict[str, Any]:
         target = str(args["target"])
