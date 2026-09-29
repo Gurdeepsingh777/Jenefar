@@ -45,7 +45,7 @@ and ask a question. Without an API key, the runtime reports that the model provi
 
 ## Voice mode
 
-The OpenAI Python SDK provides microphone and local audio helpers as an optional voice extra. citeturn657415search0turn657415search2
+The OpenAI Python SDK provides microphone and local audio helpers as an optional voice extra.
 
 Install the optional helper dependencies:
 
@@ -58,7 +58,7 @@ Voice mode records a bounded turn, transcribes it, applies the same wake-word an
 
 ## Research/web search
 
-The research agent can enable the Responses API hosted `web_search` tool for current/source-sensitive queries. OpenAI documents `web_search` as the current Responses API web-search mechanism for new integrations. citeturn325453search5
+The research agent can enable the Responses API hosted `web_search` tool for current/source-sensitive queries. OpenAI documents `web_search` as the current Responses API web-search mechanism for new integrations.
 
 ## Project layout
 
