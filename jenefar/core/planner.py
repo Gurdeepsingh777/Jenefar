@@ -101,6 +101,19 @@ class Planner:
                 needs_tool=True,
             )
 
+        if any(x in t for x in (
+            "schedule", "remind me", "every day", "every hour", "every week",
+            "watch for", "when this happens", "trigger an event", "event watcher",
+        )):
+            return self._make_plan(
+                text,
+                "scheduling",
+                "research",
+                confidence=0.96,
+                reason="scheduler/event keyword match",
+                needs_tool=True,
+            )
+
         if any(x in t for x in ("youtube", "song", "mp3", "vlc", "browser", "music")):
             return self._make_plan(text, "media_automation", "automation", confidence=0.95, reason="browser/media automation keyword match", needs_tool=True)
 
