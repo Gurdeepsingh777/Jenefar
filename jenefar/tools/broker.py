@@ -153,6 +153,44 @@ class ToolBroker:
             action=True,
         ))
         self.registry.register(ToolSpec(
+            name="workspace_validate_python",
+            description="Validate syntax of an authorized Python file with py_compile. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 120},
+                },
+                "required": ["path", "timeout"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.validate_python(
+                str(args["path"]),
+                int(args["timeout"]),
+            ),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_run_pytest",
+            description="Run pytest against an authorized local file or directory. Requires explicit confirmation.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
+                },
+                "required": ["path", "timeout"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.run_pytest(
+                str(args["path"]),
+                int(args["timeout"]),
+            ),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
             name="workspace_edit_file",
             description="Edit an authorized local text/code file by replacing its complete content. A timestamped backup and diff are created. Requires explicit confirmation.",
             parameters={
