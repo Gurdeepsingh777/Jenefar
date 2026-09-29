@@ -1,10 +1,18 @@
 from jenefar.core.planner import Planner
 
-def test_python_plan():
-    assert Planner().plan("debug my Python script").agent=="python"
 
-def test_security_plan():
-    assert Planner().plan("explain nmap").agent=="cybersecurity"
+def test_planner_routes_repository_requests():
+    plan = Planner().plan("analyze the GitHub repository architecture")
+    assert plan.agent == "repository"
+    assert plan.confidence > 0.9
 
-def test_robotics_plan():
-    assert Planner().plan("ESP32 servo sensor").agent=="robotics"
+
+def test_planner_routes_python_requests():
+    plan = Planner().plan("write a FastAPI Python endpoint")
+    assert plan.agent == "python"
+
+
+def test_planner_falls_back_to_research():
+    plan = Planner().plan("what is the history of robotics?")
+    assert plan.agent == "research"
+    assert plan.confidence < 0.6
