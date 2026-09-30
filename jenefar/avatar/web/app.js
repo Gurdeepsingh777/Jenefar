@@ -416,7 +416,7 @@ function setupBrowserVoice(){
         voiceLocked=true;
         try{recognition?.stop();}catch(_){}
         setVoiceInputStatus("BROWSER MIC: OFF",false);
-        micButton.textContent="MIC ON";
+        setMicButton(false, false);
       }else{
         micEnabled=true;
         voiceLocked=false;
@@ -472,6 +472,7 @@ function setupBrowserVoice(){
       setMicButton(false, false);
     }else{
       setVoiceInputStatus("MIC RETRYING…",false);
+      setMicButton(true, true);
     }
   };
 
