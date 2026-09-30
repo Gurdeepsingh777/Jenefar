@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -411,15 +412,115 @@ class ScreenVision:
         result["match"]["center"] = tuple(result["match"]["center"])
         return result
 
-    def locate_and_click(self, query: str) -> dict[str, Any]:
+    @staticmethod
+    def _hash_payload(value: Any) -> str:
+        encoded = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _snapshot(self, frame: ScreenFrame, task: str) -> dict[str, Any]:
+        snapshot: dict[str, Any] = {
+            "width": frame.width,
+            "height": frame.height,
+            "png_sha256": (
+                hashlib.sha256(frame.png_bytes).hexdigest()
+                if frame.png_bytes
+                else None
+            ),
+        }
+        semantic_provider = getattr(self.desktop, "semantic_elements", None)
+        if callable(semantic_provider):
+            try:
+                snapshot["semantic_sha256"] = self._hash_payload(
+                    semantic_provider(task)
+                )
+            except Exception as exc:
+                snapshot["semantic_error"] = (
+                    f"{type(exc).__name__}: {exc}"
+                )
+        return snapshot
+
+    @staticmethod
+    def _compare_snapshots(
+        before: dict[str, Any],
+        after: dict[str, Any],
+    ) -> dict[str, Any]:
+        checks = []
+        for key in ("png_sha256", "semantic_sha256"):
+            left = before.get(key)
+            right = after.get(key)
+            if left is not None and right is not None:
+                checks.append(left != right)
+        return {
+            "screen_changed": any(checks) if checks else None,
+            "signals_compared": len(checks),
+            "before": before,
+            "after": after,
+        }
+
+    def _verify_postcondition(
+        self,
+        query: str | None,
+    ) -> dict[str, Any] | None:
+        if not query:
+            return None
+        try:
+            result = self.locate(query)
+            return {
+                "query": query,
+                "matched": True,
+                "match": result["match"],
+                "provider": result.get("provider"),
+            }
+        except Exception as exc:
+            return {
+                "query": query,
+                "matched": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+    def locate_and_click(
+        self,
+        query: str,
+        *,
+        verify: str | None = None,
+    ) -> dict[str, Any]:
+        before = self.capture(save=False)
+        before_snapshot = self._snapshot(before, query)
         result = self.locate(query)
         x, y = [int(value) for value in result["match"]["center"]]
         result["action"] = self.desktop.click(x, y, "left")
+        after = self.capture(save=False)
+        after_snapshot = self._snapshot(after, query)
+        result["verification"] = self._compare_snapshots(
+            before_snapshot,
+            after_snapshot,
+        )
+        result["postcondition"] = self._verify_postcondition(verify)
         return result
 
-    def locate_and_type(self, query: str, text: str) -> dict[str, Any]:
+    def locate_and_type(
+        self,
+        query: str,
+        text: str,
+        *,
+        verify: str | None = None,
+    ) -> dict[str, Any]:
+        before = self.capture(save=False)
+        before_snapshot = self._snapshot(before, query)
         result = self.locate(query)
         x, y = [int(value) for value in result["match"]["center"]]
         result["click"] = self.desktop.click(x, y, "left")
         result["type"] = self.desktop.type_text(text)
+        after = self.capture(save=False)
+        after_snapshot = self._snapshot(after, query)
+        result["verification"] = self._compare_snapshots(
+            before_snapshot,
+            after_snapshot,
+        )
+        result["postcondition"] = self._verify_postcondition(verify)
         return result
