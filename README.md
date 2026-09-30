@@ -826,6 +826,59 @@ python run.py
 Local/offline mode ke liye Ollama ya kisi OpenAI-compatible local LLM server ko start karke `python run.py` chala sakte ho.
 
 Agar sirf CLI/dependency verification karni ho, `python run.py --doctor` sufficient hai.
+## Multi-provider LLM failover
+
+Jenefar can use multiple online LLM providers and automatically move to the next configured provider when a request fails because of authentication, rate limiting, timeout, connection, or service-availability errors.
+
+Recommended configuration:
+
+```env
+JENEFAR_PROVIDER_ORDER=openai,openrouter,gemini,groq,cerebras
+JENEFAR_PROVIDER_COOLDOWN_SECONDS=60
+
+OPENAI_API_KEY=
+OPENAI_MODEL=
+
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openrouter/free
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash-lite
+
+GROQ_API_KEY=
+GROQ_MODEL=llama-3.3-70b-versatile
+
+CEREBRAS_API_KEY=
+CEREBRAS_MODEL=gpt-oss-120b
+```
+
+Provider-specific model variables may also be set per role, for example:
+
+```env
+JENEFAR_OPENROUTER_MODEL_CODING=
+JENEFAR_GROQ_MODEL_FAST=
+JENEFAR_GEMINI_MODEL_RESEARCH=
+```
+
+The provider order is evaluated left-to-right. A provider that repeatedly fails with a retryable error enters a short cooldown so Jenefar does not repeatedly hammer a rate-limited or unavailable endpoint. If every online provider fails, the existing Ollama/OpenAI-compatible local model remains the final fallback unless `JENEFAR_DISABLE_LOCAL_FALLBACK=1` or `python run.py --online-only` is used.
+
+Check configuration without sending an LLM request:
+
+```bash
+python run.py --provider-status
+```
+
+API keys are read from environment variables and are never printed by provider status.
+
+Official provider pages:
+
+- OpenRouter: https://openrouter.ai/
+- Google Gemini API: https://ai.google.dev/gemini-api
+- Groq: https://console.groq.com/
+- Cerebras: https://inference-docs.cerebras.ai/
+
+Free-tier availability, quotas, and model availability can change by provider and account; choose models from the provider's current documentation rather than assuming a model remains free.
+
 ## Model/provider configuration
 
 Jenefar supports an online-first model setup so your Kali CPU does not carry the full LLM workload when an OpenAI API key is configured. Put secrets only in `.env` (never commit them):
