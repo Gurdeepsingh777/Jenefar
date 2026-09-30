@@ -75,6 +75,21 @@ def devanagari_to_roman(text: str) -> str:
         i += 1
     return _SPACE_RE.sub(" ", "".join(output)).strip()
 
+def roman_hinglish_for_voice(text: str, *, max_chars: int = 700) -> str:
+    """Create speech-friendly Roman-Hinglish for browser TTS."""
+    value = enforce_hinglish(text, max_chars=max_chars)
+    replacements = {
+        "CPU": "C P U", "GPU": "G P U", "RAM": "ram",
+        "AI": "A I", "UI": "U I", "URL": "U R L",
+        "VRM": "V R M", "STT": "S T T", "TTS": "T T S",
+        "HTTP": "H T T P", "GitHub": "GitHub",
+    }
+    for source, target in replacements.items():
+        value = value.replace(source, target)
+    value = re.sub(r"[|*_#<>{}\\[\\]~^`]+", " ", value)
+    value = re.sub(r"\\s+([,.;!?])", r"\\1", value)
+    return _SPACE_RE.sub(" ", value).strip()[:max_chars].rstrip()
+
 def enforce_hinglish(text: str, *, max_chars: int = 950) -> str:
     """Normalize assistant speech/output to compact Roman-Hinglish."""
     value = clean_for_speech(text, max_chars=max_chars)
@@ -127,4 +142,4 @@ def clean_for_speech(text: str, *, max_chars: int = 950) -> str:
         return value[:max_chars].rstrip() + "."
     return " ".join(summary).rstrip() + ". Full details screen par available hain."
 
-__all__ = ["clean_for_speech", "enforce_hinglish", "devanagari_to_roman"]
+__all__ = ["clean_for_speech", "enforce_hinglish", "roman_hinglish_for_voice", "devanagari_to_roman"]

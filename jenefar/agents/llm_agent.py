@@ -79,6 +79,7 @@ class BaseLLMAgent(BaseAgent):
                 )
             procedure_text = "\nRelevant procedural memory:\n" + "\n".join(procedure_lines)
 
+        concise_mode = str(context.metadata.get("response_language") or "").lower() == "hinglish"
         instructions = (
             self.system_prompt
             + "\nAlways answer only the user's actual request. "
@@ -91,11 +92,13 @@ class BaseLLMAgent(BaseAgent):
                 f"\nRuntime status: {runtime_text.get('connectivity', 'unknown')}. "
                 f"Offline limitations: {runtime_text.get('offline_limitations', [])}"
             )
-        if capability_text:
+        if capability_text and (not concise_mode or capability_query):
             instructions += "\nUser-requested capability scope:\n" + "\n".join(
                 f"- {item.get('capability', '')}" for item in capability_text[-20:]
             )
-        if skill_text:
+        # Only expose capability metadata to the model when the user is explicitly asking what Jenefar can do.
+        capability_query = any(word in str(context.task).lower() for word in ("what can you do", "what can jenefar do", "tum kya kar", "tum kya kya", "capabilit", "kya kar sakti"))
+        if skill_text and (not concise_mode or capability_query):
             instructions += "\nEnabled Jenefar skills:\n" + "\n".join(
                 f"- {item.get('name', '')}: {item.get('description', '')}"
                 for item in skill_text[-30:]

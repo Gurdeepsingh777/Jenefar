@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Any
 
-from jenefar.voice.speech import enforce_hinglish
+from jenefar.voice.speech import enforce_hinglish, roman_hinglish_for_voice
 
 
 class BrowserVoiceBridge:
@@ -24,10 +22,7 @@ class BrowserVoiceBridge:
             os.getenv("JENEFAR_BROWSER_VOICE_REPEAT_WINDOW", "1.8")
         )
         self._conversation_language = "Hinglish"
-        self._executor = ThreadPoolExecutor(
-            max_workers=1,
-            thread_name_prefix="jenefar-task",
-        )
+        self._task_lock = threading.Lock()
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
@@ -68,24 +63,41 @@ class BrowserVoiceBridge:
         self._last_at = now
         task_id = uuid.uuid4().hex[:10]
         self._publish("queued", "", task_id)
-        future = self._executor.submit(self._run_task, task_id, raw)
-        future.add_done_callback(lambda done: self._task_callback(task_id, done))
+
+        if not self._task_lock.acquire(blocking=False):
+            return {
+                "ok": True,
+                "accepted": False,
+                "queued": False,
+                "busy": True,
+                "task_id": task_id,
+                "text": raw,
+                "status": "busy",
+            }
+
+        worker = threading.Thread(
+            target=self._run_task_guarded,
+            args=(task_id, raw),
+            name=f"jenefar-task-{task_id}",
+            daemon=True,
+        )
+        worker.start()
         return {
             "ok": True,
             "accepted": True,
             "task_id": task_id,
             "text": raw,
-            "status": "queued",
+            "status": "running",
         }
 
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
 
-    def _task_callback(self, task_id: str, future) -> None:
+    def _run_task_guarded(self, task_id: str, raw: str) -> None:
         try:
-            future.result()
-        except Exception:
-            self._publish("error", "Ek task issue aaya hai.", task_id)
+            self._run_task(task_id, raw)
+        finally:
+            self._task_lock.release()
 
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
@@ -122,7 +134,7 @@ class BrowserVoiceBridge:
                     response_language=self._conversation_language,
                 )
 
-            speech_text = enforce_hinglish(reply)
+            speech_text = roman_hinglish_for_voice(reply)
             self._publish("result", "", task_id)
             if speech_text:
                 self._speech_queue.put((task_id, speech_text))
@@ -154,4 +166,8 @@ class BrowserVoiceBridge:
                     self._publish("idle", "", "")
 
     def shutdown(self) -> None:
-        self._executor.shutdown(wait=False, cancel_futures=False)
+        if self._task_lock.locked():
+            try:
+                self._task_lock.release()
+            except RuntimeError:
+                pass
