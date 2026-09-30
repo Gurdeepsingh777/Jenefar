@@ -90,6 +90,11 @@ function apply(event){
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
   stateEl.textContent=stateText;
   captionEl.textContent=event.text||caption;
+  if (currentState === "speaking") {
+    document.body.dataset.voiceActive = "true";
+  } else if (currentState === "idle" || currentState === "listening") {
+    document.body.dataset.voiceActive = "false";
+  }
   const [r,g,b]=palette(currentState);
   dot.style.background=`rgb(${r},${g},${b})`;
   dot.style.boxShadow=`0 0 18px rgb(${r},${g},${b})`;
