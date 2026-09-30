@@ -248,6 +248,9 @@ class JenefarOrchestrator:
                     approval_required=True,
                 )
             output = self.verifier.verify(text, result.content)
+            if result.metadata.get("provider") and result.metadata.get("model"):
+                provider_label = f"\n[Model: {result.metadata.get("provider")} / {result.metadata.get("model")}]"
+                output = output + provider_label
             verification = {
                 "passed": bool(output and output.strip()),
                 "verifier": self.verifier.__class__.__name__,
