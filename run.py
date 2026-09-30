@@ -230,18 +230,16 @@ def main() -> int:
 
     if args.provider_status:
         import os
-        from jenefar.core.model_router import ModelRouter
+        from jenefar.core.llm import LLMClient
         from jenefar.offline.local_llm import LocalLLMClient
-        router = ModelRouter()
+        client = LLMClient()
         print({
-            "openai_api_key": bool(os.getenv("OPENAI_API_KEY")),
-            "openai_model": os.getenv("OPENAI_MODEL", ""),
-            "roles": {
-                role: router.resolve(role).model
-                for role in ("fast", "coding", "research", "security", "robotics", "automation", "vision")
+            "provider_order": client.providers.order(),
+            "providers": client.provider_status("fast"),
+            "local": {
+                "base_url": os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1"),
+                "model_detected": bool(LocalLLMClient().detect()),
             },
-            "local_base_url": os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1"),
-            "local_model_detected": bool(LocalLLMClient().detect()),
         })
         return 0
 
