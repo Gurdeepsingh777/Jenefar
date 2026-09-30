@@ -272,27 +272,67 @@ def main() -> int:
 
     if args.voice_auto:
         import os
+        import webbrowser
+
         from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
         from jenefar.voice.continuous import ContinuousVoiceRuntime
+        from jenefar.avatar.controller import AvatarController
+        from jenefar.avatar.server import AvatarServer
+
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
 
-        orchestrator = JenefarOrchestrator()
-        audio_status = ProviderVoiceRuntime.audio_status()
-        if not audio_status["stt"]:
-            print("[JENEFAR] No STT provider configured. Starting text mode fallback.")
-            orchestrator.run()
-            return 0
+        avatar = AvatarController()
+        orchestrator = JenefarOrchestrator(avatar=avatar)
+        avatar_server = AvatarServer(
+            avatar,
+            port=args.avatar_port,
+            tool_broker=orchestrator.tool_broker,
+        )
+        avatar_server.start()
 
-        print("[JENEFAR] Default runtime: continuous voice -> STT -> Jenefar -> TTS.")
+        runtime_url = avatar_server.url
+        print(f"[JENEFAR] Avatar UI: {runtime_url}")
+        print("[JENEFAR] Opening Jenefar UI in the default browser...")
         try:
-            import sounddevice  # noqa: F401
-        except ImportError as exc:
-            print(f"[JENEFAR] Voice dependency missing: sounddevice ({exc}).")
-            print("[JENEFAR] Install it once with: python -m pip install sounddevice>=0.5.1")
-            return 1
-        ContinuousVoiceRuntime(orchestrator).run()
+            webbrowser.open(runtime_url)
+        except Exception:
+            print(f"[JENEFAR] Open this URL manually: {runtime_url}")
+
+        audio_status = ProviderVoiceRuntime.audio_status()
+        print(
+            "[JENEFAR] One-command runtime: avatar UI + continuous voice + "
+            "multi-agent orchestrator + memory + tools + diagnostics."
+        )
+        if audio_status["stt"]:
+            stt = audio_status["stt"]
+            tts = audio_status["tts"]
+            print(
+                f"[JENEFAR] Voice providers: "
+                f"STT={stt['provider']}/{stt['model']} "
+                f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
+                f"TTS={tts['provider']}/{tts['model']} "
+                f"fallback={','.join(tts.get('fallback', [])) or 'none'}"
+            )
+        else:
+            print("[JENEFAR] No online STT provider configured; using terminal text mode.")
+
+        try:
+            try:
+                import sounddevice  # noqa: F401
+            except ImportError as exc:
+                print(f"[JENEFAR] Voice dependency missing: sounddevice ({exc}).")
+                print("[JENEFAR] The avatar UI is still available.")
+                orchestrator.run()
+            else:
+                if audio_status["stt"] and audio_status["tts"]:
+                    ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()
+                else:
+                    print("[JENEFAR] Voice providers unavailable; switching to terminal text mode.")
+                    orchestrator.run()
+        finally:
+            avatar_server.stop()
         return 0
 
     if args.setup_assets:
