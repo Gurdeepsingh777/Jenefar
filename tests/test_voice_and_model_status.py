@@ -94,6 +94,13 @@ def test_groq_can_be_disabled_for_tts_when_terms_are_not_accepted(monkeypatch):
     assert status["tts"] is None
 
 
+def test_default_runtime_desktop_status_is_wired():
+    from pathlib import Path
+
+    source = Path("run.py").read_text(encoding="utf-8")
+    assert "desktop_status = orchestrator.tool_broker.desktop.backend_status()" in source
+
+
 def test_default_runtime_starts_avatar_server():
     from pathlib import Path
 
