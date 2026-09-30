@@ -61,6 +61,7 @@ class ContinuousVoiceRuntime:
         self._transcript_repeat_window = float(
             os.getenv("JENEFAR_VOICE_TRANSCRIPT_REPEAT_WINDOW", "2.5")
         )
+        self._conversation_language = None
 
     @staticmethod
     def _rms(chunk: np.ndarray) -> float:
@@ -186,7 +187,7 @@ class ContinuousVoiceRuntime:
             if not text:
                 return
 
-            normalized = " ".join(text.lower().strip().split())
+            normalized = self.orchestrator.wakeword.normalize_stt_text(text)
             now = time.monotonic()
             if (
                 normalized
@@ -211,7 +212,9 @@ class ContinuousVoiceRuntime:
                 if matched_phrase is None:
                     return
                 command = self.orchestrator.wakeword.remove_wake_phrase(text)
-                response_language = "Hinglish" if matched_phrase == "hello jenefar" else None
+                if matched_phrase == "hello jenefar":
+                    self._conversation_language = "Hinglish"
+                response_language = self._conversation_language or "Hinglish"
                 if not command:
                     reply = (
                         "Haan, boliye. Main sun rahi hoon."
@@ -224,7 +227,7 @@ class ContinuousVoiceRuntime:
                         response_language=response_language,
                     )
             else:
-                reply = self.orchestrator.handle(text)
+                reply = self.orchestrator.handle(text, response_language=self._conversation_language)
 
             print(f"[JENEFAR] {reply}")
             if self.avatar is not None:
