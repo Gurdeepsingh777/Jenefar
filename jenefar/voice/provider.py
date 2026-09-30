@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 
 from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
+from jenefar.voice.speech import clean_for_speech
 
 
 class ProviderVoiceRuntime:
