@@ -259,20 +259,38 @@ function resumeBrowserVoice(){
   },450);
 }
 
+function selectPremiumVoice(){
+  if(!browserSpeechReady) return null;
+  const voices=window.speechSynthesis.getVoices()||[];
+  const preferred=["Microsoft Neerja Online (Natural) - English (India)","Microsoft Neerja - English (India)","Google हिन्दी","Google Hindi","Google English (India)","Microsoft Sonia Online (Natural) - English (United Kingdom)"];
+  for(const name of preferred){
+    const hit=voices.find(v=>v.name===name);
+    if(hit) return hit;
+  }
+  return voices.find(v=>/^en-IN/i.test(v.lang))
+      || voices.find(v=>/^hi-IN/i.test(v.lang))
+      || voices.find(v=>/^en/i.test(v.lang))
+      || voices[0]
+      || null;
+}
+
 function browserSpeakFallback(text){
   if(!text||!browserSpeechReady) return;
-  const clean = String(text).replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
+  const clean=String(text).replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
   if(!clean) return;
   try{
     browserSpeechActive=true;
     pauseBrowserVoice();
     window.speechSynthesis.cancel();
     const utterance=new SpeechSynthesisUtterance(clean);
-    utterance.lang="en-IN";
-    utterance.rate=.98;
-    utterance.pitch=1.02;
-    utterance.onend=()=>{browserSpeechActive=false;resumeBrowserVoice();};
-    utterance.onerror=()=>{browserSpeechActive=false;resumeBrowserVoice();};
+    const voice=selectPremiumVoice();
+    if(voice) utterance.voice=voice;
+    utterance.lang=voice?.lang || "en-IN";
+    utterance.rate=.94;
+    utterance.pitch=1.04;
+    utterance.volume=.96;
+    utterance.onend=()=>{browserSpeechActive=false;voiceLocked=false;resumeBrowserVoice();};
+    utterance.onerror=()=>{browserSpeechActive=false;voiceLocked=false;resumeBrowserVoice();};
     window.speechSynthesis.speak(utterance);
   }catch(_){}
 }
@@ -401,8 +419,13 @@ async function sendBrowserTranscript(text){
       try{recognition?.stop();}catch(_){}
       return;
     }
+    if(result?.busy){
+      setVoiceInputStatus("Jawaab abhi chal raha hai — thoda wait karo",true);
+      setMicButton(false, true);
+      return;
+    }
     if(result?.accepted){
-      setVoiceInputStatus("TASK "+String(result.task_id||"")+" QUEUED",true);
+      setVoiceInputStatus("Jawaab aa raha hai",true);
       setMicButton(true, false);
     }
     if(result?.exit){
@@ -542,7 +565,7 @@ function setupBrowserVoice(){
   // are more reliable when microphone access follows a user gesture.
   micEnabled=false;
   voiceLocked=true;
-  setVoiceInputStatus("CLICK MIC ON TO START",false);
+  setVoiceInputStatus("MIC OFF — Talk button dabao",false);
   setMicButton(false, false);
 }
 
@@ -560,15 +583,15 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
     btn.classList.add("active");
     const target=btn.dataset.nav||"home";
     const targets={
-      home:()=>{},
+      home:()=>window.scrollTo({top:0,behavior:"smooth"}),
       chat:()=>document.getElementById("chat-input")?.focus(),
       voice:()=>document.getElementById("mic-button")?.click(),
-      vision:()=>document.getElementById("stage")?.setAttribute("data-state","thinking"),
+      vision:()=>setVoiceInputStatus("Vision command ready — bolo kya dekhna hai",true),
       apps:()=>document.querySelector(".quick-apps")?.classList.toggle("panel-focus"),
-      web:()=>dispatchDashboardCommand("search web"),
+      web:()=>dispatchDashboardCommand("web search karo"),
       notes:()=>document.getElementById("chat-input")?.focus(),
-      automation:()=>dispatchDashboardCommand("show automation"),
-      settings:()=>document.getElementById("chat-input")?.focus()
+      automation:()=>dispatchDashboardCommand("automation dikhao"),
+      settings:()=>setVoiceInputStatus("Settings panel ready",true)
     };
     targets[target]?.();
   });
