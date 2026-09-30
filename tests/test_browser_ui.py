@@ -150,3 +150,16 @@ def test_dashboard_nav_buttons_have_runtime_actions():
 def test_no_internal_model_metadata_is_appended_to_spoken_output():
     orch = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
     assert "[Model:" not in orch
+
+
+def test_browser_voice_bridge_is_serialized():
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert "max_workers=1" in bridge
+
+
+def test_dashboard_has_explicit_fixed_regions():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "Final non-overlap layout override" in css
+    assert ".avatar-shell{inset:0 350px 0 170px!important" in css
+    assert "#vrm-canvas{left:170px!important" in css
+    assert ".holo-earth{right:350px" in css
