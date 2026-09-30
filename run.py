@@ -353,7 +353,7 @@ def main() -> int:
                 "Browser TTS=Web SpeechSynthesis"
             )
         else:
-            print("[JENEFAR] No online STT provider configured; using terminal text mode.")
+            print("[JENEFAR] Backend STT provider unavailable; browser SpeechRecognition remains the input path.")
 
         try:
             if browser_voice_enabled:
