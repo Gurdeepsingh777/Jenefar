@@ -290,8 +290,22 @@ def main() -> int:
             "0", "false", "no"
         }
         browser_voice = BrowserVoiceBridge(orchestrator, avatar=avatar)
-        # First-run default: provision the licensed VRM sample automatically.
-        avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+        # Prefer an explicitly configured licensed VRM. Otherwise provision the
+        # documented sample on first run.
+        configured_avatar = os.getenv("JENEFAR_AVATAR_VRM_PATH", "").strip()
+        if configured_avatar:
+            avatar_model = Path(configured_avatar).expanduser().resolve()
+            if avatar_model.is_file():
+                print(f"[JENEFAR] Using configured VRM avatar: {avatar_model}")
+            else:
+                print(
+                    "[JENEFAR] Configured VRM avatar not found: "
+                    f"{avatar_model}; falling back to the sample asset."
+                )
+                avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+        else:
+            avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+
         if not avatar_model.is_file():
             try:
                 from jenefar.assets.provisioning import setup_avatar_asset
