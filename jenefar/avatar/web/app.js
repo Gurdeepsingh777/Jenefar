@@ -260,7 +260,7 @@ function resumeBrowserVoice(){
 }
 
 function browserSpeakFallback(text){
-  if(!text||!("speechSynthesis" in window)) return;
+  if(!text||!browserSpeechReady) return;
   try{
     browserSpeechActive=true;
     pauseBrowserVoice();
@@ -286,6 +286,7 @@ function apply(event){
   stage.dataset.emotion=emotion;
   window.dispatchEvent(new CustomEvent("jenefar-avatar-event",{detail:event}));
   addActivity(event);
+  updateChatFromEvent(event);
 
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"||currentState==="speaking_fallback"){
@@ -324,8 +325,28 @@ function connect(){
   };
 }
 
+function updateChatFromEvent(event){
+  const log=document.getElementById("chat-log");
+  if(!log || !event?.task_id) return;
+  const taskId=String(event.task_id);
+  let row=log.querySelector('[data-task-id="'+CSS.escape(taskId)+'"]');
+  if((event.state==="speaking"||event.state==="result") && event.text){
+    if(!row){
+      row=document.createElement("div");
+      row.className="chat-row bot";
+      row.dataset.taskId=taskId;
+      row.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
+      log.appendChild(row);
+    }
+    row.querySelector(".bubble").textContent=event.text;
+    log.scrollTop=log.scrollHeight;
+  }
+}
+
+
 /* Browser voice */
 const micButton=document.getElementById("mic-button");
+const browserSpeechReady = "speechSynthesis" in window;
 const voiceInputStatus=document.getElementById("voice-input-status");
 let recognition=null;
 let micEnabled=true;
@@ -552,11 +573,12 @@ async function dispatchDashboardCommand(command){
     });
     const result=await response.json();
     if(result?.error) throw new Error(result.error);
-    if(log){
+    if(log && result?.accepted){
       const bot=document.createElement("div");
       bot.className="chat-row bot";
       bot.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
-      bot.querySelector(".bubble").textContent=result?.accepted ? "Task queued: "+result.task_id : "Command received.";
+      bot.querySelector(".bubble").textContent="Jawaab aa raha hai...";
+      bot.dataset.taskId=String(result.task_id||"");
       log.appendChild(bot);
       log.scrollTop=log.scrollHeight;
     }
