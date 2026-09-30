@@ -81,3 +81,9 @@ def test_interactive_controls_are_not_covered_by_decorative_layers():
     assert 'pointer-events:none!important' in css
     assert '.talk-button,.dock-btn,.orb-button' in css or '.talk-button' in css
     assert 'pointer-events:auto!important' in css
+
+
+def test_mic_button_has_pointer_press_feedback():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'addEventListener("pointerdown"' in js
+    assert 'addEventListener("pointerup"' in js
