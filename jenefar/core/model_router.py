@@ -36,6 +36,7 @@ class ModelRouter:
         "robotics": "robotics",
         "automation": "automation",
         "gui_vision": "vision",
+        "utility": "fast",
     }
 
     def role_for_agent(self, agent_name: str) -> str:
