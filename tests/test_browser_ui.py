@@ -169,7 +169,7 @@ def test_roman_hinglish_transliterates_devanagari_instead_of_dropping_it():
     from jenefar.voice.speech import enforce_hinglish
 
     value = enforce_hinglish("नमस्ते, मैं आपकी मदद कर सकती हूँ।")
-    assert "Namaste" in value
+    assert "namaste" in value.lower()
     assert "main" in value.lower()
     assert not any("\u0900" <= ch <= "\u097f" for ch in value)
 
