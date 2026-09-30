@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-report", action="store_true", help="show recent runtime evaluation records")
     parser.add_argument("--trace-report", action="store_true", help="show recent runtime execution traces and health summary")
     parser.add_argument("--runtime-health", action="store_true", help="show compact runtime health summary")
+    parser.add_argument("--self-healing-policy", action="store_true", help="show bounded self-healing policy and safeguards")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
     parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
@@ -307,6 +308,20 @@ def main() -> int:
         args.memory_search,
         args.graph_search,
     ]
+    if args.self_healing_policy:
+        from jenefar.core.self_healing import RetryPolicy, SelfHealingRuntime
+        runtime = SelfHealingRuntime()
+        print({
+            "max_attempts": runtime.policy.max_attempts,
+            "base_delay_seconds": runtime.policy.base_delay_seconds,
+            "max_delay_seconds": runtime.policy.max_delay_seconds,
+            "circuit_threshold": runtime.circuit_threshold,
+            "circuit_cooldown_seconds": runtime.circuit_cooldown_seconds,
+            "transient_retry_markers": "enabled",
+            "privileged_action_retries": "disabled",
+        })
+        return 0
+
     if args.trace_report or args.runtime_health:
         from jenefar.evaluation.trace import TraceStore
         store = TraceStore()
