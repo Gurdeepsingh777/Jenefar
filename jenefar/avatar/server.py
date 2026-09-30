@@ -24,6 +24,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     controller: AvatarController
     vrm_path: Path | None
     tool_broker = None
+    voice_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -103,6 +104,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         if path == "/approval/reject":
             self._approval_reject()
             return
+        if path == "/voice/text":
+            self._voice_text()
+            return
         if path == "/settings":
             self._settings_update()
             return
@@ -122,6 +126,31 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             200,
             "application/json; charset=utf-8",
             json.dumps(result).encode("utf-8"),
+        )
+
+    def _voice_text(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            text = str(payload.get("text") or "").strip()
+            handler = self.voice_handler
+            if handler is None:
+                raise RealtimeSessionError("Browser voice handler is unavailable.")
+            result = handler(text)
+        except Exception as exc:
+            self._send(
+                400,
+                "application/json; charset=utf-8",
+                json.dumps(
+                    {"ok": False, "error": str(exc)},
+                    ensure_ascii=False,
+                ).encode("utf-8"),
+            )
+            return
+        self._send(
+            200,
+            "application/json; charset=utf-8",
+            json.dumps(result, ensure_ascii=False).encode("utf-8"),
         )
 
     def _approval_reject(self) -> None:
@@ -286,9 +315,11 @@ class AvatarServer:
         port: int = 8787,
         vrm_path: str | Path | None = None,
         tool_broker=None,
+        voice_handler=None,
     ):
         self.controller = controller
         self.tool_broker = tool_broker
+        self.voice_handler = voice_handler
         self.host = host
         self.port = port
         configured = vrm_path or os.getenv("JENEFAR_AVATAR_VRM_PATH", "")
@@ -305,6 +336,7 @@ class AvatarServer:
         self._server.RequestHandlerClass.controller = controller
         self._server.RequestHandlerClass.vrm_path = self.vrm_path
         self._server.RequestHandlerClass.tool_broker = tool_broker
+        self._server.RequestHandlerClass.voice_handler = voice_handler
         self._thread: threading.Thread | None = None
 
     @property

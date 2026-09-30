@@ -122,3 +122,8 @@ def test_default_voice_capture_threshold_is_reasonable():
     cfg = VoiceConfig()
     assert cfg.start_threshold <= 0.02
     assert cfg.silence_ms >= 1200
+
+
+def test_browser_voice_bridge_exists():
+    from jenefar.voice.browser import BrowserVoiceBridge
+    assert hasattr(BrowserVoiceBridge, "handle_text")

@@ -272,12 +272,14 @@ def main() -> int:
 
     if args.voice_auto:
         import os
+        import threading
         import webbrowser
         from pathlib import Path
 
         from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
         from jenefar.voice.continuous import ContinuousVoiceRuntime
+        from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
 
@@ -286,6 +288,10 @@ def main() -> int:
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
+        browser_voice_enabled = os.getenv("JENEFAR_BROWSER_VOICE", "1").strip().lower() not in {
+            "0", "false", "no"
+        }
+        browser_voice = BrowserVoiceBridge(orchestrator, avatar=avatar)
         # First-run default: provision the licensed VRM sample automatically.
         avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
         if not avatar_model.is_file():
@@ -303,6 +309,7 @@ def main() -> int:
             port=args.avatar_port,
             vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
+            voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
         )
         avatar_server.start()
 
@@ -334,18 +341,26 @@ def main() -> int:
             print("[JENEFAR] No online STT provider configured; using terminal text mode.")
 
         try:
-            try:
-                import sounddevice  # noqa: F401
-            except ImportError as exc:
-                print(f"[JENEFAR] Voice dependency missing: sounddevice ({exc}).")
-                print("[JENEFAR] The avatar UI is still available.")
-                orchestrator.run()
+            if browser_voice_enabled:
+                print("[JENEFAR] Browser microphone voice: ENABLED.")
+                print("[JENEFAR] Chrome/Chromium will ask for microphone permission in the avatar UI.")
+                print("[JENEFAR] Python sounddevice voice is fallback mode: set JENEFAR_BROWSER_VOICE=0 to use it.")
+                if not audio_status["tts"]:
+                    print("[JENEFAR] No Python TTS configured; browser speech synthesis will be used as UI fallback.")
+                threading.Event().wait()
             else:
-                if audio_status["stt"]:
-                    ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()
-                else:
-                    print("[JENEFAR] No STT provider configured; switching to terminal text mode.")
+                try:
+                    import sounddevice  # noqa: F401
+                except ImportError as exc:
+                    print(f"[JENEFAR] Voice dependency missing: sounddevice ({exc}).")
+                    print("[JENEFAR] The avatar UI is still available.")
                     orchestrator.run()
+                else:
+                    if audio_status["stt"]:
+                        ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()
+                    else:
+                        print("[JENEFAR] No STT provider configured; switching to terminal text mode.")
+                        orchestrator.run()
         finally:
             avatar_server.stop()
         return 0
