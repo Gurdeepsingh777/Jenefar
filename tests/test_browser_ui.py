@@ -191,3 +191,19 @@ def test_premium_avatar_source_is_not_overwritten():
     launcher = (ROOT / "jenefar" / "assets" / "premium_avatar.py").read_text(encoding="utf-8")
     assert "shutil.copy2(source_path, temporary_input)" in launcher
     assert "Jenefar_Premium.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
+
+
+def test_main_has_focused_desktop_requirements():
+    desktop = (ROOT / "requirements-desktop.txt").read_text(encoding="utf-8")
+    assert "pyautogui>=0.9.54" in desktop
+
+
+def test_main_desktop_backend_has_status_method():
+    source = (ROOT / "jenefar" / "automation" / "desktop.py").read_text(encoding="utf-8")
+    assert "def backend_status" in source
+    assert "requirements-desktop.txt" in source
+
+
+def test_python314_optional_dependency_guards_are_present():
+    optional = (ROOT / "requirements-optional.txt").read_text(encoding="utf-8")
+    assert 'python_version < "3.14"' in optional
