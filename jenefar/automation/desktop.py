@@ -27,11 +27,40 @@ class DesktopAutomation:
             import pyautogui
         except Exception as exc:
             raise RuntimeError(
-                "Desktop automation requires optional dependency 'pyautogui'."
+                "Desktop backend unavailable: pyautogui is not installed. "
+                "Install it with: python -m pip install -r requirements-desktop.txt"
             ) from exc
         pyautogui.PAUSE = 0.05
         pyautogui.FAILSAFE = True
         return pyautogui
+
+    def backend_status(self) -> dict[str, object]:
+        """Return a lightweight diagnostic of the native desktop backend."""
+        status: dict[str, object] = {
+            "python": os.sys.version.split()[0],
+            "pyautogui": False,
+            "display": os.getenv("DISPLAY", ""),
+            "wayland_display": os.getenv("WAYLAND_DISPLAY", ""),
+            "session_type": os.getenv("XDG_SESSION_TYPE", ""),
+        }
+        try:
+            import pyautogui
+            status["pyautogui"] = True
+            try:
+                size = pyautogui.size()
+                status["screen"] = {
+                    "width": int(size.width),
+                    "height": int(size.height),
+                }
+            except Exception as exc:
+                status["screen_error"] = f"{type(exc).__name__}: {exc}"
+        except Exception as exc:
+            status["import_error"] = f"{type(exc).__name__}: {exc}"
+        if not status["pyautogui"]:
+            status["install_command"] = (
+                "python -m pip install -r requirements-desktop.txt"
+            )
+        return status
 
     def screen_size(self) -> dict[str, int]:
         size = self._pyautogui().size()
