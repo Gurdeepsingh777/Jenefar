@@ -80,7 +80,15 @@ body{color:var(--text)}
 #stage[data-emotion="alert"] .avatar{filter:drop-shadow(0 0 52px rgba(255,160,92,.30))}
 
 #vrm-canvas{
-  position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;
+  position:absolute;
+  left:4%;
+  right:34%;
+  top:0;
+  bottom:0;
+  width:62%;
+  height:100%;
+  z-index:4;
+  pointer-events:none;
 }
 .avatar-shell .avatar{display:none}
 .photo-avatar{z-index:4}
@@ -189,3 +197,7 @@ body.vrm-loaded .photo-avatar{display:none}
   #activity-panel{left:12px;right:12px;top:auto;bottom:74px;width:auto;height:31vh}
   .realtime-controls{left:12px;right:12px;justify-content:center}
 }
+
+/* Keep the live avatar fully visible and centered in its own stage. */
+.avatar-shell{inset:0 34% 0 2%}
+.status-card{bottom:6vh}
