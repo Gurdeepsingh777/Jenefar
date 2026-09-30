@@ -261,12 +261,14 @@ function resumeBrowserVoice(){
 
 function browserSpeakFallback(text){
   if(!text||!browserSpeechReady) return;
+  const clean = String(text).replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
+  if(!clean) return;
   try{
     browserSpeechActive=true;
     pauseBrowserVoice();
     window.speechSynthesis.cancel();
-    const utterance=new SpeechSynthesisUtterance(text);
-    utterance.lang="hi-IN";
+    const utterance=new SpeechSynthesisUtterance(clean);
+    utterance.lang="en-IN";
     utterance.rate=.98;
     utterance.pitch=1.02;
     utterance.onend=()=>{browserSpeechActive=false;resumeBrowserVoice();};
