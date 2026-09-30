@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from queue import Queue
 from typing import Any
@@ -22,7 +23,11 @@ class BrowserVoiceBridge:
             os.getenv("JENEFAR_BROWSER_VOICE_REPEAT_WINDOW", "1.8")
         )
         self._conversation_language = "Hinglish"
-        self._task_lock = threading.Lock()
+        self._task_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="jenefar-task",
+        )
+        self._active_task = None
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
@@ -64,7 +69,7 @@ class BrowserVoiceBridge:
         task_id = uuid.uuid4().hex[:10]
         self._publish("queued", "", task_id)
 
-        if not self._task_lock.acquire(blocking=False):
+        if self._active_task is not None and not self._active_task.done():
             return {
                 "ok": True,
                 "accepted": False,
@@ -75,13 +80,11 @@ class BrowserVoiceBridge:
                 "status": "busy",
             }
 
-        worker = threading.Thread(
-            target=self._run_task_guarded,
-            args=(task_id, raw),
-            name=f"jenefar-task-{task_id}",
-            daemon=True,
+        self._active_task = self._task_executor.submit(
+            self._run_task,
+            task_id,
+            raw,
         )
-        worker.start()
         return {
             "ok": True,
             "accepted": True,
@@ -92,12 +95,6 @@ class BrowserVoiceBridge:
 
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
-
-    def _run_task_guarded(self, task_id: str, raw: str) -> None:
-        try:
-            self._run_task(task_id, raw)
-        finally:
-            self._task_lock.release()
 
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
@@ -134,6 +131,7 @@ class BrowserVoiceBridge:
                     response_language=self._conversation_language,
                 )
 
+            reply = enforce_hinglish(reply)
             speech_text = roman_hinglish_for_voice(reply)
             self._publish("result", "", task_id)
             if speech_text:
@@ -166,8 +164,4 @@ class BrowserVoiceBridge:
                     self._publish("idle", "", "")
 
     def shutdown(self) -> None:
-        if self._task_lock.locked():
-            try:
-                self._task_lock.release()
-            except RuntimeError:
-                pass
+        self._task_executor.shutdown(wait=False, cancel_futures=True)
