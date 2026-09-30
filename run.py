@@ -33,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--events-run", action="store_true", help="run the persistent scheduler loop; normal tool approvals remain active")
     parser.add_argument("--events-poll-seconds", type=float, default=1.0, help="scheduler polling delay in seconds")
     parser.add_argument("--evaluation-report", action="store_true", help="show recent runtime evaluation records")
+    parser.add_argument("--trace-report", action="store_true", help="show recent runtime execution traces and health summary")
+    parser.add_argument("--runtime-health", action="store_true", help="show compact runtime health summary")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
     parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
@@ -305,6 +307,16 @@ def main() -> int:
         args.memory_search,
         args.graph_search,
     ]
+    if args.trace_report or args.runtime_health:
+        from jenefar.evaluation.trace import TraceStore
+        store = TraceStore()
+        if args.runtime_health:
+            print(store.summary())
+        if args.trace_report:
+            for item in store.recent():
+                print(item)
+        return 0
+
     if args.evaluation_report:
         from jenefar.evaluation.loop import EvaluationLoop
         for item in EvaluationLoop().recent():
