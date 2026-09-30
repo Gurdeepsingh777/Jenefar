@@ -237,3 +237,18 @@ def test_desktop_action_tools_support_optional_verification():
     assert '"verify": {"type": ["string", "null"]' in broker
     assert 'locate_and_click' in broker
     assert 'locate_and_type' in broker
+
+
+def test_default_runtime_reports_desktop_backend_readiness():
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "desktop_status = orchestrator.tool_broker.desktop.backend_status()" in run
+    assert '"[JENEFAR] Desktop backend: "' in run
+
+
+def test_default_runtime_keeps_voice_provider_import_lazy():
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "from jenefar.voice.provider import ProviderVoiceRuntime" in run
+    voice_branch = run.split("if args.voice_auto:", 1)[1]
+    import_pos = voice_branch.index("from jenefar.voice.provider import ProviderVoiceRuntime")
+    constructor_pos = voice_branch.index("browser_voice = BrowserVoiceBridge")
+    assert import_pos > constructor_pos
