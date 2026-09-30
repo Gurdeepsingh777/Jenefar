@@ -22,7 +22,6 @@ from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
 from jenefar.evaluation.loop import EvaluationLoop
 from jenefar.evaluation.trace import ExecutionTrace, TraceStore
-from jenefar.core.self_healing import SelfHealingRuntime
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -46,7 +45,6 @@ class JenefarOrchestrator:
         self.skills = SkillManager()
         self.evaluator = EvaluationLoop()
         self.trace_store = TraceStore()
-        self.self_healing = SelfHealingRuntime()
         self.planner = Planner(skills=self.skills)
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
@@ -181,7 +179,9 @@ class JenefarOrchestrator:
                     "live GitHub retrieval",
                 ] if not connected else [],
             }
-            dispatch_metadata = {
+            result = self.router.dispatch(
+                text,
+                metadata={
                     "session_id": self.session.session_id,
                     "trace_id": trace.trace_id,
                     "intent": plan.intent,
@@ -207,19 +207,7 @@ class JenefarOrchestrator:
                         for relation in graph_hits
                     ],
                 },
-            }
-            result = self.self_healing.run(
-                "agent_dispatch",
-                lambda: self.router.dispatch(text, metadata=dispatch_metadata),
-                metadata={
-                    "approval_required": False,
-                    "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
-                },
             )
-            trace.metadata["self_healing"] = {
-                "retries": self.self_healing.health.retries,
-                "consecutive_failures": self.self_healing.health.consecutive_failures,
-            }
             trace.actual_agent = result.agent
             trace.provider = str(result.metadata.get("provider", ""))
             for pending in result.metadata.get("pending_tools", []) or []:
