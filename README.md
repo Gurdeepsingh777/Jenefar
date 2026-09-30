@@ -66,13 +66,15 @@ python run.py --realtime
 python run.py --doctor
 ```
 
-Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Agar bundled/sample VRM local machine par present nahi hai, procedural avatar automatically visible rehta hai; VRM optional enhancement hai.
+Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime first-run par licensed sample VRM asset ko automatically provision karne ki koshish karta hai. Default UI cartoon/procedural face ko hide karke VRM rendering ko primary avatar banati hai; VRM provisioning fail hone par runtime clear diagnostic dikhata hai.
 
 Voice provider behavior:
 
 - STT aur TTS capabilities alag evaluate hoti hain.
 - OpenAI key exhausted ho to configured Groq STT fallback try hota hai.
-- Groq Orpheus TTS account/organization terms-gated ho sakta hai; aise case me `JENEFAR_DISABLE_GROQ_TTS=true` set karke Groq STT ko active rakha ja sakta hai while TTS is handled by another configured audio provider.
+- TTS failure microphone/STT loop ko terminate nahi karti.
+- Groq Orpheus TTS account/organization terms-gated ho sakta hai; aise case me `JENEFAR_DISABLE_GROQ_TTS=true` set karke Groq STT active reh sakta hai.
+- Optional local Piper TTS can act as a final offline speech backend when `piper` and `JENEFAR_LOCAL_TTS_MODEL` are configured. Piper supports local ONNX voice models and writes WAV output for playback.
 
 ## Language behavior
 
