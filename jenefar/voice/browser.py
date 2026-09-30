@@ -168,6 +168,8 @@ class BrowserVoiceBridge:
                         task_id,
                     )
                     self._publish("speaking_fallback", text, task_id)
+                finally:
+                    self._publish("completed", "Spoken response ready.", task_id)
             finally:
                 self._speech_queue.task_done()
                 if self._speech_queue.empty():
