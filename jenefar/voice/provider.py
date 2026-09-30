@@ -47,13 +47,13 @@ class ProviderVoiceRuntime:
     @classmethod
     def audio_status(cls) -> dict[str, dict | None]:
         stt_providers = cls._configured_audio_providers()
-        tts_providers = [
-            name
-            for name in stt_providers
-            if cls._tts_configured(name)
-        ]
+        tts_providers = []
         if cls._legacy_edge_tts_available():
             tts_providers.append("edge")
+        tts_providers.extend(
+            name for name in stt_providers
+            if cls._tts_configured(name)
+        )
         if cls._local_espeak_available():
             tts_providers.append("espeak")
         if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
@@ -134,13 +134,14 @@ class ProviderVoiceRuntime:
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
-        order = [
+        order = []
+        if self._legacy_edge_tts_available():
+            order.append("edge")
+        order.extend(
             name
             for name in self._provider_order()
             if self._tts_configured(name)
-        ]
-        if self._legacy_edge_tts_available():
-            order.append("edge")
+        )
         if self._local_espeak_available():
             order.append("espeak")
         if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
@@ -235,7 +236,11 @@ class ProviderVoiceRuntime:
 
         last_error: Exception | None = None
         for provider in providers:
-            if not self._audio_pool.available(provider):
+            if provider in {"edge", "espeak", "local"}:
+                available = self._tts_configured(provider)
+            else:
+                available = self._audio_pool.available(provider)
+            if not available:
                 continue
             try:
                 if provider == "openai":
@@ -482,7 +487,11 @@ class ProviderVoiceRuntime:
 
         last_error: Exception | None = None
         for provider in providers:
-            if not self._audio_pool.available(provider):
+            if provider in {"edge", "espeak", "local"}:
+                available = self._tts_configured(provider)
+            else:
+                available = self._audio_pool.available(provider)
+            if not available:
                 continue
             try:
                 if provider == "openai":

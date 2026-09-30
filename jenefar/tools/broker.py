@@ -53,6 +53,7 @@ class ToolBroker:
         memory: AdvancedMemory | None = None,
         events: EventEngine | None = None,
         event_handler=None,
+        activity_handler=None,
     ):
         self.registry = ToolRegistry()
         self.terminal = TerminalTool()
@@ -72,6 +73,7 @@ class ToolBroker:
         self.memory = memory or AdvancedMemory()
         self.events = events or EventEngine()
         self.event_handler = event_handler
+        self.activity_handler = activity_handler
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
@@ -89,6 +91,13 @@ class ToolBroker:
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
+
+    def _activity(self, state: str, text: str) -> None:
+        if self.activity_handler is not None:
+            try:
+                self.activity_handler(state, text)
+            except Exception:
+                pass
 
     def _get_screen_vision(self):
         if self.screen_vision is None:
@@ -127,6 +136,28 @@ class ToolBroker:
             name="dismiss_offline_notice",
             description="Acknowledge and close Jenefar's current offline-capability notice.",
             handler=lambda _args: {"closed": True, "message": "Offline capability notice closed."},
+        ))
+        self.registry.register(ToolSpec(
+            name="whatsapp_open_web",
+            description="Open the logged-in WhatsApp Web session in the visible browser. Uses Jenefar's WhatsApp helper when available, otherwise opens web.whatsapp.com.",
+            handler=lambda _args: self._whatsapp_open_web(),
+        ))
+        self.registry.register(ToolSpec(
+            name="whatsapp_send_web",
+            description="Send a WhatsApp message through the user's visible/logged-in WhatsApp Web session. Prefer a contact name when known; the helper uses the existing browser session. Explicit confirmation is required.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "contact": {"type": "string", "maxLength": 200},
+                    "message": {"type": "string", "maxLength": 4000},
+                    "phone": {"type": ["string", "null"], "maxLength": 32},
+                },
+                "required": ["contact", "message", "phone"],
+                "additionalProperties": False,
+            },
+            handler=self._whatsapp_send_web,
+            requires_confirmation=True,
+            action=True,
         ))
         self.registry.register(ToolSpec(
             name="local_time",
@@ -978,6 +1009,114 @@ class ToolBroker:
             "result": value,
         }
 
+    @staticmethod
+    def _whatsapp_script_path() -> str:
+        return os.path.expanduser(
+            os.getenv("JENEFAR_WHATSAPP_SCRIPT", "~/jenefar-tools/whatsapp_web.py")
+        )
+
+    def _whatsapp_open_web(self) -> dict[str, Any]:
+        import shutil
+        import subprocess
+
+        script = self._whatsapp_script_path()
+        if os.path.isfile(script):
+            result = subprocess.run(
+                ["python3", script, "open"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            return {
+                "opened": result.returncode == 0,
+                "method": "jenefar-whatsapp-helper",
+                "stdout": result.stdout[-2000:],
+                "stderr": result.stderr[-2000:],
+                "returncode": result.returncode,
+            }
+
+        opener = shutil.which("xdg-open")
+        if not opener:
+            raise RuntimeError("xdg-open is not available.")
+        result = subprocess.run(
+            [opener, "https://web.whatsapp.com/"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return {
+            "opened": result.returncode == 0,
+            "method": "xdg-open",
+            "returncode": result.returncode,
+        }
+
+    def _whatsapp_send_web(self, args: dict[str, Any]) -> dict[str, Any]:
+        import shutil
+        import subprocess
+        from urllib.parse import quote
+
+        contact = str(args["contact"]).strip()
+        message = str(args["message"]).strip()
+        phone = str(args.get("phone") or "").strip()
+        if not contact and not phone:
+            raise ValueError("Provide a WhatsApp contact name or phone number.")
+
+        script = self._whatsapp_script_path()
+        if os.path.isfile(script):
+            result = subprocess.run(
+                ["python3", script, "send", contact, message],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    result.stderr.strip() or result.stdout.strip() or "WhatsApp helper failed."
+                )
+            return {
+                "sent": True,
+                "method": "jenefar-whatsapp-helper",
+                "contact": contact,
+                "message": message,
+                "stdout": result.stdout[-3000:],
+            }
+
+        if not phone:
+            raise RuntimeError(
+                "WhatsApp helper is not installed, and no phone number was provided for direct browser fallback."
+            )
+
+        normalized = "".join(ch for ch in phone if ch.isdigit())
+        if normalized.startswith("0"):
+            normalized = "91" + normalized[1:]
+        elif len(normalized) == 10:
+            normalized = "91" + normalized
+        if len(normalized) < 10:
+            raise ValueError("Invalid WhatsApp phone number.")
+
+        opener = shutil.which("xdg-open")
+        if not opener:
+            raise RuntimeError("xdg-open is not available.")
+        url = f"https://web.whatsapp.com/send?phone={normalized}&text={quote(message)}"
+        result = subprocess.run(
+            [opener, url],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return {
+            "sent": False,
+            "opened": result.returncode == 0,
+            "method": "xdg-open",
+            "phone": normalized,
+            "message": message,
+            "note": "WhatsApp Web opened with the message prefilled; the visible Send action is still required when the helper is unavailable.",
+        }
+
     def _browser_play_youtube(self, query: str) -> dict[str, Any]:
         try:
             import shutil
@@ -1134,6 +1273,7 @@ class ToolBroker:
         )
 
     def invoke(self, name: str, arguments: dict[str, Any], *, confirmed: bool = False) -> str:
+        self._activity("thinking", f"Tool requested: {name}")
         try:
             spec = self.registry.get(name)
         except KeyError:
@@ -1149,6 +1289,10 @@ class ToolBroker:
                 tool=name,
                 arguments=arguments,
             )
+            self._activity(
+                "waiting_approval",
+                f"Approval required: {name} [{pending_id}]",
+            )
             return json.dumps({
                 "status": "approval_required",
                 "pending_id": pending_id,
@@ -1157,8 +1301,10 @@ class ToolBroker:
             })
 
         try:
+            self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
             self.audit.record("tool_executed", tool=name, arguments=arguments, result=value)
+            self._activity("thinking", f"Tool result: {name} -> {str(value)[:500]}")
             return json.dumps({"status": "ok", "result": value}, ensure_ascii=False, default=str)
         except Exception as exc:
             self.audit.record(
@@ -1167,11 +1313,24 @@ class ToolBroker:
                 arguments=arguments,
                 error=f"{type(exc).__name__}: {exc}",
             )
+            self._activity(
+                "error",
+                f"Tool error: {name} -> {type(exc).__name__}: {exc}",
+            )
             return json.dumps({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+
+    def reject(self, pending_id: str) -> str:
+        pending = self.pending.pop(pending_id, None)
+        if pending is None:
+            return json.dumps({"status": "error", "error": "Unknown or expired pending tool call."})
+        self.audit.record("tool_rejected", pending_id=pending_id, tool=pending.name)
+        self._activity("idle", f"Action denied: {pending.name}")
+        return json.dumps({"status": "denied", "tool": pending.name})
 
     def approve(self, pending_id: str) -> str:
         pending = self.pending.pop(pending_id, None)
         if pending is None:
             return json.dumps({"status": "error", "error": "Unknown or expired pending tool call."})
         self.audit.record("tool_approved", pending_id=pending_id, tool=pending.name)
+        self._activity("thinking", f"Approval granted: {pending.name}")
         return self.invoke(pending.name, pending.arguments, confirmed=True)

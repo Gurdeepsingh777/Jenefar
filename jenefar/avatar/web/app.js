@@ -87,6 +87,8 @@ function apply(event){
   stage.style.setProperty("--emotion-intensity", emotionIntensity.toFixed(3));
   stage.dataset.emotion=emotion;
   window.dispatchEvent(new CustomEvent("jenefar-avatar-event", { detail: event }));
+  addActivity(event);
+  if(currentState==="waiting_approval") showApproval(event);
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
   stateEl.textContent=stateText;
   captionEl.textContent=event.text||caption;
@@ -98,6 +100,51 @@ function apply(event){
   const [r,g,b]=palette(currentState);
   dot.style.background=`rgb(${r},${g},${b})`;
   dot.style.boxShadow=`0 0 18px rgb(${r},${g},${b})`;
+}
+
+const activityList=document.getElementById("activity-list");
+let lastActivityKey="";
+const approvalDialogs=new Map();
+
+function addActivity(event){
+  if(!activityList) return;
+  const text=String(event.text||"").trim();
+  if(!text && !event.state) return;
+  const key=String(event.state||"")+"|"+text;
+  if(key===lastActivityKey && event.state!=="error") return;
+  lastActivityKey=key;
+  const row=document.createElement("div");
+  row.className="activity-item activity-"+(event.state||"idle");
+  const when=new Date().toLocaleTimeString();
+  row.innerHTML="<span class='activity-time'>"+when+"</span><span class='activity-state'>"+String(event.state||"").toUpperCase()+"</span><span class='activity-text'></span>";
+  row.querySelector(".activity-text").textContent=text || "Jenefar is active";
+  activityList.prepend(row);
+  while(activityList.children.length>80) activityList.removeChild(activityList.lastChild);
+}
+
+function showApproval(event){
+  const match=String(event.text||"").match(/\[([a-f0-9]{12,})\]/i);
+  if(!match || approvalDialogs.has(match[1])) return;
+  const pendingId=match[1];
+  const overlay=document.createElement("div");
+  overlay.className="approval-overlay";
+  overlay.innerHTML="<div class='approval-card'><div class='approval-title'>JENEFAR ACTION APPROVAL</div><div class='approval-tool'></div><pre></pre><div class='approval-actions'><button data-action='deny'>DENY</button><button data-action='approve'>APPROVE</button></div></div>";
+  overlay.querySelector(".approval-tool").textContent=String(event.text||"Approval required");
+  overlay.querySelector("pre").textContent="Pending ID: "+pendingId;
+  document.body.appendChild(overlay);
+  approvalDialogs.set(pendingId,overlay);
+  const close=()=>{approvalDialogs.delete(pendingId);overlay.remove();};
+  overlay.querySelector("[data-action='deny']").onclick=async()=>{
+    try{
+      await fetch("/approval/reject",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approve_id:pendingId})});
+    }finally{ close(); }
+  };
+  overlay.querySelector("[data-action='approve']").onclick=async()=>{
+    overlay.querySelectorAll("button").forEach(button=>button.disabled=true);
+    try{
+      await fetch("/realtime/tool",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approve_id:pendingId})});
+    }finally{ close(); }
+  };
 }
 
 function connect(){
@@ -112,3 +159,5 @@ window.addEventListener("resize",resize);
 resize();
 connect();
 requestAnimationFrame(draw);
+
+ 
