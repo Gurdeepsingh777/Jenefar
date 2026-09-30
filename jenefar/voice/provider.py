@@ -487,7 +487,11 @@ class ProviderVoiceRuntime:
 
         last_error: Exception | None = None
         for provider in providers:
-            if not self._audio_pool.available(provider):
+            if provider in {"edge", "espeak", "local"}:
+                available = self._tts_configured(provider)
+            else:
+                available = self._audio_pool.available(provider)
+            if not available:
                 continue
             try:
                 if provider == "openai":
