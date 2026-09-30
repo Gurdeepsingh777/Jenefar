@@ -142,8 +142,7 @@ def test_groq_stt_request_uses_accuracy_options(monkeypatch):
     class FakeClient:
         audio = FakeAudio()
 
-    import openai
-
+    openai = __import__("pytest").importorskip("openai")
     monkeypatch.setattr(openai, "OpenAI", lambda **kwargs: FakeClient())
     runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
     from jenefar.core.provider_pool import ProviderPool
