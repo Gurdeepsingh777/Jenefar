@@ -175,6 +175,16 @@ function applyActivityFilter(){
   });
 }
 
+const clearActivityButton=document.getElementById("clear-activity");
+if(clearActivityButton){
+  clearActivityButton.onclick=()=>{
+    activityList.innerHTML="";
+    taskState.clear();
+    updateTaskCounts();
+    lastActivityKey="";
+  };
+}
+
 function setupActivityFilters(){
   document.querySelectorAll("[data-activity-filter]").forEach(button=>{
     button.addEventListener("click",()=>{
