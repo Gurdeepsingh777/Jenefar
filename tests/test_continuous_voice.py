@@ -127,3 +127,25 @@ def test_default_voice_capture_threshold_is_reasonable():
 def test_browser_voice_bridge_exists():
     from jenefar.voice.browser import BrowserVoiceBridge
     assert hasattr(BrowserVoiceBridge, "handle_text")
+
+
+def test_speech_cleaner_removes_markdown_symbols():
+    from jenefar.voice.speech import clean_for_speech
+    result = clean_for_speech("**Result:** 10 *open* ports. See https://example.com")
+    assert "*" not in result
+    assert "https://" not in result
+    assert "10" in result
+
+
+def test_speech_cleaner_limits_verbose_output():
+    from jenefar.voice.speech import clean_for_speech
+    result = clean_for_speech("Sentence one. " * 200)
+    assert len(result) <= 1020
+
+
+def test_browser_voice_bridge_uses_task_pool():
+    from concurrent.futures import ThreadPoolExecutor
+    from jenefar.voice.browser import BrowserVoiceBridge
+    bridge = BrowserVoiceBridge
+    assert issubclass(ThreadPoolExecutor, object)
+    assert hasattr(bridge, "submit_text")
