@@ -57,6 +57,13 @@ def prepare_premium_avatar(
     if not blender:
         return None
 
+    pipeline_input = source_path
+    temporary_input = None
+    if source_path.suffix.lower() != ".vrm":
+        temporary_input = source_path.with_name(source_path.name + ".pipeline.vrm")
+        shutil.copy2(source_path, temporary_input)
+        pipeline_input = temporary_input
+
     cmd = [
         blender,
         "--background",
@@ -64,7 +71,7 @@ def prepare_premium_avatar(
         str(PIPELINE_SCRIPT),
         "--",
         "--input",
-        str(source_path),
+        str(pipeline_input),
         "--output",
         str(destination),
     ]
@@ -72,13 +79,18 @@ def prepare_premium_avatar(
         cmd.extend(["--blend-output", str(Path(blend_output).expanduser().resolve())])
 
     timeout = int(os.getenv("JENEFAR_BLENDER_TIMEOUT", "180"))
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=max(30, timeout),
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=max(30, timeout),
+        )
+    finally:
+        if temporary_input is not None:
+            temporary_input.unlink(missing_ok=True)
+
     if result.returncode != 0:
         raise RuntimeError(
             "Premium VRM pipeline failed. "
