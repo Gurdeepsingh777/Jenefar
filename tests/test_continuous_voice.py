@@ -61,3 +61,9 @@ def test_voice_runtime_has_provider_health_reset():
     from jenefar.voice.provider import ProviderVoiceRuntime
 
     assert hasattr(ProviderVoiceRuntime, "reset_audio_health")
+
+
+def test_legacy_tts_helpers_are_available():
+    from jenefar.voice.provider import ProviderVoiceRuntime
+    assert hasattr(ProviderVoiceRuntime, "_legacy_edge_tts_available")
+    assert hasattr(ProviderVoiceRuntime, "_local_espeak_available")
