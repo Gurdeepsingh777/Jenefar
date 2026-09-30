@@ -63,7 +63,12 @@ class ProviderPool:
 
     def configured(self, name: str) -> bool:
         config = self.CONFIGS[name]
-        key = os.getenv(config.api_key_env, "").strip()\n        if key:\n            return True\n        # Backward compatibility: the existing Jenefar setup may have stored an\n        # OpenRouter key in OPENAI_API_KEY before provider-aware routing existed.\n        return name == "openrouter" and os.getenv("OPENAI_API_KEY", "").strip().startswith("sk-or-")
+        key = os.getenv(config.api_key_env, "").strip()
+        if key:
+            return True
+        # Backward compatibility: the existing Jenefar setup may have stored an
+        # OpenRouter key in OPENAI_API_KEY before provider-aware routing existed.
+        return name == "openrouter" and os.getenv("OPENAI_API_KEY", "").strip().startswith("sk-or-")
 
     def model(self, name: str, role: str = "fast") -> str:
         config = self.CONFIGS[name]
@@ -82,7 +87,18 @@ class ProviderPool:
             seconds = float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
         self.cooldowns[name] = time.monotonic() + max(1.0, seconds)
 
-    def api_key(self, name: str) -> str:\n        config = self.CONFIGS[name]\n        key = os.getenv(config.api_key_env, "").strip()\n        if key:\n            return key\n        if name == "openrouter":\n            legacy = os.getenv("OPENAI_API_KEY", "").strip()\n            if legacy.startswith("sk-or-"):\n                return legacy\n        return ""\n\n    def reset(self, name: str) -> None:
+    def api_key(self, name: str) -> str:
+        config = self.CONFIGS[name]
+        key = os.getenv(config.api_key_env, "").strip()
+        if key:
+            return key
+        if name == "openrouter":
+            legacy = os.getenv("OPENAI_API_KEY", "").strip()
+            if legacy.startswith("sk-or-"):
+                return legacy
+        return ""
+
+    def reset(self, name: str) -> None:
         self.cooldowns.pop(name, None)
 
     def status(self, role: str = "fast") -> dict[str, dict]:
