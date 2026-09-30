@@ -13,6 +13,7 @@ class AvatarEvent:
     state: str
     text: str = ""
     level: float = 0.0
+    task_id: str = ""
     emotion: str = "neutral"
     intensity: float = 0.0
     timestamp: float = 0.0
@@ -32,13 +33,21 @@ class AvatarController:
         self._expressions = ExpressionEngine()
         self._current = AvatarEvent("idle").payload()
 
-    def publish(self, state: str, text: str = "", level: float = 0.0) -> None:
+    def publish(
+        self,
+        state: str,
+        text: str = "",
+        level: float = 0.0,
+        *,
+        task_id: str = "",
+    ) -> None:
         bounded_level = max(0.0, min(1.0, float(level)))
         expression = self._expressions.classify(state, text)
         event = AvatarEvent(
             state=state,
             text=text,
             level=bounded_level,
+            task_id=task_id,
             emotion=expression.name,
             intensity=expression.intensity,
             timestamp=time.time(),
