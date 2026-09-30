@@ -60,6 +60,33 @@ class LLMClient:
         return self._clients[provider]
 
     @staticmethod
+    def _chat_tools(tool_broker, allow_action_tools: bool) -> list[dict[str, Any]]:
+        """Convert Jenefar's Responses-style function schemas to Chat Completions format."""
+        if tool_broker is None:
+            return []
+        tools = tool_broker.schemas(
+            allow_action_tools=allow_action_tools,
+            include_confirmation_tools=True,
+        )
+        converted = []
+        for tool in tools:
+            if tool.get("type") != "function":
+                continue
+            converted.append({
+                "type": "function",
+                "function": {
+                    "name": tool.get("name", ""),
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("parameters", {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    }),
+                },
+            })
+        return converted
+
+    @staticmethod
     def _tool_result(call: Any, output: str) -> dict[str, Any]:
         return {
             "role": "tool",
@@ -185,10 +212,7 @@ class LLMClient:
             {"role": "system", "content": instructions},
             {"role": "user", "content": prompt},
         ]
-        tools = tool_broker.schemas(
-            allow_action_tools=allow_action_tools,
-            include_confirmation_tools=True,
-        ) if tool_broker is not None else []
+        tools = self._chat_tools(tool_broker, allow_action_tools)
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
             kwargs: dict[str, Any] = {
