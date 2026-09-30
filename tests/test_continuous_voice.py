@@ -91,6 +91,7 @@ def test_tts_prefers_edge_when_available(monkeypatch):
     )
     monkeypatch.setenv("GROQ_API_KEY", "test")
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("JENEFAR_ENABLE_NATIVE_TTS", "1")
     status = ProviderVoiceRuntime.audio_status()
     assert status["tts"]["provider"] == "edge"
 
