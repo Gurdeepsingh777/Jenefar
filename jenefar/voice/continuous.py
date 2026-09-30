@@ -22,10 +22,10 @@ class VoiceConfig:
     sample_rate: int = 16_000
     channels: int = 1
     block_ms: int = 50
-    start_threshold: float = 0.025
-    stop_threshold: float = 0.014
-    silence_ms: int = 1100
-    max_utterance_seconds: float = 10.0
+    start_threshold: float = 0.012
+    stop_threshold: float = 0.007
+    silence_ms: int = 1500
+    max_utterance_seconds: float = 14.0
 
 
 class ContinuousVoiceRuntime:
@@ -235,6 +235,15 @@ class ContinuousVoiceRuntime:
             return ""
 
     async def _transcribe_phrase(self, pcm: bytes) -> str:
+        use_google = os.getenv("JENEFAR_USE_GOOGLE_STT_FALLBACK", "0").strip().lower() in {
+            "1", "true", "yes"
+        }
+        if not use_google:
+            return await self._voice.transcribe_pcm(
+                pcm,
+                sample_rate=self.config.sample_rate,
+                channels=self.config.channels,
+            )
         text = await asyncio.to_thread(self._google_transcribe, pcm, self.config.sample_rate)
         if text:
             return text
@@ -265,6 +274,9 @@ class ContinuousVoiceRuntime:
 
     async def _process_transcript(self, text: str) -> None:
         normalized = self.orchestrator.wakeword.normalize_stt_text(text)
+        compact = " ".join(normalized.split())
+        if len(compact) < 3 and compact not in {"hi", "hello", "exit"}:
+            return
         now = time.monotonic()
         if (
             normalized
