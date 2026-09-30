@@ -161,13 +161,13 @@ def test_tts_falls_back_from_openai_quota_to_groq(monkeypatch):
     runtime._audio_pool = ProviderPool()
     calls = []
 
-    async def fail_openai(_text):
+    async def fail_openai(_self, _text):
         calls.append("openai")
         error = RuntimeError("429 credit_balance_exhausted")
         error.status_code = 429
         raise error
 
-    async def succeed_groq(_text):
+    async def succeed_groq(_self, _text):
         calls.append("groq")
 
     monkeypatch.setattr(ProviderVoiceRuntime, "_speak_openai", fail_openai)
