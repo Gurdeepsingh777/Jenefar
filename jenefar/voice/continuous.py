@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from jenefar.voice.provider import ProviderVoiceRuntime
 from jenefar.voice.wakeword_engine import WakeWordEngine
 
 
@@ -53,6 +54,7 @@ class ContinuousVoiceRuntime:
         self._silence_started: float | None = None
         self._wakeword = WakeWordEngine.from_environment()
         self._wake_triggered = not self._wakeword.available
+        self._voice = ProviderVoiceRuntime(orchestrator, avatar=avatar)
 
     @staticmethod
     def _rms(chunk: np.ndarray) -> float:
@@ -144,19 +146,11 @@ class ContinuousVoiceRuntime:
         return output
 
     async def _transcribe(self, pcm: bytes) -> str:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI()
-        audio = self._wav_bytes(
+        return await self._voice.transcribe_pcm(
             pcm,
-            self.config.sample_rate,
-            self.config.channels,
+            sample_rate=self.config.sample_rate,
+            channels=self.config.channels,
         )
-        result = await client.audio.transcriptions.create(
-            model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
-            file=audio,
-        )
-        return result.text.strip()
 
     async def _animate_speaking(self, text: str) -> None:
         if self.avatar is None:
@@ -173,29 +167,7 @@ class ContinuousVoiceRuntime:
             await asyncio.sleep(0.09)
 
     async def _speak(self, text: str) -> None:
-        from openai import AsyncOpenAI
-        from openai.helpers import LocalAudioPlayer
-
-        client = AsyncOpenAI()
-        animation = None
-        if self.avatar is not None:
-            animation = asyncio.create_task(self._animate_speaking(text))
-
-        try:
-            async with client.audio.speech.with_streaming_response.create(
-                model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
-                voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
-                response_format="pcm",
-                input=text,
-            ) as response:
-                await LocalAudioPlayer().play(response)
-        finally:
-            if animation is not None:
-                animation.cancel()
-                try:
-                    await animation
-                except asyncio.CancelledError:
-                    pass
+        await self._voice.speak(text)
 
     async def _process_utterance(self, pcm: bytes) -> None:
         try:
@@ -250,9 +222,16 @@ class ContinuousVoiceRuntime:
                 self.avatar.publish("idle", "")
 
     async def run_async(self) -> None:
-        if not os.getenv("OPENAI_API_KEY"):
-            print("[JENEFAR] Set OPENAI_API_KEY before using continuous voice mode.")
+        status = self._voice.audio_status()
+        if not status["stt"] or not status["tts"]:
+            print("[JENEFAR] Continuous voice requires a configured STT and TTS provider.")
+            print("[JENEFAR] Set OPENAI_API_KEY or GROQ_API_KEY.")
             return
+        print(
+            f"[JENEFAR] Continuous voice providers: "
+            f"STT={status['stt']['provider']}/{status['stt']['model']} "
+            f"TTS={status['tts']['provider']}/{status['tts']['model']}"
+        )
 
         try:
             import sounddevice as sd
