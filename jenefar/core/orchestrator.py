@@ -155,7 +155,7 @@ class JenefarOrchestrator:
             event_id=event_id,
         )
         self.state = JenefarState.THINKING
-        self._avatar_state("thinking", "Processing your request…")
+        self._avatar_state("thinking", "")
         self.session.add("user", text)
         self.memory_engine.record_message(
             self.session.session_id,
@@ -229,10 +229,7 @@ class JenefarOrchestrator:
                     for relation in graph_hits
                 ],
             }
-            self._avatar_activity(
-                "thinking",
-                f"Agent selected: {plan.agent} | intent={plan.intent}",
-            )
+            self._avatar_activity("thinking", "")
             result = self.self_healing.run(
                 "agent_dispatch",
                 lambda: self.router.dispatch(text, metadata=dispatch_metadata),
@@ -246,10 +243,7 @@ class JenefarOrchestrator:
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
             trace.actual_agent = result.agent
-            self._avatar_activity(
-                "thinking",
-                f"Agent completed: {result.agent}",
-            )
+            self._avatar_activity("thinking", "")
             trace.provider = str(result.metadata.get("provider", ""))
             for pending in result.metadata.get("pending_tools", []) or []:
                 trace.add_tool_call(

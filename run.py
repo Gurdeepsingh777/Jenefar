@@ -278,7 +278,6 @@ def main() -> int:
 
         from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
-        from jenefar.voice.continuous import ContinuousVoiceRuntime
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
@@ -324,8 +323,8 @@ def main() -> int:
 
         audio_status = ProviderVoiceRuntime.audio_status()
         print(
-            "[JENEFAR] One-command runtime: avatar UI + continuous voice + "
-            "multi-agent orchestrator + memory + tools + diagnostics."
+            "[JENEFAR] Browser voice runtime: avatar UI + browser microphone + "
+            "multi-agent orchestrator + memory + tools."
         )
         if audio_status["stt"]:
             stt = audio_status["stt"]
@@ -349,18 +348,8 @@ def main() -> int:
                     print("[JENEFAR] No Python TTS configured; browser speech synthesis will be used as UI fallback.")
                 threading.Event().wait()
             else:
-                try:
-                    import sounddevice  # noqa: F401
-                except ImportError as exc:
-                    print(f"[JENEFAR] Voice dependency missing: sounddevice ({exc}).")
-                    print("[JENEFAR] The avatar UI is still available.")
-                    orchestrator.run()
-                else:
-                    if audio_status["stt"]:
-                        ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()
-                    else:
-                        print("[JENEFAR] No STT provider configured; switching to terminal text mode.")
-                        orchestrator.run()
+                print("[JENEFAR] Browser voice is disabled. UI remains available; no terminal voice/TTS is started.")
+                threading.Event().wait()
         finally:
             browser_voice.shutdown()
             avatar_server.stop()

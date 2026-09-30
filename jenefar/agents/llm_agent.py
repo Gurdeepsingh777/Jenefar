@@ -31,11 +31,12 @@ class BaseLLMAgent(BaseAgent):
         if str(response_language or "").lower() != "hinglish":
             return ""
         return (
-            "\nResponse language preference: Hinglish. "
-            "Reply naturally in a Hindi-English mix using Roman Hindi, "
-            "while keeping technical names, commands, code, filenames, APIs, "
-            "and standard English terminology unchanged. "
-            "Do not translate code or command syntax."
+            "\nLANGUAGE RULE: Output must be Roman Hinglish only. "
+            "Use normal Hindi spoken in Roman letters mixed naturally with English. "
+            "Never output Devanagari/Hindi-script text. Never answer fully in formal English. "
+            "Keep technical names, commands, code, filenames, APIs, and standard English "
+            "technical terms unchanged. Do not add greetings, capability lists, examples, "
+            "or extra information unless the user's request asks for them."
         )
 
     def run(self, context: AgentContext) -> AgentResult:
@@ -80,6 +81,11 @@ class BaseLLMAgent(BaseAgent):
 
         instructions = self.system_prompt + self._language_instruction(
             context.metadata.get("response_language")
+        ) + (
+            "\nAnswer only what the user asked. Be concise by default. "
+            "Do not proactively describe your capabilities unless asked."
+            if str(context.metadata.get("response_language") or "").lower() == "hinglish"
+            else ""
         )
         if runtime_text:
             instructions += (
