@@ -38,7 +38,7 @@ class ProviderPool:
             "GROQ_API_KEY",
             "https://api.groq.com/openai/v1",
             "GROQ_MODEL",
-            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
         ),
         "cerebras": ProviderConfig(
             "cerebras",
@@ -55,7 +55,7 @@ class ProviderPool:
     def order(self) -> list[str]:
         raw = os.getenv(
             "JENEFAR_PROVIDER_ORDER",
-            "openai,openrouter,gemini,groq,cerebras",
+            "openai,openrouter,gemini,groq",
         )
         names = [item.strip().lower() for item in raw.split(",") if item.strip()]
         valid = [name for name in names if name in self.CONFIGS]
@@ -65,6 +65,8 @@ class ProviderPool:
         config = self.CONFIGS[name]
         key = os.getenv(config.api_key_env, "").strip()
         if key:
+            if name == "openai" and key.startswith("sk-or-"):
+                return False
             return True
         # Backward compatibility: the existing Jenefar setup may have stored an
         # OpenRouter key in OPENAI_API_KEY before provider-aware routing existed.
