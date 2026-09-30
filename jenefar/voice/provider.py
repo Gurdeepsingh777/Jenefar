@@ -127,7 +127,7 @@ class ProviderVoiceRuntime:
         return await self.transcribe_pcm(pcm)
 
     @staticmethod
-    def _tts_chunks(text: str, max_chars: int = 180) -> list[str]:
+    def _tts_chunks(text: str, max_chars: int = 190) -> list[str]:
         clean = " ".join(str(text).split()).strip()
         if not clean:
             return []
@@ -243,6 +243,12 @@ class ProviderVoiceRuntime:
             level = 0.12 + 0.68 * ((0.5 + 0.5 * math.sin(phase)) ** 1.8)
             self.avatar.publish("speaking", text, level=level)
             await asyncio.sleep(0.09)
+
+    def provider_status_line(self) -> str:
+        status = self.audio_status()
+        stt = status["stt"] or {"provider": "none", "model": "none"}
+        tts = status["tts"] or {"provider": "none", "model": "none"}
+        return f"STT={stt['provider']}/{stt['model']} | TTS={tts['provider']}/{tts['model']}"
 
     def run(self) -> None:
         status = self.audio_status()
