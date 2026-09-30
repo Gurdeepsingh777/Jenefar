@@ -471,6 +471,49 @@ function setupBrowserVoice(){
   if(micButton) micButton.textContent="MIC ON";
 }
 
+
+/* Premium dashboard interactions */
+function updateUiClock(){
+  const el=document.getElementById("ui-clock");
+  if(el) el.textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+}
+setInterval(updateUiClock,1000); updateUiClock();
+
+document.querySelectorAll(".nav-item").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".nav-item").forEach(item=>item.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+
+async function dispatchDashboardCommand(command){
+  const clean=String(command||"").trim();
+  if(!clean) return;
+  sendBrowserTranscript(clean);
+}
+document.querySelectorAll("[data-command]").forEach(btn=>{
+  btn.addEventListener("click",()=>dispatchDashboardCommand(btn.dataset.command||""));
+});
+
+document.getElementById("chat-form")?.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const input=document.getElementById("chat-input");
+  const log=document.getElementById("chat-log");
+  const text=String(input?.value||"").trim();
+  if(!text||!log) return;
+  const user=document.createElement("div");
+  user.className="chat-row user";
+  user.innerHTML='<div class="bubble user-bubble"></div>';
+  user.querySelector(".bubble").textContent=text;
+  log.appendChild(user);
+  if(input) input.value="";
+  await dispatchDashboardCommand(text);
+});
+
+document.getElementById("dock-talk")?.addEventListener("click",()=>document.getElementById("mic-button")?.click());
+document.getElementById("dock-vision")?.addEventListener("click",()=>document.getElementById("stage")?.setAttribute("data-state","thinking"));
+document.getElementById("dock-chat")?.addEventListener("click",()=>document.getElementById("chat-input")?.focus());
+
 setupActivityFilters();
 window.addEventListener("resize",resize);
 resize();
