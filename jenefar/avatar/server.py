@@ -52,6 +52,19 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/health":
+            payload = {
+                "status": "ok",
+                "avatar": self.controller.current(),
+                "vrm_available": bool(self.vrm_path and self.vrm_path.is_file()),
+            }
+            self._send(
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            )
+            return
+
         if path == "/evaluation":
             self._send(200, "text/html; charset=utf-8", render_dashboard().encode("utf-8"))
             return
