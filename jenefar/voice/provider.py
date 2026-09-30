@@ -44,22 +44,38 @@ class ProviderVoiceRuntime:
 
     @classmethod
     def audio_status(cls) -> dict[str, dict | None]:
-        providers = cls._configured_audio_providers()
-        primary = providers[0] if providers else None
-        fallback = providers[1:] if len(providers) > 1 else []
+        stt_providers = cls._configured_audio_providers()
+        tts_providers = [
+            name
+            for name in stt_providers
+            if cls._tts_configured(name)
+        ]
         result: dict[str, dict | None] = {"stt": None, "tts": None}
-        if primary:
+
+        if stt_providers:
             result["stt"] = {
-                "provider": primary,
-                "model": cls._stt_model(primary),
-                "fallback": fallback,
+                "provider": stt_providers[0],
+                "model": cls._stt_model(stt_providers[0]),
+                "fallback": stt_providers[1:],
             }
+        if tts_providers:
             result["tts"] = {
-                "provider": primary,
-                "model": cls._tts_model(primary),
-                "fallback": fallback,
+                "provider": tts_providers[0],
+                "model": cls._tts_model(tts_providers[0]),
+                "fallback": tts_providers[1:],
             }
         return result
+
+    @classmethod
+    def _tts_configured(cls, provider: str) -> bool:
+        if provider == "openai":
+            return bool(cls._direct_openai_key())
+        if provider == "groq":
+            disabled = os.getenv("JENEFAR_DISABLE_GROQ_TTS", "").strip().lower()
+            return bool(os.getenv("GROQ_API_KEY", "").strip()) and disabled not in {
+                "1", "true", "yes"
+            }
+        return False
 
     @staticmethod
     def _stt_model(provider: str) -> str:
@@ -77,16 +93,6 @@ class ProviderVoiceRuntime:
             else os.getenv("GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english")
         )
 
-    @staticmethod
-    def _tts_usable_provider(provider: str) -> bool:
-        if provider == "openai":
-            return bool(ProviderVoiceRuntime._direct_openai_key())
-        if provider == "groq":
-            if os.getenv("JENEFAR_DISABLE_GROQ_TTS", "").strip().lower() in {"1", "true", "yes"}:
-                return False
-            return bool(os.getenv("GROQ_API_KEY", "").strip())
-        return False
-
     def _provider_order(self) -> list[str]:
         raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
@@ -96,29 +102,11 @@ class ProviderVoiceRuntime:
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
-        order = self._provider_order()
-        return [name for name in order if self._tts_usable_provider(name)]
-
-    def _cooldown_seconds(self, exc: Exception) -> float:
-        message = str(exc).lower()
-        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
-            return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
-        return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
-
-    def _mark_failed_provider(self, provider: str, exc: Exception) -> None:
-        self._audio_pool.cooldown(provider, self._cooldown_seconds(exc))
-
-    @staticmethod
-    def _wav_bytes(pcm: bytes, sample_rate: int = 16_000, channels: int = 1) -> io.BytesIO:
-        output = io.BytesIO()
-        with wave.open(output, "wb") as wav:
-            wav.setnchannels(channels)
-            wav.setsampwidth(2)
-            wav.setframerate(sample_rate)
-            wav.writeframes(pcm)
-        output.seek(0)
-        output.name = "jenefar_utterance.wav"
-        return output
+        return [
+            name
+            for name in self._provider_order()
+            if self._tts_configured(name)
+        ]
 
     @staticmethod
     def _record_microphone(seconds: int) -> bytes:
