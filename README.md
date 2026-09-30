@@ -17,7 +17,8 @@ Abhi Jenefar ke core me ye features available hain:
 - Common Kali/Linux security tools ki safe discovery
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Immediate testing ke liye text runtime
-- Bounded aur continuous microphone -> STT -> orchestrator -> TTS runtimes
+- Browser-first microphone -> orchestrator -> browser SpeechSynthesis voice runtime
+- Separate bounded/continuous Python microphone STT/TTS runtimes for legacy/CLI use
 - Local particle avatar with optional Three.js/VRM rendering aur expressions
 - Ephemeral client secrets ke through browser Realtime speech-to-speech transport
 - Persistent SQLite memory + FTS5 retrieval
@@ -51,9 +52,10 @@ python run.py
 `python run.py` ab default launcher hai. Ye ek hi process me:
 
 - local Jenefar avatar web UI start karta hai aur browser me kholta hai
-- continuous microphone VAD + STT start karta hai
+- browser microphone permission ke baad Web SpeechRecognition input enable karta hai
 - specialist multi-agent orchestrator use karta hai
 - memory, knowledge graph, scheduler, approval-gated tools, vision/desktop/robotics connectors aur runtime diagnostics ko wahi orchestrator instance se expose karta hai
+- browser SpeechSynthesis ko response playback ke liye use karta hai; Python TTS browser runtime me start nahi hota
 - avatar ko listening/thinking/speaking/waiting-approval states ke saath update karta hai
 
 Manual modes available hain:
@@ -66,15 +68,15 @@ python run.py --realtime
 python run.py --doctor
 ```
 
-Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime first-run par licensed sample VRM asset ko automatically provision karne ki koshish karta hai. Default UI cartoon/procedural face ko hide karke VRM rendering ko primary avatar banati hai; VRM provisioning fail hone par runtime clear diagnostic dikhata hai.
+Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime pehle `JENEFAR_AVATAR_VRM_PATH` se configured licensed VRM use karta hai. Agar ye set nahi hai to documented sample VRM ko first-run par provision karne ki koshish karta hai. Default UI cartoon/procedural face ko hide karke VRM rendering ko primary avatar banati hai; VRM provisioning fail hone par runtime clear diagnostic dikhata hai.
 
 Voice provider behavior:
 
-- STT aur TTS capabilities alag evaluate hoti hain.
-- OpenAI key exhausted ho to configured Groq STT fallback try hota hai.
-- TTS failure microphone/STT loop ko terminate nahi karti.
-- Groq Orpheus TTS account/organization terms-gated ho sakta hai; aise case me `JENEFAR_DISABLE_GROQ_TTS=true` set karke Groq STT active reh sakta hai.
-- Optional local Piper TTS can act as a final offline speech backend when `piper` and `JENEFAR_LOCAL_TTS_MODEL` are configured. Piper supports local ONNX voice models and writes WAV output for playback.
+- Default browser runtime me microphone input browser Web SpeechRecognition se aata hai.
+- Default browser runtime me speech output browser Web SpeechSynthesis se hota hai; Python/native TTS playback start nahi hota.
+- `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
+- Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
+- OpenAI/Groq provider failover diagnostics legacy voice runtime ke liye retained hain.
 
 ## Language behavior
 
