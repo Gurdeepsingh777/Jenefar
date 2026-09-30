@@ -9,13 +9,22 @@ class WakeWord:
             if phrase.strip()
         ]
 
-    def matched_phrase(self, text: str) -> str | None:
+    @staticmethod
+    def normalize_stt_text(text: str) -> str:
         normalized = " ".join(text.lower().strip().split())
-        for phrase in sorted(self.phrases, key=len, reverse=True):
-            if normalized == phrase or normalized.startswith(phrase + " "):
-                return phrase
-        return None
+        for source, target in {
+            "jennifer": "jenefar",
+            "jenifer": "jenefar",
+            "jennifer.": "jenefar",
+            "jennifer!": "jenefar",
+            "jennifer?": "jenefar",
+            "jeneferr": "jenefar",
+        }.items():
+            normalized = normalized.replace(source, target)
+        return normalized
 
+    def matched_phrase(self, text: str) -> str | None:
+        normalized = self.normalize_stt_text(text)
     def detect(self, text: str) -> bool:
         return self.matched_phrase(text) is not None
 
