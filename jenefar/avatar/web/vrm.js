@@ -54,7 +54,10 @@ if (canvas) {
       // The bundled VRM sample already faces the standard camera direction.
       // The previous extra PI rotation showed its back to the user.
       vrm.scene.rotation.y = 0;
-      vrm.scene.position.y = 0;
+      // Keep the full avatar visible from head to feet. Some VRM fixtures are
+      // authored with a T-pose; there is no safe generic way to infer a
+      // natural idle arm pose without editing the actual skeleton animation.
+      vrm.scene.position.set(0, 0, 0);
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");
       setVRMStatus("VRM AVATAR");
