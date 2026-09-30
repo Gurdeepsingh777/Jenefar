@@ -277,7 +277,6 @@ def main() -> int:
         from pathlib import Path
 
         from jenefar.core.orchestrator import JenefarOrchestrator
-        from jenefar.voice.provider import ProviderVoiceRuntime
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
@@ -340,9 +339,17 @@ def main() -> int:
             print(f"[JENEFAR] Open this URL manually: {runtime_url}")
 
         audio_status = ProviderVoiceRuntime.audio_status()
+        desktop_status = orchestrator.tool_broker.desktop.backend_status()
         print(
             "[JENEFAR] Browser voice runtime: avatar UI + browser microphone + "
             "multi-agent orchestrator + memory + tools."
+        )
+        print(
+            "[JENEFAR] Desktop backend: "
+            + ("READY" if desktop_status.get("pyautogui") else "UNAVAILABLE")
+            + f" ({desktop_status.get('session_type') or 'unknown'}"
+            + f", {desktop_status.get('screen', {}).get('width', '?')}x"
+            + f"{desktop_status.get('screen', {}).get('height', '?')})"
         )
         if audio_status["stt"]:
             stt = audio_status["stt"]
