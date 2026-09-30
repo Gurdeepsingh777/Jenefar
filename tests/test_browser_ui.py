@@ -252,3 +252,18 @@ def test_default_runtime_keeps_voice_provider_import_lazy():
     import_pos = voice_branch.index("from jenefar.voice.provider import ProviderVoiceRuntime")
     constructor_pos = voice_branch.index("browser_voice = BrowserVoiceBridge")
     assert import_pos > constructor_pos
+
+
+
+def test_avatar_and_realtime_modes_share_vrm_and_tool_broker_wiring():
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "prepare_avatar_model()" in run
+    assert "vrm_path=avatar_model" in run
+    assert "tool_broker=orchestrator.tool_broker" in run
+
+
+def test_avatar_mode_uses_browser_voice_unless_an_explicit_voice_mode_owns_audio():
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "BrowserVoiceBridge" in run
+    assert "if not args.realtime and not args.voice and not args.voice_continuous:" in run
+    assert "voice_handler=browser_voice.handle_text if browser_voice else None" in run
