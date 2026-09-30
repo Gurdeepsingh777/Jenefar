@@ -276,6 +276,40 @@ class HierarchicalTaskPlanner:
                 steps,
             )
 
+        if agent == "utility":
+            steps = (
+                TaskStep(
+                    "understand",
+                    "Understand the persistent utility request",
+                    "Determine whether the user requested memory storage/recall, a scheduler entry, or an application-event watcher.",
+                    "utility",
+                ),
+                TaskStep(
+                    "act",
+                    "Apply the requested persistent change",
+                    "Use the bounded memory or event tools. Do not execute stored procedures merely because they were recalled.",
+                    "utility",
+                    ("understand",),
+                    True,
+                ),
+                TaskStep(
+                    "verify",
+                    "Verify persistence",
+                    "Read back the created memory/procedure/event record and report the confirmed state.",
+                    "utility",
+                    ("act",),
+                    False,
+                    True,
+                ),
+            )
+            return TaskPlan(
+                task,
+                intent,
+                agent,
+                "understand → persistent action → verify",
+                steps,
+            )
+
         if agent == "research":
             steps = (
                 TaskStep(
