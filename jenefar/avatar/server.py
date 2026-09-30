@@ -225,7 +225,9 @@ class AvatarServer:
         Handler.controller = controller
         Handler.vrm_path = vrm_path
         Handler.tool_broker = tool_broker
-        Handler.voice_handler = voice_handler
+        # Functions stored on a handler class become bound methods. Keep the
+        # injected browser voice callback as a static callable.
+        Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
         return Handler
 
     def _create_server(self) -> None:
