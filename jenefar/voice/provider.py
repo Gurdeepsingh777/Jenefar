@@ -387,6 +387,10 @@ class ProviderVoiceRuntime:
             self.avatar.publish("speaking", text, level=level)
             await asyncio.sleep(0.09)
 
+    def reset_audio_health(self) -> None:
+        """Forget provider cooldowns after a recoverable TTS/STT failure."""
+        self._audio_pool = ProviderPool()
+
     def provider_status_line(self) -> str:
         status = self.audio_status()
         stt = status["stt"] or {"provider": "none", "model": "none", "fallback": []}
