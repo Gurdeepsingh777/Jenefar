@@ -87,3 +87,9 @@ def test_mic_button_has_pointer_press_feedback():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert 'addEventListener("pointerdown"' in js
     assert 'addEventListener("pointerup"' in js
+
+
+def test_ui_js_has_balanced_basic_delimiters():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert js.count("{") == js.count("}")
+    assert js.count("(") == js.count(")")
