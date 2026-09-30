@@ -366,6 +366,53 @@ async function sendBrowserTranscript(text){
 
 function setupBrowserVoice(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+
+  async function requestMicrophonePermission(){
+    if(!navigator.mediaDevices?.getUserMedia){
+      setVoiceInputStatus("MIC API UNSUPPORTED",false);
+      return false;
+    }
+    try{
+      setVoiceInputStatus("MIC PERMISSION: CLICK ALLOW",true);
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+      stream.getTracks().forEach(track=>track.stop());
+      setVoiceInputStatus("MIC PERMISSION GRANTED",true);
+      return true;
+    }catch(error){
+      const code=error?.name||"unknown";
+      addActivity({state:"error",text:"Microphone permission: "+code});
+      if(code==="NotAllowedError"||code==="SecurityError"){
+        micEnabled=false;
+        voiceLocked=true;
+        setVoiceInputStatus("MIC BLOCKED — USE SITE SETTINGS TO ALLOW",false);
+        if(micButton) micButton.textContent="MIC ON";
+      }else{
+        setVoiceInputStatus("MIC ERROR: "+code,false);
+      }
+      return false;
+    }
+  }
+
+  if(micButton){
+    micButton.onclick=async()=>{
+      if(!voiceSupported) return;
+      if(micEnabled){
+        micEnabled=false;
+        voiceLocked=true;
+        try{recognition?.stop();}catch(_){}
+        setVoiceInputStatus("BROWSER MIC: OFF",false);
+        micButton.textContent="MIC ON";
+      }else{
+        micEnabled=true;
+        voiceLocked=false;
+        const granted=await requestMicrophonePermission();
+        if(!granted) return;
+        setVoiceInputStatus("BROWSER MIC: STARTING",false);
+        resumeBrowserVoice();
+      }
+    };
+  }
+
   if(!Recognition){
     voiceSupported=false;
     micEnabled=false;
@@ -416,25 +463,12 @@ function setupBrowserVoice(){
     resumeBrowserVoice();
   };
 
-  if(micButton){
-    micButton.onclick=()=>{
-      if(!voiceSupported) return;
-      if(micEnabled){
-        micEnabled=false;
-        voiceLocked=true;
-        try{recognition.stop();}catch(_){}
-        setVoiceInputStatus("BROWSER MIC: OFF",false);
-        micButton.textContent="MIC ON";
-      }else{
-        micEnabled=true;
-        voiceLocked=false;
-        setVoiceInputStatus("BROWSER MIC: STARTING",false);
-        resumeBrowserVoice();
-      }
-    };
-  }
-
-  setTimeout(resumeBrowserVoice,700);
+  // Do not auto-start SpeechRecognition on page load. Browser permission prompts
+  // are more reliable when microphone access follows a user gesture.
+  micEnabled=false;
+  voiceLocked=true;
+  setVoiceInputStatus("CLICK MIC ON TO START",false);
+  if(micButton) micButton.textContent="MIC ON";
 }
 
 setupActivityFilters();
