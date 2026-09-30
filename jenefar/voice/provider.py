@@ -9,14 +9,17 @@ import time
 import wave
 from pathlib import Path
 
+from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
+
 
 class ProviderVoiceRuntime:
-    """Provider-aware bounded microphone -> STT -> agent -> TTS runtime."""
+    """Provider-aware microphone -> STT -> agent -> TTS runtime with audio failover."""
 
     def __init__(self, orchestrator, seconds: int = 8, avatar=None):
         self.orchestrator = orchestrator
         self.seconds = seconds
         self.avatar = avatar
+        self._audio_pool = ProviderPool()
 
     @staticmethod
     def _direct_openai_key() -> str:
@@ -24,37 +27,72 @@ class ProviderVoiceRuntime:
         return "" if not key or key.startswith("sk-or-") else key
 
     @classmethod
+    def _configured_audio_providers(cls) -> list[str]:
+        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+        requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
+        ordered = requested or ["openai", "groq"]
+        ordered = [name for name in ordered if name in ("openai", "groq")]
+        return [name for name in ordered if cls._provider_configured(name)]
+
+    @classmethod
+    def _provider_configured(cls, name: str) -> bool:
+        if name == "openai":
+            return bool(cls._direct_openai_key())
+        if name == "groq":
+            return bool(os.getenv("GROQ_API_KEY", "").strip())
+        return False
+
+    @classmethod
     def audio_status(cls) -> dict[str, dict | None]:
-        openai_key = bool(cls._direct_openai_key())
-        groq_key = bool(os.getenv("GROQ_API_KEY", "").strip())
-        stt_provider = "openai" if openai_key else ("groq" if groq_key else None)
-        tts_provider = "openai" if openai_key else ("groq" if groq_key else None)
-        return {
-            "stt": (
-                {
-                    "provider": stt_provider,
-                    "model": (
-                        os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
-                        if stt_provider == "openai"
-                        else os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
-                    ),
-                }
-                if stt_provider
-                else None
-            ),
-            "tts": (
-                {
-                    "provider": tts_provider,
-                    "model": (
-                        os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
-                        if tts_provider == "openai"
-                        else os.getenv("GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english")
-                    ),
-                }
-                if tts_provider
-                else None
-            ),
-        }
+        providers = cls._configured_audio_providers()
+        primary = providers[0] if providers else None
+        fallback = providers[1:] if len(providers) > 1 else []
+        result: dict[str, dict | None] = {"stt": None, "tts": None}
+        if primary:
+            result["stt"] = {
+                "provider": primary,
+                "model": cls._stt_model(primary),
+                "fallback": fallback,
+            }
+            result["tts"] = {
+                "provider": primary,
+                "model": cls._tts_model(primary),
+                "fallback": fallback,
+            }
+        return result
+
+    @staticmethod
+    def _stt_model(provider: str) -> str:
+        return (
+            os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
+            if provider == "openai"
+            else os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
+        )
+
+    @staticmethod
+    def _tts_model(provider: str) -> str:
+        return (
+            os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+            if provider == "openai"
+            else os.getenv("GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english")
+        )
+
+    def _provider_order(self) -> list[str]:
+        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+        requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
+        order = [name for name in requested if name in ("openai", "groq")]
+        if not order:
+            order = ["openai", "groq"]
+        return [name for name in order if self._provider_configured(name)]
+
+    def _cooldown_seconds(self, exc: Exception) -> float:
+        message = str(exc).lower()
+        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
+            return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
+        return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
+
+    def _mark_failed_provider(self, provider: str, exc: Exception) -> None:
+        self._audio_pool.cooldown(provider, self._cooldown_seconds(exc))
 
     @staticmethod
     def _wav_bytes(pcm: bytes, sample_rate: int = 16_000, channels: int = 1) -> io.BytesIO:
@@ -87,6 +125,8 @@ class ProviderVoiceRuntime:
     @staticmethod
     async def _transcribe_openai(audio: io.BytesIO) -> str:
         from openai import AsyncOpenAI
+
+        audio.seek(0)
         client = AsyncOpenAI(api_key=ProviderVoiceRuntime._direct_openai_key())
         result = await client.audio.transcriptions.create(
             model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
@@ -97,11 +137,15 @@ class ProviderVoiceRuntime:
     @staticmethod
     async def _transcribe_groq(audio: io.BytesIO) -> str:
         from openai import OpenAI
+
+        audio.seek(0)
         client = OpenAI(
             api_key=os.getenv("GROQ_API_KEY", "").strip(),
             base_url="https://api.groq.com/openai/v1",
         )
+
         def request() -> str:
+            audio.seek(0)
             result = client.audio.transcriptions.create(
                 model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3"),
                 file=audio,
@@ -110,20 +154,43 @@ class ProviderVoiceRuntime:
                 temperature=0.0,
             )
             return str(result.text or "").strip()
+
         return await asyncio.to_thread(request)
 
     async def transcribe_pcm(
         self, pcm: bytes, *, sample_rate: int = 16_000, channels: int = 1
     ) -> str:
         audio = self._wav_bytes(pcm, sample_rate=sample_rate, channels=channels)
-        status = self.audio_status()["stt"]
-        if not status:
+        providers = self._provider_order()
+        if not providers:
             raise RuntimeError(
                 "No speech-to-text provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
             )
-        if status["provider"] == "openai":
-            return await self._transcribe_openai(audio)
-        return await self._transcribe_groq(audio)
+
+        last_error: Exception | None = None
+        for provider in providers:
+            if not self._audio_pool.available(provider):
+                continue
+            try:
+                if provider == "openai":
+                    return await self._transcribe_openai(audio)
+                return await self._transcribe_groq(audio)
+            except Exception as exc:
+                last_error = exc
+                if not is_retryable_provider_error(exc):
+                    raise
+                self._mark_failed_provider(provider, exc)
+                print(
+                    f"[JENEFAR] STT provider {provider} failed; "
+                    f"trying the next configured provider: {type(exc).__name__}: {exc}"
+                )
+
+        if last_error is not None:
+            raise RuntimeError(
+                "All configured STT providers failed. "
+                "Check provider quota/API keys or wait for the provider cooldown."
+            ) from last_error
+        raise RuntimeError("No currently available STT provider.")
 
     async def _listen(self) -> str:
         pcm = await asyncio.to_thread(self._record_microphone, self.seconds)
@@ -169,6 +236,7 @@ class ProviderVoiceRuntime:
     async def _speak_openai(self, text: str) -> None:
         from openai import AsyncOpenAI
         from openai.helpers import LocalAudioPlayer
+
         client = AsyncOpenAI(api_key=self._direct_openai_key())
         animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
         try:
@@ -189,6 +257,7 @@ class ProviderVoiceRuntime:
 
     async def _speak_groq(self, text: str) -> None:
         from openai import OpenAI
+
         client = OpenAI(
             api_key=os.getenv("GROQ_API_KEY", "").strip(),
             base_url="https://api.groq.com/openai/v1",
@@ -198,7 +267,9 @@ class ProviderVoiceRuntime:
         animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
         try:
             for chunk in self._tts_chunks(text):
-                with tempfile.NamedTemporaryFile(suffix=".wav", prefix="jenefar_tts_", delete=False) as tmp:
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav", prefix="jenefar_tts_", delete=False
+                ) as tmp:
                     output_path = tmp.name
                 try:
                     def request() -> None:
@@ -206,6 +277,7 @@ class ProviderVoiceRuntime:
                             model=model, voice=voice, input=chunk, response_format="wav"
                         )
                         response.write_to_file(output_path)
+
                     await asyncio.to_thread(request)
                     await asyncio.to_thread(self._play_wav, output_path)
                 finally:
@@ -222,15 +294,38 @@ class ProviderVoiceRuntime:
                     pass
 
     async def speak(self, text: str) -> None:
-        status = self.audio_status()["tts"]
-        if not status:
+        providers = self._provider_order()
+        if not providers:
             raise RuntimeError(
                 "No text-to-speech provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
             )
-        if status["provider"] == "openai":
-            await self._speak_openai(text)
-        else:
-            await self._speak_groq(text)
+
+        last_error: Exception | None = None
+        for provider in providers:
+            if not self._audio_pool.available(provider):
+                continue
+            try:
+                if provider == "openai":
+                    await self._speak_openai(text)
+                else:
+                    await self._speak_groq(text)
+                return
+            except Exception as exc:
+                last_error = exc
+                if not is_retryable_provider_error(exc):
+                    raise
+                self._mark_failed_provider(provider, exc)
+                print(
+                    f"[JENEFAR] TTS provider {provider} failed; "
+                    f"trying the next configured provider: {type(exc).__name__}: {exc}"
+                )
+
+        if last_error is not None:
+            raise RuntimeError(
+                "All configured TTS providers failed. "
+                "Check provider quota/API keys or wait for the provider cooldown."
+            ) from last_error
+        raise RuntimeError("No currently available TTS provider.")
 
     async def _speak(self, text: str) -> None:
         await self.speak(text)
@@ -249,19 +344,30 @@ class ProviderVoiceRuntime:
 
     def provider_status_line(self) -> str:
         status = self.audio_status()
-        stt = status["stt"] or {"provider": "none", "model": "none"}
-        tts = status["tts"] or {"provider": "none", "model": "none"}
-        return f"STT={stt['provider']}/{stt['model']} | TTS={tts['provider']}/{tts['model']}"
+        stt = status["stt"] or {"provider": "none", "model": "none", "fallback": []}
+        tts = status["tts"] or {"provider": "none", "model": "none", "fallback": []}
+        stt_fallback = ",".join(stt.get("fallback", [])) or "none"
+        tts_fallback = ",".join(tts.get("fallback", [])) or "none"
+        return (
+            f"STT={stt['provider']}/{stt['model']} fallback={stt_fallback} | "
+            f"TTS={tts['provider']}/{tts['model']} fallback={tts_fallback}"
+        )
 
     def run(self) -> None:
         status = self.audio_status()
         print("[JENEFAR] Voice mode.")
         if status["stt"]:
-            print(f"[JENEFAR] STT: {status['stt']['provider']} / {status['stt']['model']}")
+            print(
+                f"[JENEFAR] STT: {status['stt']['provider']} / {status['stt']['model']} "
+                f"(fallback={','.join(status['stt'].get('fallback', [])) or 'none'})"
+            )
         else:
             print("[JENEFAR] STT: NOT CONFIGURED")
         if status["tts"]:
-            print(f"[JENEFAR] TTS: {status['tts']['provider']} / {status['tts']['model']}")
+            print(
+                f"[JENEFAR] TTS: {status['tts']['provider']} / {status['tts']['model']} "
+                f"(fallback={','.join(status['tts'].get('fallback', [])) or 'none'})"
+            )
         else:
             print("[JENEFAR] TTS: NOT CONFIGURED")
         print("[JENEFAR] Speak 'Hi Jenefar' or 'Hello Jenefar'. Say 'exit' to stop.")
@@ -305,8 +411,7 @@ class ProviderVoiceRuntime:
                 answer = self.orchestrator.handle(text)
             print(f"[USER/STT] {text}")
             print(f"[JENEFAR] {answer}")
-            if status["tts"]:
-                try:
-                    asyncio.run(self.speak(answer))
-                except Exception as exc:
-                    print(f"[JENEFAR] TTS error: {type(exc).__name__}: {exc}")
+            try:
+                asyncio.run(self.speak(answer))
+            except Exception as exc:
+                print(f"[JENEFAR] TTS error: {type(exc).__name__}: {exc}")
