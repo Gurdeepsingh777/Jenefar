@@ -142,14 +142,14 @@ class BrowserVoiceBridge:
             )
 
     def _speech_loop(self) -> None:
+        # Browser owns actual audio playback. This worker only publishes the
+        # response event so app.js can use speechSynthesis without Python audio.
         while True:
             task_id, text = self._speech_queue.get()
             try:
                 self._publish("speaking", text, task_id)
-                try:
-                    self._publish("speaking_fallback", text, task_id)
-                finally:
-                    self._publish("completed", "", task_id)
+                self._publish("speaking_fallback", text, task_id)
+                self._publish("completed", "", task_id)
             finally:
                 self._speech_queue.task_done()
                 if self._speech_queue.empty():
