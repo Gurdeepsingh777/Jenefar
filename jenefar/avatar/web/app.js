@@ -285,7 +285,7 @@ function browserSpeakFallback(text){
     const utterance=new SpeechSynthesisUtterance(clean);
     const voice=selectPremiumVoice();
     if(voice) utterance.voice=voice;
-    utterance.lang=voice?.lang || "en-IN";
+    utterance.lang="en-IN";
     utterance.rate=.94;
     utterance.pitch=1.04;
     utterance.volume=.96;
@@ -571,7 +571,7 @@ function setupBrowserVoice(){
   // are more reliable when microphone access follows a user gesture.
   micEnabled=false;
   voiceLocked=true;
-  setVoiceInputStatus("MIC OFF — Talk button dabao",false);
+  setVoiceInputStatus("CLICK MIC ON TO START",false);
   setMicButton(false, false);
 }
 
