@@ -105,8 +105,7 @@ class ProviderVoiceRuntime:
             result = client.audio.transcriptions.create(
                 model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3"),
                 file=audio,
-                language=os.getenv("GROQ_STT_LANGUAGE", "en") or None,
-                prompt=os.getenv("GROQ_STT_PROMPT", "Jenefar is spelled J-E-N-E-F-A-R. Transcribe exactly what the speaker says; do not add words."),
+                language=os.getenv("GROQ_STT_LANGUAGE", "hi") or None,
                 response_format="json",
                 temperature=0.0,
             )
