@@ -4,6 +4,7 @@ import asyncio
 import io
 import math
 import os
+import shutil
 import tempfile
 import time
 import wave
@@ -102,11 +103,14 @@ class ProviderVoiceRuntime:
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
-        return [
+        order = [
             name
             for name in self._provider_order()
             if self._tts_configured(name)
         ]
+        if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
+            order.append("local")
+        return order
 
     @staticmethod
     def _wav_bytes(
@@ -379,8 +383,10 @@ class ProviderVoiceRuntime:
             try:
                 if provider == "openai":
                     await self._speak_openai(text)
-                else:
+                elif provider == "groq":
                     await self._speak_groq(text)
+                else:
+                    await self._speak_local(text)
                 return
             except Exception as exc:
                 last_error = exc
