@@ -93,8 +93,23 @@
 
     <aside id="activity-panel" aria-label="Jenefar live workflow">
       <div class="activity-header">
-        <span>LIVE WORKFLOW</span>
-        <span id="activity-connection">ONLINE</span>
+        <div>
+          <strong>JENEFAR WORKSPACE</strong>
+          <span id="activity-connection">LIVE</span>
+        </div>
+        <button id="clear-activity" type="button">CLEAR</button>
+      </div>
+      <div class="activity-stats">
+        <div><span>RUNNING</span><b id="activity-running">0</b></div>
+        <div><span>QUEUE</span><b id="activity-queued">0</b></div>
+        <div><span>DONE</span><b id="activity-done">0</b></div>
+        <div><span>ERROR</span><b id="activity-errors">0</b></div>
+      </div>
+      <div class="activity-filters" role="tablist" aria-label="Workflow filters">
+        <button type="button" data-activity-filter="all" data-active="true">ALL</button>
+        <button type="button" data-activity-filter="running">RUNNING</button>
+        <button type="button" data-activity-filter="results">RESULTS</button>
+        <button type="button" data-activity-filter="errors">ERRORS</button>
       </div>
       <div id="activity-list"></div>
     </aside>
