@@ -751,3 +751,23 @@ Hello Jenefar, mera ESP32 debugging procedure memory me save karo.
 ~~~
 
 Phase 4 data local data/jenefar_memory.db aur data/events.db me persist hota hai.
+
+
+## Phase 5 — Runtime Intelligence, Traceability & Diagnostics
+
+Phase 5 adds a structured execution trace around every orchestrator request. Each task gets a trace ID correlated with the session and optional scheduler event, and records planner intent, selected/actual specialist, model role, connectivity, approval-gated tool calls, verification outcome, latency, errors and final status.
+
+Runtime quality evaluation now consumes these structured signals instead of looking only at final text. This produces richer quality records while keeping evaluation observational: it does not rewrite code, weaken approval policy, or auto-execute stored procedures.
+
+Runtime diagnostics are available from the CLI:
+
+```bash
+python run.py --runtime-health
+python run.py --trace-report
+python run.py --evaluation-report
+python run.py --evaluation-dashboard
+```
+
+The evaluation dashboard now includes both quality evaluations and recent execution traces, including latency, agents, providers, approvals and tool counts.
+
+Trace data is local append-only JSONL under `data/execution_traces.jsonl`. It is intended for local diagnostics and can be removed without affecting Jenefar's core memory or scheduler state.

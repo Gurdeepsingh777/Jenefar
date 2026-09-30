@@ -21,6 +21,7 @@ from jenefar.memory.graph import KnowledgeGraph
 from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
 from jenefar.evaluation.loop import EvaluationLoop
+from jenefar.evaluation.trace import ExecutionTrace, TraceStore
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -43,6 +44,7 @@ class JenefarOrchestrator:
         self.capabilities = CapabilityStore()
         self.skills = SkillManager()
         self.evaluator = EvaluationLoop()
+        self.trace_store = TraceStore()
         self.planner = Planner(skills=self.skills)
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
@@ -135,6 +137,12 @@ class JenefarOrchestrator:
         source: str = "user",
         event_id: int | None = None,
     ) -> str:
+        trace = ExecutionTrace(
+            session_id=self.session.session_id,
+            task=text,
+            source=source,
+            event_id=event_id,
+        )
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "Processing your request…")
         self.session.add("user", text)
@@ -145,109 +153,113 @@ class JenefarOrchestrator:
             importance=0.55 if source == "user" else 0.5,
         )
         self.graph.learn_text(text)
-        recall = self.memory_engine.recall(text, limit=8)
-        retrieved = recall.hits
-        graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
-        plan = self.planner.plan(text)
-        task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
-        connected = internet_available()
-        online_task = any(
-            marker in text.lower()
-            for marker in (
+        try:
+            recall = self.memory_engine.recall(text, limit=8)
+            graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
+            plan = self.planner.plan(text)
+            task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
+            trace.intent = plan.intent
+            trace.planned_agent = plan.agent
+            trace.planner_confidence = plan.confidence
+            trace.model_role = self._model_role_for_plan(plan)
+            connected = internet_available()
+            trace.connectivity = "online" if connected else "offline"
+            online_task = any(marker in text.lower() for marker in (
                 "youtube", "online", "download", "internet", "web search",
                 "search the web", "github", "recognize this song",
-            )
-        )
-        if not connected and online_task:
-            self.offline_notice_open = True
-        runtime = {
-            "connectivity": "online" if connected else "offline",
-            "offline_limitations": [
-                "web search and remote downloads",
-                "YouTube",
-                "online song recognition",
-                "live GitHub retrieval",
-            ] if not connected else [],
-        }
-        result = self.router.dispatch(
-            text,
-            metadata={
-                "session_id": self.session.session_id,
-                "intent": plan.intent,
-                "planned_agent": plan.agent,
-                "planner_reason": plan.reason,
-                "planner_confidence": plan.confidence,
-                "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
-                "model_role": self._model_role_for_plan(plan),
-                "response_language": response_language,
-                "source": source,
-                "event_id": event_id,
-                "runtime": runtime,
-                "capabilities": self.capabilities.list(),
-                "skills": [
-                    item
-                    for item in self.skills.list()
-                    if item.get("enabled")
-                ],
-                "history": self.session.recent(8),
-                "retrieved_memory": [
-                    {
-                        "source": hit.source,
-                        "title": hit.title,
-                        "content": hit.content,
-                        "layer": hit.layer,
-                        "score": hit.score,
-                    }
-                    for hit in retrieved
-                ],
-                "procedural_memory": list(recall.procedures),
-                "knowledge_graph": [
-                    {
-                        "subject": relation.subject,
-                        "predicate": relation.predicate,
-                        "object": relation.object,
-                    }
-                    for relation in graph_hits
-                ],
-            },
-        )
-        output = self.verifier.verify(text, result.content)
-        self.session.add("assistant", output)
-        self.memory_engine.record_message(
-            self.session.session_id,
-            "assistant",
-            output,
-            importance=0.5,
-        )
-        self.graph.learn_text(output)
-        if len(self.session.messages) % 6 == 0:
-            self.memory_engine.consolidate_messages(
-                self.session.session_id,
-                self.session.recent(12),
-                importance=0.72,
-            )
-        self.evaluator.evaluate(
-            text,
-            output,
-            provider=str(result.metadata.get("provider", "")),
-        )
-
-        if result.metadata.get("provider") in {"approval_required", "local_approval_required"}:
-            self._register_pending_workflow(
+            ))
+            if not connected and online_task:
+                self.offline_notice_open = True
+            runtime = {
+                "connectivity": "online" if connected else "offline",
+                "offline_limitations": [
+                    "web search and remote downloads",
+                    "YouTube",
+                    "online song recognition",
+                    "live GitHub retrieval",
+                ] if not connected else [],
+            }
+            result = self.router.dispatch(
                 text,
-                result,
-                response_language=response_language,
+                metadata={
+                    "session_id": self.session.session_id,
+                    "trace_id": trace.trace_id,
+                    "intent": plan.intent,
+                    "planned_agent": plan.agent,
+                    "planner_reason": plan.reason,
+                    "planner_confidence": plan.confidence,
+                    "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
+                    "model_role": trace.model_role,
+                    "response_language": response_language,
+                    "source": source,
+                    "event_id": event_id,
+                    "runtime": runtime,
+                    "capabilities": self.capabilities.list(),
+                    "skills": [item for item in self.skills.list() if item.get("enabled")],
+                    "history": self.session.recent(8),
+                    "retrieved_memory": [
+                        {"source": hit.source, "title": hit.title, "content": hit.content, "layer": hit.layer, "score": hit.score}
+                        for hit in recall.hits
+                    ],
+                    "procedural_memory": list(recall.procedures),
+                    "knowledge_graph": [
+                        {"subject": relation.subject, "predicate": relation.predicate, "object": relation.object}
+                        for relation in graph_hits
+                    ],
+                },
             )
-            self.state = JenefarState.WAITING_APPROVAL
-            self._avatar_state("waiting_approval", output)
-        else:
-            self.state = (
-                JenefarState.SLEEPING
-                if self.config.single_turn_sleep
-                else JenefarState.AWAKE
+            trace.actual_agent = result.agent
+            trace.provider = str(result.metadata.get("provider", ""))
+            for pending in result.metadata.get("pending_tools", []) or []:
+                trace.add_tool_call(
+                    name=str(pending.get("tool", "unknown")),
+                    status="approval_required",
+                    approval_required=True,
+                )
+            output = self.verifier.verify(text, result.content)
+            verification = {
+                "passed": bool(output and output.strip()),
+                "verifier": self.verifier.__class__.__name__,
+            }
+            awaiting = result.metadata.get("provider") in {"approval_required", "local_approval_required"}
+            trace.finish(status="awaiting_approval" if awaiting else "success", provider=trace.provider, verification=verification)
+            self.session.add("assistant", output)
+            self.memory_engine.record_message(
+                self.session.session_id,
+                "assistant",
+                output,
+                importance=0.5,
             )
-            self._avatar_state("speaking", output)
-        return output
+            self.graph.learn_text(output)
+            if len(self.session.messages) % 6 == 0:
+                self.memory_engine.consolidate_messages(
+                    self.session.session_id,
+                    self.session.recent(12),
+                    importance=0.72,
+                )
+            self.evaluator.evaluate(
+                text,
+                output,
+                provider=trace.provider,
+                trace=trace.as_dict(),
+            )
+            self.trace_store.append(trace)
+            if awaiting:
+                self._register_pending_workflow(text, result, response_language=response_language)
+                self.state = JenefarState.WAITING_APPROVAL
+                self._avatar_state("waiting_approval", output)
+            else:
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+            return output
+        except Exception as exc:
+            trace.add_error(f"{type(exc).__name__}: {exc}")
+            trace.finish(status="error", provider="error", verification={"passed": False})
+            self.trace_store.append(trace)
+            self.evaluator.evaluate(text, str(exc), provider="error", trace=trace.as_dict())
+            self.state = JenefarState.SLEEPING
+            self._avatar_state("error", str(exc))
+            return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
 
     @staticmethod
     def _model_role_for_plan(plan) -> str:
