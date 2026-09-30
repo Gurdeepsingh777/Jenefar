@@ -771,3 +771,28 @@ python run.py --evaluation-dashboard
 The evaluation dashboard now includes both quality evaluations and recent execution traces, including latency, agents, providers, approvals and tool counts.
 
 Trace data is local append-only JSONL under `data/execution_traces.jsonl`. It is intended for local diagnostics and can be removed without affecting Jenefar's core memory or scheduler state.
+
+
+## Phase 6 — Self-Healing Runtime & Reliability
+
+Phase 6 adds bounded runtime recovery for transient failures. Jenefar can retry safe, read-oriented agent dispatches when a timeout, temporary connection failure, rate limit, or transient service error occurs.
+
+Recovery is deliberately conservative:
+
+- Maximum retry attempts are bounded.
+- Exponential backoff is capped.
+- Security specialists (kali, cybersecurity, bugbounty) are never automatically retried.
+- Approval-gated or state-changing operations are never automatically retried.
+- Terminal, file-edit/write/delete, robotics, MQTT/ROS2, desktop-action and connector actions are excluded from automatic retries.
+- Repeated transient failures open a short runtime circuit breaker to prevent retry storms.
+- Runtime traces record the self-healing retry counters.
+
+Diagnostics:
+
+```bash
+python run.py --self-healing-policy
+python run.py --runtime-health
+python run.py --trace-report
+```
+
+The self-healing layer is recovery-only. It does not grant permissions, change authorized security targets, auto-approve tools, or weaken existing execution policies.
