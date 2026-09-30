@@ -60,26 +60,26 @@ class DesktopAutomation:
         size = self._pyautogui().size()
         return {"width": int(size.width), "height": int(size.height)}
 
+    def _capture_screen_image(self):
+        """Capture the full desktop without invoking PyAutoGUI screenshot helpers."""
+        try:
+            import mss
+            from PIL import Image
+
+            with mss.mss() as capture:
+                monitor = capture.monitors[0]
+                shot = capture.grab(monitor)
+                return Image.frombytes("RGB", shot.size, shot.rgb)
+        except Exception as exc:
+            raise RuntimeError(
+                "Desktop screenshot capture failed on the current Wayland/X11 session. "
+                f"mss error: {type(exc).__name__}: {exc}"
+            ) from exc
+
     def capture_frame(self, *, max_dimension: int = 1600, save: bool = False):
         from jenefar.vision.screen import ScreenFrame
 
-        image = None
-        try:
-            image = self._pyautogui().screenshot()
-        except Exception as exc:
-            try:
-                import mss
-                from PIL import Image
-                with mss.mss() as capture:
-                    monitor = capture.monitors[0]
-                    shot = capture.grab(monitor)
-                    image = Image.frombytes("RGB", shot.size, shot.rgb)
-            except Exception as fallback_exc:
-                raise RuntimeError(
-                    "Unable to capture the desktop screen. "
-                    f"PyAutoGUI error: {type(exc).__name__}: {exc}; "
-                    f"mss fallback error: {type(fallback_exc).__name__}: {fallback_exc}"
-                ) from fallback_exc
+        image = self._capture_screen_image()
         width, height = int(image.width), int(image.height)
         max_dimension = max(640, min(int(max_dimension), 2560))
         encoded = image
