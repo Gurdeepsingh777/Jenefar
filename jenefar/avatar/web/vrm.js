@@ -17,8 +17,8 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(22, 1, 0.01, 100);
-  camera.position.set(0, 1.18, 4.6);
+  const camera = new THREE.PerspectiveCamera(24, 1, 0.01, 100);
+  camera.position.set(0, 1.18, 5.5);
 
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.position.set(1.5, 2.2, 3.5);
@@ -58,6 +58,30 @@ if (canvas) {
       // authored with a T-pose; there is no safe generic way to infer a
       // natural idle arm pose without editing the actual skeleton animation.
       vrm.scene.position.set(0, 0, 0);
+
+      // Natural idle pose for the bundled humanoid VRM.
+      // VRM humanoid bones are rotated in local space around their current pose.
+      // These values relax the T-pose into a simple arms-down standing pose.
+      const humanoid = vrm.humanoid;
+      const bone = (name) => humanoid?.getNormalizedBoneNode(name);
+      const setEuler = (name, x, y, z) => {
+        const node = bone(name);
+        if (!node) return;
+        node.rotation.x = x;
+        node.rotation.y = y;
+        node.rotation.z = z;
+        node.updateMatrixWorld(true);
+      };
+      // Upper arms: lower from horizontal to relaxed by the sides.
+      setEuler("leftUpperArm", 0.12, 0.02, -1.15);
+      setEuler("rightUpperArm", 0.12, -0.02, 1.15);
+      // Slight elbow bend, hands naturally forward.
+      setEuler("leftLowerArm", 0.10, 0.02, -0.18);
+      setEuler("rightLowerArm", 0.10, -0.02, 0.18);
+      // Neutral forearms/hands.
+      setEuler("leftHand", 0.02, 0.0, -0.05);
+      setEuler("rightHand", 0.02, 0.0, 0.05);
+
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");
       setVRMStatus("VRM AVATAR");
