@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import bpy
-from mathutils import Color
 
 
 PIPELINE_VERSION = "2026.10-premium-1"
@@ -234,12 +233,17 @@ def add_premium_neck_ring(armature: bpy.types.Object | None) -> None:
 
 def bake_metadata(output: Path, material_counts: dict[str, int]) -> None:
     meta = output.with_suffix(output.suffix + ".pipeline.json")
+    import json
+
     meta.write_text(
-        "{\\n"
-        f'  "pipeline": "{PIPELINE_VERSION}",\\n'
-        f'  "output": "{output.name}",\\n'
-        f'  "materials": {material_counts}\\n'
-        "}\\n",
+        json.dumps(
+            {
+                "pipeline": PIPELINE_VERSION,
+                "output": output.name,
+                "materials": material_counts,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
