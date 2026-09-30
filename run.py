@@ -330,11 +330,9 @@ def main() -> int:
             stt = audio_status["stt"]
             tts = audio_status["tts"]
             print(
-                f"[JENEFAR] Voice providers: "
-                f"STT={stt['provider']}/{stt['model']} "
+                f"[JENEFAR] Browser STT: {stt['provider']}/{stt['model']} "
                 f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
-                f"TTS={tts['provider']}/{tts['model']} "
-                f"fallback={','.join(tts.get('fallback', [])) or 'none'}"
+                "Browser TTS=Web SpeechSynthesis"
             )
         else:
             print("[JENEFAR] No online STT provider configured; using terminal text mode.")
@@ -343,9 +341,8 @@ def main() -> int:
             if browser_voice_enabled:
                 print("[JENEFAR] Browser microphone voice: ENABLED.")
                 print("[JENEFAR] Chrome/Chromium will ask for microphone permission in the avatar UI.")
-                print("[JENEFAR] Python sounddevice voice is fallback mode: set JENEFAR_BROWSER_VOICE=0 to use it.")
-                if not audio_status["tts"]:
-                    print("[JENEFAR] No Python TTS configured; browser speech synthesis will be used as UI fallback.")
+                print("[JENEFAR] Browser microphone + browser SpeechSynthesis are the only active voice path.")
+                print("[JENEFAR] Python TTS is disabled in this browser runtime.")
                 threading.Event().wait()
             else:
                 print("[JENEFAR] Browser voice is disabled. UI remains available; no terminal voice/TTS is started.")

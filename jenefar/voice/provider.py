@@ -135,6 +135,7 @@ class ProviderVoiceRuntime:
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
+        """Return browser-safe provider status without enabling native playback."""
         order = []
         if self._legacy_edge_tts_available():
             order.append("edge")
@@ -143,8 +144,6 @@ class ProviderVoiceRuntime:
             for name in self._provider_order()
             if self._tts_configured(name)
         )
-        if self._local_espeak_available():
-            order.append("espeak")
         if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
             order.append("local")
         return order

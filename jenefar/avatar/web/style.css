@@ -525,3 +525,53 @@ body.vrm-loaded #photo-avatar{display:none}
 /* Guarantee visual layers never intercept user interaction. */
 #particles,#vrm-canvas,.backdrop,.sci-fi-bg,.room-lights,.holo-particles,.holo-earth,.chair-silhouette,.avatar-shell,.photo-avatar{pointer-events:none!important}
 .siri-topbar,.side-nav,.hero-copy,.system-card,.command-stack,.chat-glass,.quick-apps,.media-card,.workspace-card,.realtime-controls,.bottom-dock{pointer-events:auto!important}
+
+
+/* --- Final non-overlap layout override --- */
+#stage{min-width:1180px}
+.hero-copy{left:210px;top:92px;width:330px;max-width:330px}
+.hero-copy h1{font-size:31px}
+.chat-glass{left:210px;top:238px;width:330px;height:330px}
+.side-nav{left:20px;top:86px;bottom:156px;width:165px}
+.system-card{right:20px;top:76px;width:320px}
+.command-stack{right:20px;top:260px;width:320px}
+.quick-apps{left:20px;bottom:128px;width:165px}
+.media-card{left:20px;bottom:20px;width:330px}
+#activity-panel{right:20px;top:440px;width:350px;height:calc(100vh - 520px);max-height:320px}
+.avatar-shell{inset:0 350px 0 170px!important;z-index:20!important}
+#vrm-canvas{left:170px!important;right:350px!important;width:calc(100% - 520px)!important;height:78%!important;top:12%!important;bottom:auto!important}
+.photo-avatar{display:none!important}
+.status-card{left:50%!important;top:auto!important;bottom:78px!important;transform:translateX(-50%)!important;width:300px!important;max-width:300px!important}
+.premium-controls{right:20px;bottom:78px;z-index:90}
+.bottom-dock{left:50%;right:auto;transform:translateX(-50%);bottom:16px;z-index:95}
+.command-stack,.quick-apps,.media-card,.chat-glass,.system-card,#activity-panel,.premium-controls,.bottom-dock,.side-nav{box-shadow:0 18px 60px rgba(0,0,0,.45)}
+.chat-glass{overflow:hidden}
+.chat-log{overflow:auto;min-height:0}
+.chat-composer{flex:0 0 auto}
+.avatar-shell .halo-a{width:46vw;height:46vw}
+.avatar-shell .halo-b{width:37vw;height:37vw}
+.holo-earth{right:350px;top:26%;width:265px;z-index:24!important}
+.sci-fi-bg,.room-lights,.backdrop,.holo-particles,.holo-earth,.chair-silhouette,#particles,#vrm-canvas{pointer-events:none!important}
+.command-chip,.quick-apps button,.nav-item,.chat-glass button,.chat-glass input,.talk-button,.dock-btn,.orb-button,#clear-workspace,.activity-filters button{pointer-events:auto!important}
+@media(max-width:1400px){
+  .hero-copy{left:205px;width:300px}
+  .chat-glass{left:205px;width:310px}
+  .system-card{width:300px}
+  .command-stack{width:300px}
+  #activity-panel{width:330px}
+  #vrm-canvas{left:165px!important;right:335px!important;width:calc(100% - 500px)!important}
+}
+
+
+/* Response panel: compact, readable, non-overlapping */
+.chat-glass .chat-log{scrollbar-width:thin}
+.chat-glass .chat-row{max-width:100%}
+.chat-glass .bubble{font-size:12px;line-height:1.45}
+.chat-glass .user-bubble{margin-left:auto}
+.premium-controls span{font-size:8px}
+.talk-button.pressed{transform:translateY(1px) scale(.98);box-shadow:inset 0 0 18px rgba(103,232,255,.14)}
+
+
+@media (max-width:1180px){
+  #stage{min-width:1000px}
+}
