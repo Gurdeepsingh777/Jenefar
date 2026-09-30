@@ -478,6 +478,9 @@ class ProviderVoiceRuntime:
                     pass
 
     async def speak(self, text: str) -> None:
+        text = clean_for_speech(text)
+        if not text:
+            return
         providers = self._tts_provider_order()
         if not providers:
             raise RuntimeError(
