@@ -147,7 +147,7 @@ class BrowserVoiceBridge:
             self._speech_queue.put(
                 (
                     task_id,
-                    clean_for_speech(
+                    enforce_hinglish(
                         "Task complete nahi ho saka. Pura error browser ke result panel me dikh raha hai."
                     ),
                 )
