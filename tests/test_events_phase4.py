@@ -31,3 +31,12 @@ def test_interval_and_event_watch(tmp_path: Path):
 
     matched = engine.emit("download.finished", {"path": "a.zip", "size": 10}, now=now)
     assert [item.name for item in matched] == ["download"]
+
+    queued = engine.due(now)
+    assert [item.name for item in queued] == ["download"]
+
+    calls = []
+    result = engine.run_due(lambda prompt, item: calls.append(prompt) or "queued", now=now)
+    assert result[0]["status"] == "ok"
+    assert calls == ["summarize"]
+    assert engine.list(include_disabled=False)[0].name == "poll"
