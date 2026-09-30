@@ -126,11 +126,11 @@ class ProviderVoiceRuntime:
         )
 
     def _provider_order(self) -> list[str]:
-        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "groq,openai")
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
         order = [name for name in requested if name in ("openai", "groq")]
         if not order:
-            order = ["openai", "groq"]
+            order = ["groq", "openai"]
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
