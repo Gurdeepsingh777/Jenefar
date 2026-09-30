@@ -51,6 +51,61 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--wakeword-train", choices=["clips", "augment", "train", "all", "tflite"], help="run a custom openWakeWord training stage")
     return parser
 
+
+def prepare_avatar_model() -> "Path | None":
+    """Resolve a licensed VRM source and optionally bake the premium copy."""
+    import os
+    from pathlib import Path
+
+    configured_avatar = os.getenv("JENEFAR_AVATAR_VRM_PATH", "").strip()
+    if configured_avatar:
+        avatar_model = Path(configured_avatar).expanduser().resolve()
+        if avatar_model.is_file():
+            print(f"[JENEFAR] Using configured VRM avatar: {avatar_model}")
+        else:
+            print(
+                "[JENEFAR] Configured VRM avatar not found: "
+                f"{avatar_model}; falling back to the sample asset."
+            )
+            avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+    else:
+        avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+
+    if not avatar_model.is_file():
+        try:
+            from jenefar.assets.provisioning import setup_avatar_asset
+            avatar_model = setup_avatar_asset()
+            print(f"[JENEFAR] VRM avatar ready: {avatar_model}")
+        except Exception as exc:
+            print(
+                "[JENEFAR] VRM provisioning skipped: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+    premium_output = Path("data/avatar/Jenefar_Premium.vrm")
+    premium_enabled = os.getenv(
+        "JENEFAR_PREMIUM_AVATAR", "1"
+    ).strip().lower() not in {"0", "false", "no"}
+    if avatar_model.is_file() and premium_enabled:
+        try:
+            from jenefar.assets.premium_avatar import prepare_premium_avatar
+            baked = prepare_premium_avatar(avatar_model, premium_output)
+            if baked and baked.is_file():
+                avatar_model = baked
+                print(f"[JENEFAR] Premium VRM avatar active: {avatar_model}")
+            else:
+                print(
+                    "[JENEFAR] Premium Blender pipeline unavailable; "
+                    "using source VRM with runtime premium styling."
+                )
+        except Exception as exc:
+            print(
+                "[JENEFAR] Premium VRM pipeline skipped safely: "
+                f"{type(exc).__name__}: {exc}. Using source VRM."
+            )
+
+    return avatar_model if avatar_model.is_file() else None
+
 def doctor() -> int:
     """Run dependency, configuration, source-syntax, and runtime smoke checks."""
     from pathlib import Path
@@ -290,50 +345,7 @@ def main() -> int:
             "0", "false", "no"
         }
         browser_voice = BrowserVoiceBridge(orchestrator, avatar=avatar)
-        # Prefer an explicitly configured licensed VRM. Otherwise provision the
-        # documented sample on first run.
-        configured_avatar = os.getenv("JENEFAR_AVATAR_VRM_PATH", "").strip()
-        if configured_avatar:
-            avatar_model = Path(configured_avatar).expanduser().resolve()
-            if avatar_model.is_file():
-                print(f"[JENEFAR] Using configured VRM avatar: {avatar_model}")
-            else:
-                print(
-                    "[JENEFAR] Configured VRM avatar not found: "
-                    f"{avatar_model}; falling back to the sample asset."
-                )
-                avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
-        else:
-            avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
-
-        if not avatar_model.is_file():
-            try:
-                from jenefar.assets.provisioning import setup_avatar_asset
-                avatar_model = setup_avatar_asset()
-                print(f"[JENEFAR] VRM avatar ready: {avatar_model}")
-            except Exception as exc:
-                print(
-                    "[JENEFAR] VRM provisioning skipped: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-
-        # Premium VRM pipeline is safe-by-default: it never overwrites the
-        # source sample and silently falls back to the source when Blender is absent.
-        premium_output = Path("data/avatar/Jenefar_Premium.vrm")
-        if os.getenv("JENEFAR_PREMIUM_AVATAR", "1").strip().lower() not in {"0", "false", "no"}:
-            try:
-                from jenefar.assets.premium_avatar import prepare_premium_avatar
-                baked = prepare_premium_avatar(avatar_model, premium_output)
-                if baked and baked.is_file():
-                    avatar_model = baked
-                    print(f"[JENEFAR] Premium VRM avatar active: {avatar_model}")
-                else:
-                    print("[JENEFAR] Premium Blender pipeline unavailable; using source VRM with runtime premium styling.")
-            except Exception as exc:
-                print(
-                    "[JENEFAR] Premium VRM pipeline skipped safely: "
-                    f"{type(exc).__name__}: {exc}. Using source VRM."
-                )
+        avatar_model = prepare_avatar_model()
         avatar_server = AvatarServer(
             avatar,
             port=args.avatar_port,
@@ -579,6 +591,7 @@ def main() -> int:
 
     avatar = None
     avatar_server = None
+    browser_voice = None
     orchestrator = None
 
     if args.avatar:
@@ -588,13 +601,29 @@ def main() -> int:
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
+
+        # --avatar is a browser-first workspace too. Do not start this bridge
+        # for explicit Python voice or direct Realtime mode; those own the audio path.
+        if not args.realtime and not args.voice and not args.voice_continuous:
+            from jenefar.voice.browser import BrowserVoiceBridge
+            browser_voice = BrowserVoiceBridge(orchestrator, avatar=avatar)
+
+        avatar_model = prepare_avatar_model()
         avatar_server = AvatarServer(
             avatar,
             port=args.avatar_port,
+            vrm_path=avatar_model,
             tool_broker=orchestrator.tool_broker,
+            voice_handler=browser_voice.handle_text if browser_voice else None,
         )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
+        print(
+            "[JENEFAR] VRM source: "
+            + (str(avatar_model) if avatar_model else "unavailable; procedural fallback only")
+        )
+        if browser_voice is not None:
+            print("[JENEFAR] Browser microphone + browser SpeechSynthesis voice path enabled.")
         if args.desktop:
             from jenefar.avatar.desktop import launch_desktop
         else:
@@ -643,6 +672,8 @@ def main() -> int:
         orchestrator.run()
         return 0
     finally:
+        if browser_voice is not None:
+            browser_voice.shutdown()
         if avatar_server is not None:
             avatar_server.stop()
 
