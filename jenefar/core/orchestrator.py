@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
@@ -249,7 +250,10 @@ class JenefarOrchestrator:
                 )
             output = self.verifier.verify(text, result.content)
             if result.metadata.get("provider") and result.metadata.get("model"):
-                provider_label = f"\n[Model: {result.metadata.get("provider")} / {result.metadata.get("model")}]"
+                provider_label = (
+                    f"\n[Model: {result.metadata.get('provider')} / "
+                    f"{result.metadata.get('model')}]"
+                )
                 output = output + provider_label
             verification = {
                 "passed": bool(output and output.strip()),
@@ -387,10 +391,24 @@ class JenefarOrchestrator:
         }
         if workflow.get("response_language"):
             continue_kwargs["response_language"] = workflow["response_language"]
+        signature = inspect.signature(agent.continue_after_tools)
+        accepts_var_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        filtered_kwargs = (
+            continue_kwargs
+            if accepts_var_kwargs
+            else {
+                key: value
+                for key, value in continue_kwargs.items()
+                if key in signature.parameters
+            }
+        )
         final_result = agent.continue_after_tools(
             workflow["task"],
             workflow["results"],
-            **continue_kwargs,
+            **filtered_kwargs,
         )
         pending_tools = final_result.metadata.get("pending_tools", [])
         if pending_tools:
