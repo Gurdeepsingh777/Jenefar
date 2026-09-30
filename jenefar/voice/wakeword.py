@@ -25,12 +25,16 @@ class WakeWord:
 
     def matched_phrase(self, text: str) -> str | None:
         normalized = self.normalize_stt_text(text)
+        for phrase in sorted(self.phrases, key=len, reverse=True):
+            if normalized == phrase or normalized.startswith(phrase + " "):
+                return phrase
+        return None
+
     def detect(self, text: str) -> bool:
         return self.matched_phrase(text) is not None
 
     def remove_wake_phrase(self, text: str) -> str:
-        original = text.strip()
-        normalized = " ".join(original.lower().split())
+        normalized = self.normalize_stt_text(text)
 
         for phrase in sorted(self.phrases, key=len, reverse=True):
             if normalized == phrase:
@@ -38,8 +42,6 @@ class WakeWord:
 
             prefix = phrase + " "
             if normalized.startswith(prefix):
-                # Determine removal against normalized text. This intentionally
-                # returns a normalized remainder for predictable routing.
                 return normalized[len(prefix):].strip()
 
-        return original
+        return text.strip()
