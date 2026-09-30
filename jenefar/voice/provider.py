@@ -248,7 +248,7 @@ class ProviderVoiceRuntime:
         status = self.audio_status()
         stt = status["stt"] or {"provider": "none", "model": "none"}
         tts = status["tts"] or {"provider": "none", "model": "none"}
-        return f"STT={stt["provider"]}/{stt["model"]} | TTS={tts["provider"]}/{tts["model"]}"
+        return f"STT={stt['provider']}/{stt['model']} | TTS={tts['provider']}/{tts['model']}"
 
     def run(self) -> None:
         status = self.audio_status()
