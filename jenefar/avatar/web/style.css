@@ -124,3 +124,81 @@ body.vrm-loaded .avatar{opacity:.08}
 .approval-actions button:last-child{
   border-color:rgba(103,232,255,.35);background:rgba(58,105,135,.35)
 }
+
+.photo-avatar{
+  position:absolute;
+  width:min(38vw,430px);
+  aspect-ratio:3/4;
+  border-radius:38% 38% 30% 30%;
+  z-index:3;
+  display:grid;
+  place-items:center;
+  pointer-events:none;
+}
+.photo-avatar__portrait{
+  width:84%;
+  height:86%;
+  border-radius:46% 46% 38% 38%;
+  background:
+    radial-gradient(circle at 50% 27%, rgba(244,214,207,.96) 0 18%, transparent 18.5%),
+    radial-gradient(ellipse at 50% 42%, rgba(246,221,214,.98) 0 25%, transparent 25.5%),
+    radial-gradient(ellipse at 50% 66%, rgba(35,38,48,.98) 0 42%, transparent 42.5%),
+    linear-gradient(180deg, #171a24 0 35%, #0c0e15 100%);
+  box-shadow:
+    inset 0 0 70px rgba(0,0,0,.38),
+    0 30px 90px rgba(0,0,0,.48),
+    0 0 80px rgba(103,232,255,.10);
+  position:relative;
+  overflow:hidden;
+}
+.photo-avatar__portrait::before{
+  content:"";
+  position:absolute;
+  left:18%;
+  right:18%;
+  top:19%;
+  height:9%;
+  border-radius:999px;
+  background:linear-gradient(90deg,transparent,#14151c 12%,#11131a 88%,transparent);
+  box-shadow:0 18px 0 -2px rgba(255,255,255,.04);
+}
+.photo-avatar__portrait::after{
+  content:"";
+  position:absolute;
+  left:33%;
+  right:33%;
+  top:42%;
+  height:8%;
+  border-radius:50%;
+  border-top:2px solid rgba(90,220,255,.34);
+  border-bottom:1px solid rgba(90,220,255,.10);
+}
+.photo-avatar__ring{
+  position:absolute;
+  width:96%;
+  aspect-ratio:1;
+  border-radius:50%;
+  border:1px solid rgba(103,232,255,.18);
+  box-shadow:
+    0 0 50px rgba(103,232,255,.08),
+    inset 0 0 35px rgba(167,139,250,.05);
+}
+.photo-avatar__name{
+  position:absolute;
+  bottom:2%;
+  font-size:10px;
+  letter-spacing:.55em;
+  color:rgba(232,242,255,.72);
+  text-shadow:0 0 18px rgba(103,232,255,.22);
+}
+body.vrm-loaded .photo-avatar{display:none}
+#stage[data-state="speaking"] .photo-avatar__ring{
+  animation:avatarRingPulse 1s ease-in-out infinite;
+  box-shadow:0 0 calc(45px + var(--speech-level,0)*70px) rgba(103,232,255,.12);
+}
+#stage[data-state="thinking"] .photo-avatar__portrait{animation:avatarThink 2.8s ease-in-out infinite}
+#stage[data-state="listening"] .photo-avatar__portrait{animation:avatarListen 1.3s ease-in-out infinite}
+@keyframes avatarRingPulse{50%{transform:scale(1.045)}}
+@keyframes avatarThink{50%{transform:translateX(5px)}}
+@keyframes avatarListen{50%{transform:translateY(-4px) scale(1.01)}}
+@media (max-width:700px){.photo-avatar{width:76vw}}
