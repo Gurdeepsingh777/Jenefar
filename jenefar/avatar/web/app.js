@@ -414,7 +414,6 @@ function setupBrowserVoice(){
   }
 
   if(!Recognition){
-  if(!Recognition){
     voiceSupported=false;
     micEnabled=false;
     setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED",false);
