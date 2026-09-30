@@ -92,12 +92,23 @@ class BaseLLMAgent(BaseAgent):
                 f"\nRuntime status: {runtime_text.get('connectivity', 'unknown')}. "
                 f"Offline limitations: {runtime_text.get('offline_limitations', [])}"
             )
+        # Only expose capability metadata to the model when the user explicitly asks
+        # what Jenefar can do. Compute this before consuming either metadata list.
+        capability_query = any(
+            word in str(context.task).lower()
+            for word in (
+                "what can you do",
+                "what can jenefar do",
+                "tum kya kar",
+                "tum kya kya",
+                "capabilit",
+                "kya kar sakti",
+            )
+        )
         if capability_text and (not concise_mode or capability_query):
             instructions += "\nUser-requested capability scope:\n" + "\n".join(
                 f"- {item.get('capability', '')}" for item in capability_text[-20:]
             )
-        # Only expose capability metadata to the model when the user is explicitly asking what Jenefar can do.
-        capability_query = any(word in str(context.task).lower() for word in ("what can you do", "what can jenefar do", "tum kya kar", "tum kya kya", "capabilit", "kya kar sakti"))
         if skill_text and (not concise_mode or capability_query):
             instructions += "\nEnabled Jenefar skills:\n" + "\n".join(
                 f"- {item.get('name', '')}: {item.get('description', '')}"
