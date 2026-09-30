@@ -75,6 +75,35 @@ def test_voice_provider_status_line(monkeypatch):
     assert "TTS=groq/canopylabs/orpheus-v1-english fallback=none" in line
 
 
+def test_voice_reports_separate_stt_and_tts_capabilities(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
+    monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
+    monkeypatch.setenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+    status = ProviderVoiceRuntime.audio_status()
+    assert status["stt"]["provider"] == "openai"
+    assert status["tts"]["provider"] == "openai"
+    assert status["tts"]["fallback"] == ["groq"]
+
+
+def test_groq_can_be_disabled_for_tts_when_terms_are_not_accepted(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
+    monkeypatch.setenv("JENEFAR_DISABLE_GROQ_TTS", "1")
+    status = ProviderVoiceRuntime.audio_status()
+    assert status["stt"]["provider"] == "groq"
+    assert status["tts"] is None
+
+
+def test_default_runtime_starts_avatar_server():
+    from pathlib import Path
+
+    source = Path("run.py").read_text(encoding="utf-8")
+    assert "AvatarController()" in source
+    assert "AvatarServer(" in source
+    assert "webbrowser.open(runtime_url)" in source
+    assert "ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()" in source
+
+
 def test_run_py_default_uses_continuous_voice_runtime():
     from pathlib import Path
 
