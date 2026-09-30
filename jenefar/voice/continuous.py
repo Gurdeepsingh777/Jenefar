@@ -110,17 +110,8 @@ class ContinuousVoiceRuntime:
         now = time.monotonic()
         rms = self._rms(chunk)
 
-        if not self._wake_triggered:
-            detected, _score = self._wakeword.process(
-                chunk,
-                sample_rate=self.config.sample_rate,
-            )
-            if not detected:
-                return None
-            self._wake_triggered = True
-            if self.avatar is not None:
-                self.avatar.publish("listening", "Wake word detected", level=0.12)
-
+        # Continuous VAD mode captures speech first; wake-word gating is
+        # applied to the transcript only when explicitly enabled.
         if not self._speaking:
             if rms < self.config.start_threshold:
                 return None
@@ -146,8 +137,6 @@ class ContinuousVoiceRuntime:
         ):
             pcm = np.concatenate(self._buffers).astype(np.int16).tobytes()
             self._reset_utterance()
-            if self._wakeword.available:
-                self._wake_triggered = False
             return pcm
         return None
 
@@ -169,9 +158,9 @@ class ContinuousVoiceRuntime:
                 samples.append(self._rms(np.asarray(chunk)))
         ambient = float(np.mean(samples)) if samples else 0.0
         self._ambient_threshold = max(
-            self.config.start_threshold,
-            ambient * float(os.getenv("JENEFAR_VOICE_AMBIENT_MULTIPLIER", "2.2"))
-            + float(os.getenv("JENEFAR_VOICE_AMBIENT_OFFSET", "0.006")),
+            float(os.getenv("JENEFAR_VOICE_START_THRESHOLD", "0.018")),
+            ambient * float(os.getenv("JENEFAR_VOICE_AMBIENT_MULTIPLIER", "1.35"))
+            + float(os.getenv("JENEFAR_VOICE_AMBIENT_OFFSET", "0.003")),
         )
         self._legacy_ready = True
         print(
@@ -183,10 +172,10 @@ class ContinuousVoiceRuntime:
         import sounddevice as sd
 
         blocksize = int(self.config.sample_rate * self.config.block_ms / 1000)
-        timeout = float(os.getenv("JENEFAR_LEGACY_LISTEN_TIMEOUT", "5"))
-        phrase_limit = float(os.getenv("JENEFAR_LEGACY_PHRASE_LIMIT", "10"))
+        timeout = float(os.getenv("JENEFAR_LEGACY_LISTEN_TIMEOUT", "8"))
+        phrase_limit = float(os.getenv("JENEFAR_LEGACY_PHRASE_LIMIT", "12"))
         silence_after_phrase = float(
-            os.getenv("JENEFAR_LEGACY_PAUSE_THRESHOLD", "0.8")
+            os.getenv("JENEFAR_LEGACY_PAUSE_THRESHOLD", "1.0")
         )
         pre_roll_blocks = max(1, int(0.25 * self.config.sample_rate / blocksize))
         pre_roll: deque[np.ndarray] = deque(maxlen=pre_roll_blocks)
@@ -291,9 +280,16 @@ class ContinuousVoiceRuntime:
 
         if self.orchestrator.state.name == "SLEEPING":
             matched_phrase = self.orchestrator.wakeword.matched_phrase(text)
-            if matched_phrase is None:
+            strict_wake = os.getenv("JENEFAR_REQUIRE_WAKE_WORD", "").strip().lower() in {
+                "1", "true", "yes"
+            }
+            if matched_phrase is None and strict_wake:
                 return
-            command = self.orchestrator.wakeword.remove_wake_phrase(text)
+            command = (
+                self.orchestrator.wakeword.remove_wake_phrase(text)
+                if matched_phrase is not None
+                else text.strip()
+            )
             if matched_phrase == "hello jenefar":
                 self._conversation_language = "Hinglish"
             response_language = self._conversation_language or "Hinglish"
