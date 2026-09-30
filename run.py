@@ -286,6 +286,12 @@ def main() -> int:
             return 0
 
         print("[JENEFAR] Default runtime: continuous voice -> STT -> Jenefar -> TTS.")
+        try:
+            import sounddevice  # noqa: F401
+        except ImportError as exc:
+            print(f"[JENEFAR] Voice dependency missing: sounddevice ({exc}).")
+            print("[JENEFAR] Install it once with: python -m pip install sounddevice>=0.5.1")
+            return 1
         ContinuousVoiceRuntime(orchestrator).run()
         return 0
 
