@@ -96,6 +96,13 @@ class JenefarOrchestrator:
                 print("[JENEFAR] Goodbye.")
                 return
 
+            if lowered == "cancel":
+                self.pending_approval_workflows.clear()
+                self.tool_broker.pending.clear()
+                self.state = JenefarState.SLEEPING
+                print("[JENEFAR] Pending approval cancelled.")
+                continue
+
             if lowered.startswith("approve "):
                 pending_id = raw.split(maxsplit=1)[1].strip()
                 if pending_id:
@@ -156,6 +163,19 @@ class JenefarOrchestrator:
         )
         self.graph.learn_text(text)
         try:
+            if self._is_local_time_query(text):
+                output = self._local_time_response(text, response_language)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.45,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+                return output
+
             recall = self.memory_engine.recall(text, limit=8)
             graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
             plan = self.planner.plan(text)
@@ -271,6 +291,28 @@ class JenefarOrchestrator:
             self.state = JenefarState.SLEEPING
             self._avatar_state("error", str(exc))
             return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
+
+    @staticmethod
+    def _is_local_time_query(text: str) -> bool:
+        lowered = text.lower().strip()
+        phrases = (
+            "what time", "current time", "time kya", "abhi time",
+            "kitne baje", "kitna time", "clock check", "laptop me time",
+            "laptop ka time", "computer ka time", "system time",
+            "today's date", "date today", "aaj ki date",
+        )
+        return any(phrase in lowered for phrase in phrases)
+
+    def _local_time_response(self, text: str, response_language: str | None = None) -> str:
+        payload = self.tool_broker._local_time()
+        if str(response_language or "").lower() == "hinglish" or any(
+            word in text.lower() for word in ("kya", "hai", "batao", "bata", "abhi", "laptop")
+        ):
+            return (
+                f"Abhi aapke laptop ka local time {payload['time']} hai, "
+                f"{payload['date']} ({payload['timezone']})."
+            )
+        return f"The current laptop time is {payload['time']} on {payload['date']} ({payload['timezone']})."
 
     @staticmethod
     def _model_role_for_plan(plan) -> str:
