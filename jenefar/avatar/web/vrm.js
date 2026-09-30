@@ -72,15 +72,26 @@ if (canvas) {
         node.rotation.z = z;
         node.updateMatrixWorld(true);
       };
-      // Upper arms: lower from horizontal to relaxed by the sides.
-      setEuler("leftUpperArm", 0.12, 0.02, -1.15);
-      setEuler("rightUpperArm", 0.12, -0.02, 1.15);
-      // Slight elbow bend, hands naturally forward.
-      setEuler("leftLowerArm", 0.10, 0.02, -0.18);
-      setEuler("rightLowerArm", 0.10, -0.02, 0.18);
-      // Neutral forearms/hands.
-      setEuler("leftHand", 0.02, 0.0, -0.05);
-      setEuler("rightHand", 0.02, 0.0, 0.05);
+      // Premium relaxed pose: shoulders lowered, elbows softened, hands near the waist.
+      setEuler("leftUpperArm", 0.08, 0.04, -1.32);
+      setEuler("rightUpperArm", 0.08, -0.04, 1.32);
+      setEuler("leftLowerArm", 0.34, 0.10, -0.12);
+      setEuler("rightLowerArm", 0.34, -0.10, 0.12);
+      setEuler("leftHand", 0.02, 0.0, -0.08);
+      setEuler("rightHand", 0.02, 0.0, 0.08);
+      // Add a subtle jacket/sleeve tint when materials expose a base color.
+      try {
+        vrm.scene.traverse(node => {
+          if (!node.isMesh || !node.material) return;
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
+          for (const material of mats) {
+            if (material.color && material.color.getHex() < 0x555555) {
+              material.color.lerp(new THREE.Color(0x0b4f7a), 0.08);
+              material.needsUpdate = true;
+            }
+          }
+        });
+      } catch (_) {}
 
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");

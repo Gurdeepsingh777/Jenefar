@@ -17,6 +17,8 @@
 </head>
 <body>
   <main id="stage" data-state="idle">
+    <div class="sci-fi-bg" aria-hidden="true"></div>
+    <div class="room-lights" aria-hidden="true"></div>
     <div class="siri-topbar">
       <div class="brand-lockup">
         <div class="brand-mark">J</div>
@@ -39,9 +41,9 @@
       <button class="nav-item" type="button" data-nav="settings"><span>⚙</span><b>Settings</b></button>
     </nav>
     <section class="hero-copy">
-      <div class="hero-kicker">LOCAL AI • LIVE WORKFLOW</div>
-      <h1>Talk to Jenefar.<br><span>Let the system work.</span></h1>
-      <p>Voice, tools, research and coding workflows — visible in one premium workspace.</p>
+      <div class="hero-kicker">JENEFAR • ADVANCED AI COMPANION</div>
+      <h1>Talk to Jenefar.<br><span>Your intelligent workspace.</span></h1>
+      <p>Voice, vision, web, automation and local tools in one cinematic command center.</p>
     </section>
     <aside class="system-card">
       <div class="card-title">SYSTEM STATUS</div>
@@ -56,7 +58,7 @@
         <div><span class="service-light"></span>VRM <b id="service-vrm">●</b></div>
       </div>
     </aside>
-    <section class="command-stack">
+    <section class="command-stack" aria-label="Quick commands">
       <button type="button" class="command-chip" data-command="open app">▣ <span>Open App</span></button>
       <button type="button" class="command-chip" data-command="search web">⌕ <span>Search Web</span></button>
       <button type="button" class="command-chip" data-command="play music">♫ <span>Play Music</span></button>
@@ -91,6 +93,17 @@
       <div class="media-main"><div class="cover-art">♪</div><div class="media-meta"><strong id="now-playing-title">Jenefar Voice</strong><span>Workspace audio</span><div class="media-wave"></div></div><button type="button" id="media-pause">Ⅱ</button></div>
     </section>
     <div class="backdrop"></div>
+    <div id="holo-earth" class="holo-earth" aria-hidden="true">
+      <div class="earth-glow"></div>
+      <canvas id="earth-canvas"></canvas>
+      <div class="earth-orbit orbit-a"></div>
+      <div class="earth-orbit orbit-b"></div>
+      <div class="earth-data-ring ring-a"></div>
+      <div class="earth-data-ring ring-b"></div>
+    </div>
+    <div class="holo-particles" id="holo-particles" aria-hidden="true"></div>
+    <div class="chair-silhouette chair-left" aria-hidden="true"></div>
+    <div class="chair-silhouette chair-right" aria-hidden="true"></div>
     <canvas id="particles" aria-hidden="true"></canvas>
     <canvas id="vrm-canvas" aria-hidden="true"></canvas>
     <div id="photo-avatar" class="photo-avatar" aria-hidden="true">
@@ -103,6 +116,7 @@
       <div class="halo halo-a"></div>
       <div class="halo halo-b"></div>
       <div class="avatar-glow"></div>
+      <div class="avatar-backlight" aria-hidden="true"></div>
 
       <div class="avatar">
         <svg viewBox="0 0 420 520" role="img" aria-label="Jenefar AI avatar">

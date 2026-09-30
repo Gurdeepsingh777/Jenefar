@@ -210,17 +210,35 @@ function showApproval(event){
   overlay.querySelector("pre").textContent="Pending ID: "+pendingId;
   document.body.appendChild(overlay);
   approvalDialogs.set(pendingId,overlay);
-  const close=()=>{approvalDialogs.delete(pendingId);overlay.remove();};
-  overlay.querySelector("[data-action='deny']").onclick=async()=>{
+
+  const close=()=>{ approvalDialogs.delete(pendingId); overlay.remove(); };
+
+  const denyButton=overlay.querySelector("[data-action='deny']");
+  const approveButton=overlay.querySelector("[data-action='approve']");
+
+  denyButton.onclick=async()=>{
     try{
-      await fetch("/approval/reject",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approve_id:pendingId})});
-    }finally{close();}
+      await fetch("/approval/reject",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({approve_id:pendingId})
+      });
+    }finally{
+      close();
+    }
   };
-  overlay.querySelector("[data-action='approve']").onclick=async()=>{
+
+  approveButton.onclick=async()=>{
     overlay.querySelectorAll("button").forEach(button=>button.disabled=true);
     try{
-      await fetch("/realtime/tool",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approve_id:pendingId}));
-    }finally{close();}
+      await fetch("/realtime/tool",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({approve_id:pendingId})
+      });
+    }finally{
+      close();
+    }
   };
 }
 
@@ -383,6 +401,12 @@ async function sendBrowserTranscript(text){
 
 function setupBrowserVoice(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+
+  if(micButton){
+    micButton.addEventListener("pointerdown",()=>micButton.classList.add("pressed"),{passive:true});
+    micButton.addEventListener("pointerup",()=>micButton.classList.remove("pressed"),{passive:true});
+    micButton.addEventListener("pointercancel",()=>micButton.classList.remove("pressed"),{passive:true});
+  }
 
   async function requestMicrophonePermission(){
     if(!navigator.mediaDevices?.getUserMedia){
@@ -569,3 +593,102 @@ resize();
 connect();
 requestAnimationFrame(draw);
 setupBrowserVoice();
+
+/* Cinematic 3D holographic environment */
+(function setupHolographicEnvironment(){
+  const particleHost = document.getElementById("holo-particles");
+  if(particleHost){
+    const count = Math.min(75, Math.max(36, Math.floor(window.innerWidth / 22)));
+    for(let i=0;i<count;i++){
+      const el=document.createElement("span");
+      el.className="holo-particle";
+      el.style.left=(Math.random()*100)+"%";
+      el.style.top=(38+Math.random()*55)+"%";
+      el.style.animationDelay=(-Math.random()*8)+"s";
+      el.style.animationDuration=(5+Math.random()*7)+"s";
+      particleHost.appendChild(el);
+    }
+  }
+
+  const canvas=document.getElementById("earth-canvas");
+  if(!canvas) return;
+  const ctx=canvas.getContext("2d");
+  if(!ctx) return;
+  let size=0, dpr=1, rotation=0;
+  const points=Array.from({length:900},()=>({
+    lat:(Math.random()-.5)*Math.PI,
+    lon:(Math.random()*2-1)*Math.PI,
+    jitter:Math.random()
+  }));
+
+  function resizeEarth(){
+    const rect=canvas.getBoundingClientRect();
+    size=Math.max(1,Math.min(rect.width,rect.height));
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=size*dpr; canvas.height=size*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+
+  function landMask(lat,lon){
+    const x=Math.sin(lon*1.7)+.35*Math.sin(lon*4.7+lat*2);
+    const y=Math.cos(lat*2.15)+.3*Math.sin(lat*5.2-lon);
+    return (x+y+0.24*Math.sin(lat*9+lon*3))>.95;
+  }
+
+  function drawEarth(t){
+    ctx.clearRect(0,0,size,size);
+    const cx=size/2, cy=size/2, R=size*.31;
+    const grad=ctx.createRadialGradient(cx-R*.28,cy-R*.32,R*.08,cx,cy,R*1.25);
+    grad.addColorStop(0,"rgba(130,235,255,.42)");
+    grad.addColorStop(.42,"rgba(31,131,255,.22)");
+    grad.addColorStop(1,"rgba(0,18,48,0)");
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(cx,cy,R*1.35,0,Math.PI*2); ctx.fill();
+
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.clip();
+    const ocean=ctx.createLinearGradient(0,cy-R,0,cy+R);
+    ocean.addColorStop(0,"rgba(10,71,121,.70)");
+    ocean.addColorStop(.5,"rgba(7,35,82,.95)");
+    ocean.addColorStop(1,"rgba(2,15,43,.92)");
+    ctx.fillStyle=ocean; ctx.fillRect(cx-R,cy-R,R*2,R*2);
+
+    const lonShift=rotation;
+    for(const p of points){
+      const z=Math.cos(p.lat)*Math.cos(p.lon+lonShift);
+      if(z<=0) continue;
+      const x=cx+R*Math.cos(p.lat)*Math.sin(p.lon+lonShift);
+      const y=cy-R*Math.sin(p.lat);
+      const isLand=landMask(p.lat,p.lon);
+      ctx.fillStyle=isLand ? "rgba(84,220,255,.62)" : "rgba(97,195,255,.23)";
+      const s=isLand ? 1.3 : .55;
+      ctx.beginPath(); ctx.arc(x,y,s,0,Math.PI*2); ctx.fill();
+    }
+
+    ctx.strokeStyle="rgba(98,211,255,.14)";
+    ctx.lineWidth=0.7;
+    for(let i=-2;i<=2;i++){
+      const yy=cy+i*R*.32;
+      ctx.beginPath(); ctx.ellipse(cx,yy,R*.96,Math.max(5,R*.10),0,0,Math.PI*2); ctx.stroke();
+    }
+    for(let i=0;i<9;i++){
+      const a=(-Math.PI/2)+(i*Math.PI/8);
+      ctx.beginPath(); ctx.ellipse(cx,cy,R*Math.abs(Math.cos(a)),R,0,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.strokeStyle="rgba(76,226,255,.62)";
+    ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(cx,cy,R+1,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle="rgba(139,115,255,.28)";
+    ctx.lineWidth=.8;
+    ctx.beginPath(); ctx.arc(cx,cy,R*1.10,0,Math.PI*2); ctx.stroke();
+
+    rotation += .0026;
+    requestAnimationFrame(drawEarth);
+  }
+
+  window.addEventListener("resize",resizeEarth);
+  resizeEarth();
+  requestAnimationFrame(drawEarth);
+})();
+

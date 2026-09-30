@@ -9,7 +9,7 @@
 *{box-sizing:border-box}
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:Inter,system-ui,sans-serif}
 body{color:var(--text)}
-#stage{position:relative;width:100%;height:100%;isolation:isolate}
+#stage{position:relative;width:100%;height:100%;isolation:isolate;cursor:default}
 .backdrop{position:absolute;inset:0;background:
  radial-gradient(circle at 50% 45%,rgba(83,44,145,.28),transparent 30%),
  radial-gradient(circle at 25% 20%,rgba(32,200,255,.10),transparent 24%),
@@ -421,3 +421,107 @@ body.vrm-loaded #photo-avatar{display:none}
   .command-stack{right:24px;width:285px}
   #activity-panel{right:22px;width:390px}
 }
+
+
+/* Full-screen cinematic command center */
+#stage{overflow:hidden;background:#02050c}
+.sci-fi-bg{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.9;
+  background:
+    radial-gradient(ellipse at 51% 44%,rgba(33,117,255,.20) 0,rgba(8,30,78,.10) 22%,transparent 44%),
+    radial-gradient(ellipse at 25% 15%,rgba(0,174,255,.10),transparent 24%),
+    radial-gradient(ellipse at 80% 27%,rgba(102,44,255,.10),transparent 22%),
+    linear-gradient(180deg,#020713 0%,#030916 42%,#02040a 100%);
+}
+.room-lights{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.room-lights:before,.room-lights:after{content:"";position:absolute;height:2px;filter:blur(.5px);background:linear-gradient(90deg,transparent,rgba(72,210,255,.55),transparent);opacity:.50}
+.room-lights:before{left:3%;right:40%;top:17%;box-shadow:0 140px 70px rgba(44,144,255,.05)}
+.room-lights:after{left:46%;right:4%;top:11%;background:linear-gradient(90deg,transparent,rgba(169,105,255,.45),transparent)}
+.backdrop{z-index:2;background:
+  linear-gradient(180deg,rgba(2,7,18,.22),rgba(2,5,11,.10) 45%,rgba(0,0,0,.62) 100%),
+  radial-gradient(circle at 52% 54%,rgba(0,188,255,.11),transparent 27%);
+}
+#particles{z-index:8!important}
+.holo-particles{position:absolute;inset:0;z-index:9;pointer-events:none;overflow:hidden}
+.holo-particle{position:absolute;width:3px;height:3px;border-radius:50%;background:#66ddff;box-shadow:0 0 10px #66ddff;opacity:.45;animation:floatParticle 8s linear infinite}
+@keyframes floatParticle{0%{transform:translate3d(0,20px,0) scale(.7);opacity:0}15%{opacity:.75}50%{transform:translate3d(26px,-55px,0) scale(1.1)}85%{opacity:.55}100%{transform:translate3d(-16px,-130px,0) scale(.55);opacity:0}}
+
+.avatar-shell{z-index:20!important;inset:0 31% 0 10%!important;overflow:visible}
+#photo-avatar{z-index:21!important;left:22%;top:7%;width:min(48vw,650px);height:86%;pointer-events:none}
+#photo-avatar .photo-avatar__portrait{mix-blend-mode:screen;filter:drop-shadow(0 35px 75px rgba(11,121,255,.26)) saturate(1.15)}
+.avatar-backlight{position:absolute;width:min(34vw,500px);height:min(34vw,500px);border-radius:50%;
+  background:radial-gradient(circle,rgba(51,205,255,.16),rgba(81,72,255,.08) 38%,transparent 70%);
+  filter:blur(12px);transform:translateY(-20px);z-index:-1;animation:backlightPulse 3.8s ease-in-out infinite}
+@keyframes backlightPulse{50%{transform:translateY(-18px) scale(1.05);opacity:.88}}
+.holo-earth{position:absolute;right:18%;top:18%;width:min(28vw,410px);aspect-ratio:1;z-index:16;pointer-events:none;transform-style:preserve-3d}
+#earth-canvas{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 28px rgba(46,194,255,.34))}
+.earth-glow{position:absolute;inset:6%;border-radius:50%;background:radial-gradient(circle at 43% 35%,rgba(130,224,255,.28),rgba(24,105,255,.10) 42%,transparent 69%);filter:blur(8px);animation:earthPulse 3s ease-in-out infinite}
+@keyframes earthPulse{50%{transform:scale(1.04);opacity:.95}}
+.earth-orbit,.earth-data-ring{position:absolute;left:50%;top:50%;border-radius:50%;transform-style:preserve-3d}
+.earth-orbit{border:1px solid rgba(69,217,255,.35);box-shadow:0 0 18px rgba(69,217,255,.12);animation:earthOrbit 8s linear infinite}
+.orbit-a{width:122%;height:44%;transform:translate(-50%,-50%) rotate(22deg) rotateY(64deg)}
+.orbit-b{width:132%;height:52%;transform:translate(-50%,-50%) rotate(-35deg) rotateY(67deg);animation-duration:11s;animation-direction:reverse}
+.earth-data-ring{border:1px dashed rgba(156,121,255,.27)}
+.ring-a{width:114%;height:114%;transform:translate(-50%,-50%);animation:ringSpin 18s linear infinite}
+.ring-b{width:102%;height:102%;transform:translate(-50%,-50%) rotate(90deg);animation:ringSpin 13s linear infinite reverse}
+@keyframes earthOrbit{to{transform:translate(-50%,-50%) rotate(382deg) rotateY(64deg)}}
+@keyframes ringSpin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+.chair-silhouette{position:absolute;bottom:1%;width:30%;height:26%;z-index:5;opacity:.40;pointer-events:none;filter:blur(.2px)}
+.chair-silhouette:before{content:"";position:absolute;left:23%;right:23%;top:8%;height:63%;border-radius:42px 42px 20px 20px;background:linear-gradient(180deg,rgba(23,37,54,.70),rgba(7,12,19,.92));box-shadow:0 0 40px rgba(12,94,130,.10)}
+.chair-silhouette:after{content:"";position:absolute;left:7%;right:7%;bottom:0;height:19%;border-radius:50%;background:rgba(1,5,10,.85);filter:blur(5px)}
+.chair-left{left:1%;transform:perspective(400px) rotateY(12deg)}
+.chair-right{right:1%;transform:perspective(400px) rotateY(-12deg)}
+.siri-topbar,.side-nav,.hero-copy,.system-card,.command-stack,.chat-glass,.quick-apps,.media-card,.workspace-card,.realtime-controls,.bottom-dock{z-index:60!important}
+.siri-topbar{left:24px;right:24px;top:18px}
+.side-nav{left:24px;top:86px;bottom:170px}
+.hero-copy{left:224px;top:94px;max-width:360px}
+.hero-copy h1{font-size:33px}
+.hero-copy p{color:#92abc6}
+.system-card{right:24px;top:86px;width:360px}
+.command-stack{right:24px;top:250px;width:300px}
+.chat-glass{left:224px;top:246px;width:365px;height:360px}
+.quick-apps{left:24px;bottom:170px}
+.media-card{left:24px;bottom:24px}
+#activity-panel{right:24px;top:430px;width:360px;height:calc(100vh - 535px);max-height:335px;z-index:70!important}
+.premium-controls{right:24px;bottom:114px;z-index:75!important}
+.bottom-dock{bottom:18px;z-index:80!important}
+.bottom-dock .dock-btn{width:64px}
+.orb-button{width:88px;height:88px}
+#stage[data-state="speaking"] .orb-button{animation:orbPulse 1.05s ease-in-out infinite,orbColor 2.2s linear infinite}
+@keyframes orbColor{0%,100%{filter:hue-rotate(0deg)}50%{filter:hue-rotate(28deg)}}
+
+@media (max-width:1200px){
+  .holo-earth{right:17%;width:300px}
+  .hero-copy{max-width:320px}
+  .system-card{width:320px}
+  .command-stack{width:250px}
+  .chat-glass{width:340px}
+  #activity-panel{width:320px}
+}
+@media (max-width:900px){
+  .holo-earth{display:none}
+  .chair-silhouette{opacity:.20}
+  .avatar-shell{inset:0!important}
+  #photo-avatar{left:12%;width:76vw;max-width:none}
+  .hero-copy{left:92px;top:140px;max-width:290px}
+  .chat-glass{left:92px;top:285px;width:calc(100vw - 430px)}
+  .system-card,.command-stack{display:none}
+  #activity-panel{right:14px;top:auto;bottom:170px;width:330px;height:280px}
+}
+@media (max-width:700px){
+  .siri-topbar{left:12px;right:12px}
+  .hero-copy{left:16px;top:150px;max-width:calc(100vw - 32px)}
+  .side-nav{left:12px;right:12px;width:auto;height:54px;bottom:auto;flex-direction:row}
+  .chat-glass{left:16px;top:260px;width:calc(100% - 32px);height:280px}
+  #activity-panel{left:16px;right:16px;bottom:160px;width:auto;height:240px}
+  .premium-controls{left:16px;right:16px;bottom:100px;justify-content:center}
+  .media-card,.quick-apps{display:none}
+}
+
+/* Prevent invisible/decorative canvas surfaces from stealing pointer input. */
+#particles,#earth-canvas,.holo-particles,.holo-earth,.backdrop,.sci-fi-bg,.room-lights,.chair-silhouette{pointer-events:none!important}
+.chat-glass input,.chat-glass button,.command-chip,.quick-apps button,.nav-item,.talk-button,.dock-btn,.orb-button,.workspace-card button,.activity-filters button{position:relative;z-index:100;pointer-events:auto!important}
+
+
+/* Guarantee visual layers never intercept user interaction. */
+#particles,#vrm-canvas,.backdrop,.sci-fi-bg,.room-lights,.holo-particles,.holo-earth,.chair-silhouette,.avatar-shell,.photo-avatar{pointer-events:none!important}
+.siri-topbar,.side-nav,.hero-copy,.system-card,.command-stack,.chat-glass,.quick-apps,.media-card,.workspace-card,.realtime-controls,.bottom-dock{pointer-events:auto!important}
