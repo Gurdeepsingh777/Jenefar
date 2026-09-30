@@ -11,8 +11,6 @@ _BULLET_RE = re.compile(r"(?m)^\s*(?:[-*•◦▪‣]|\d+[.)])\s+")
 _SPACE_RE = re.compile(r"\s+")
 _REPEAT_PUNCT_RE = re.compile(r"([!?.,])\1{2,}")
 
-_LATIN1 = re.compile(r"[\\u0080-\\u00ff]")
-
 def enforce_hinglish(text: str, *, max_chars: int = 950) -> str:
     """Normalize assistant speech/output to compact Roman-Hinglish."""
     value = clean_for_speech(text, max_chars=max_chars)
