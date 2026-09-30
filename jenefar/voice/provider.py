@@ -49,15 +49,20 @@ class ProviderVoiceRuntime:
     def audio_status(cls) -> dict[str, dict | None]:
         stt_providers = cls._configured_audio_providers()
         tts_providers = []
-        if cls._legacy_edge_tts_available():
+        native_tts = cls._native_tts_enabled()
+        if native_tts and cls._legacy_edge_tts_available():
             tts_providers.append("edge")
         tts_providers.extend(
             name for name in stt_providers
             if cls._tts_configured(name)
         )
-        if cls._local_espeak_available():
+        if native_tts and cls._local_espeak_available():
             tts_providers.append("espeak")
-        if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
+        if (
+            native_tts
+            and shutil.which("piper")
+            and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        ):
             tts_providers.append("local")
         result: dict[str, dict | None] = {"stt": None, "tts": None}
 
@@ -135,16 +140,21 @@ class ProviderVoiceRuntime:
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
-        """Return browser-safe provider status without enabling native playback."""
+        """Return configured TTS providers; native playback is explicit opt-in."""
         order = []
-        if self._legacy_edge_tts_available():
+        native_tts = self._native_tts_enabled()
+        if native_tts and self._legacy_edge_tts_available():
             order.append("edge")
         order.extend(
             name
             for name in self._provider_order()
             if self._tts_configured(name)
         )
-        if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
+        if (
+            native_tts
+            and shutil.which("piper")
+            and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        ):
             order.append("local")
         return order
 
@@ -485,7 +495,8 @@ class ProviderVoiceRuntime:
         if not providers:
             raise RuntimeError(
                 "No text-to-speech provider is configured. "
-                "Configure OpenAI/Groq TTS or install/configure local Piper TTS."
+                "Configure OpenAI/Groq TTS, or set JENEFAR_ENABLE_NATIVE_TTS=1 "
+                "for legacy local/edge playback."
             )
 
         last_error: Exception | None = None
