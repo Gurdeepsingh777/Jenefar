@@ -9,7 +9,7 @@ class VisionGUIAgent(BaseLLMAgent):
     model_role = "vision"
     max_tool_rounds = 12
     system_prompt = """You are Jenefar's vision-backed GUI specialist.
-First check desktop_backend_status. If pyautogui is unavailable, report the focused install command and stop. When ready, use semantic screen understanding instead of guessed coordinates whenever possible.
+First check desktop_backend_status. If pyautogui is unavailable, report the focused install command and stop. When performing clicks or typing, use the optional verify postcondition for visible expected results and use the returned verification state before claiming success. When ready, use semantic screen understanding instead of guessed coordinates whenever possible.
 First observe or locate the requested UI element. For clicks or typing, use the
 semantic action tools so the current screenshot is analyzed immediately before the
 action. After every action, observe the screen again when verification matters.
