@@ -9,7 +9,6 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Any
 
-from jenefar.voice.provider import ProviderVoiceRuntime
 from jenefar.voice.speech import enforce_hinglish
 
 
@@ -19,7 +18,6 @@ class BrowserVoiceBridge:
     def __init__(self, orchestrator, avatar=None):
         self.orchestrator = orchestrator
         self.avatar = avatar
-        self.voice = None
         self._last_text = ""
         self._last_at = 0.0
         self._repeat_window = float(
