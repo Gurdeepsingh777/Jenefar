@@ -115,3 +115,10 @@ def test_continuous_voice_default_does_not_require_wakeword(monkeypatch):
     # Static policy check: strict gating is opt-in.
     assert not bool(__import__("os").getenv("JENEFAR_REQUIRE_WAKE_WORD"))
 
+
+
+def test_default_voice_capture_threshold_is_reasonable():
+    from jenefar.voice.continuous import VoiceConfig
+    cfg = VoiceConfig()
+    assert cfg.start_threshold <= 0.02
+    assert cfg.silence_ms >= 1200
