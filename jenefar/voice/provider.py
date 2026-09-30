@@ -314,6 +314,24 @@ class ProviderVoiceRuntime:
                 return
             except Exception as exc:
                 last_error = exc
+                # Groq Orpheus can reject the request with a model-terms error
+                # even though the API key itself is valid. Treat this as a
+                # provider capability failure rather than repeatedly retrying it.
+                message = str(exc).lower()
+                if provider == "groq" and (
+                    "terms" in message
+                    or "model_terms_required" in message
+                ):
+                    self._mark_failed_provider(
+                        provider,
+                        RuntimeError("groq tts model terms required"),
+                    )
+                    raise RuntimeError(
+                        "Groq TTS is unavailable because the Orpheus model terms "
+                        "have not been accepted for this organization. "
+                        "Enable JENEFAR_DISABLE_GROQ_TTS=true or accept the model "
+                        "terms in the Groq console, then restart Jenefar."
+                    ) from exc
                 if not is_retryable_provider_error(exc):
                     raise
                 self._mark_failed_provider(provider, exc)
