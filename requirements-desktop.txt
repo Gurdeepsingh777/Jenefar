@@ -1,0 +1,5 @@
+# Desktop automation dependencies for Linux/Windows/macOS
+# Keep this file intentionally small so desktop control does not depend on
+# optional wake-word/ML packages.
+pyautogui>=0.9.54
+python-xlib>=0.33; platform_system == "Linux"

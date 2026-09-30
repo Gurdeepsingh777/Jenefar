@@ -191,3 +191,21 @@ def test_premium_avatar_source_is_not_overwritten():
     launcher = (ROOT / "jenefar" / "assets" / "premium_avatar.py").read_text(encoding="utf-8")
     assert "shutil.copy2(source_path, temporary_input)" in launcher
     assert "Jenefar_Premium.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
+
+
+def test_focused_desktop_requirements_exist():
+    desktop = (ROOT / "requirements-desktop.txt").read_text(encoding="utf-8")
+    assert "pyautogui>=0.9.54" in desktop
+    assert 'python-xlib>=0.33; platform_system == "Linux"' in desktop
+
+
+def test_optional_requirements_skip_problematic_python314_linux_extras():
+    optional = (ROOT / "requirements-optional.txt").read_text(encoding="utf-8")
+    assert 'openwakeword>=0.6.0; python_version < "3.14" or platform_system != "Linux"' in optional
+    assert 'webrtcvad>=2.0.10; python_version < "3.14"' in optional
+
+
+def test_desktop_backend_reports_a_focused_install_command():
+    from jenefar.automation.desktop import DesktopAutomation
+    status = DesktopAutomation().backend_status()
+    assert "install_command" in status or status["pyautogui"] is True
