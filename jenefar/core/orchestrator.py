@@ -215,40 +215,6 @@ class JenefarOrchestrator:
                     "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
                 },
             )
-                    "session_id": self.session.session_id,
-                    "trace_id": trace.trace_id,
-                    "intent": plan.intent,
-                    "planned_agent": plan.agent,
-                    "planner_reason": plan.reason,
-                    "planner_confidence": plan.confidence,
-                    "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
-                    "model_role": trace.model_role,
-                    "response_language": response_language,
-                    "source": source,
-                    "event_id": event_id,
-                    "runtime": runtime,
-                    "capabilities": self.capabilities.list(),
-                    "skills": [item for item in self.skills.list() if item.get("enabled")],
-                    "history": self.session.recent(8),
-                    "retrieved_memory": [
-                        {"source": hit.source, "title": hit.title, "content": hit.content, "layer": hit.layer, "score": hit.score}
-                        for hit in recall.hits
-                    ],
-                    "procedural_memory": list(recall.procedures),
-                    "knowledge_graph": [
-                        {"subject": relation.subject, "predicate": relation.predicate, "object": relation.object}
-                        for relation in graph_hits
-                    ],
-                },
-            }
-            result = self.self_healing.run(
-                "agent_dispatch",
-                lambda: self.router.dispatch(text, metadata=dispatch_metadata),
-                metadata={
-                    "approval_required": False,
-                    "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
-                },
-            )
             trace.metadata["self_healing"] = {
                 "retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
