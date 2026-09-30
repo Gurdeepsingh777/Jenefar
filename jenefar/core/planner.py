@@ -101,6 +101,9 @@ class Planner:
                 needs_tool=True,
             )
 
+        if any(x in t for x in ("time", "current time", "what time", "date today", "today's date", "clock")):
+            return self._make_plan(text, "utility", "utility", confidence=0.98, reason="local time/date utility keyword match", needs_tool=True)
+
         if any(x in t for x in (
             "remember", "save in memory", "store in memory", "recall from memory",
             "procedure", "playbook", "schedule", "remind me", "every day",
