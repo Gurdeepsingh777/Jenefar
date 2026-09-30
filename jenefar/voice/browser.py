@@ -10,7 +10,7 @@ from queue import Queue
 from typing import Any
 
 from jenefar.voice.provider import ProviderVoiceRuntime
-from jenefar.voice.speech import clean_for_speech
+from jenefar.voice.speech import enforce_hinglish
 
 
 class BrowserVoiceBridge:
@@ -132,7 +132,7 @@ class BrowserVoiceBridge:
                     response_language=self._conversation_language,
                 )
 
-            speech_text = clean_for_speech(reply)
+            speech_text = enforce_hinglish(reply)
             self._publish("result", reply, task_id)
             if speech_text:
                 self._speech_queue.put((task_id, speech_text))
