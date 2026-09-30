@@ -36,7 +36,7 @@ class ProviderVoiceRuntime:
                     "model": (
                         os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
                         if stt_provider == "openai"
-                        else os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+                        else os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
                     ),
                 }
                 if stt_provider
@@ -103,8 +103,12 @@ class ProviderVoiceRuntime:
         )
         def request() -> str:
             result = client.audio.transcriptions.create(
-                model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"),
+                model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3"),
                 file=audio,
+                language=os.getenv("GROQ_STT_LANGUAGE", "en") or None,
+                prompt=os.getenv("GROQ_STT_PROMPT", "Jenefar is spelled J-E-N-E-F-A-R. Transcribe exactly what the speaker says; do not add words."),
+                response_format="json",
+                temperature=0.0,
             )
             return str(result.text or "").strip()
         return await asyncio.to_thread(request)

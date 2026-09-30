@@ -116,6 +116,8 @@ class ContinuousVoiceRuntime:
 
         self._buffers.append(chunk)
         elapsed = (len(self._buffers) * len(chunk)) / self.config.sample_rate
+        if elapsed < 0.8:
+            return None
 
         if rms >= self.config.stop_threshold:
             self._silence_started = None

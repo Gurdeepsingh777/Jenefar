@@ -35,7 +35,7 @@ def test_voice_uses_groq_when_openai_is_missing(monkeypatch):
     status = ProviderVoiceRuntime.audio_status()
     assert status["stt"] == {
         "provider": "groq",
-        "model": "whisper-large-v3-turbo",
+        "model": "whisper-large-v3",
     }
     assert status["tts"] == {
         "provider": "groq",
@@ -54,7 +54,7 @@ def test_voice_provider_status_line(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
     runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
-    assert "STT=groq/whisper-large-v3-turbo" in runtime.provider_status_line()
+    assert "STT=groq/whisper-large-v3" in runtime.provider_status_line()
     assert "TTS=groq/canopylabs/orpheus-v1-english" in runtime.provider_status_line()
 
 
@@ -63,3 +63,39 @@ def test_run_py_default_uses_continuous_voice_runtime():
     source = Path("run.py").read_text(encoding="utf-8")
     assert "ContinuousVoiceRuntime(orchestrator).run()" in source
     assert "ProviderVoiceRuntime(JenefarOrchestrator()).run()" not in source
+
+
+def test_groq_stt_defaults_to_accuracy_model(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
+    monkeypatch.delenv("GROQ_STT_MODEL", raising=False)
+    status = ProviderVoiceRuntime.audio_status()
+    assert status["stt"]["model"] == "whisper-large-v3"
+
+
+def test_groq_stt_request_uses_accuracy_options(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
+    captured = {}
+
+    class FakeTranscriptions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return type("Result", (), {"text": "Hello Jenefar"})()
+
+    class FakeAudio:
+        transcriptions = FakeTranscriptions()
+
+    class FakeClient:
+        audio = FakeAudio()
+
+    import openai
+    monkeypatch.setattr(openai, "OpenAI", lambda **kwargs: FakeClient())
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    import asyncio, io, wave
+    pcm = (b"\\x00\\x00" * 16000)
+    result = asyncio.run(runtime._transcribe_groq(runtime._wav_bytes(pcm)))
+    assert result == "Hello Jenefar"
+    assert captured["model"] == "whisper-large-v3"
+    assert captured["language"] == "en"
+    assert captured["temperature"] == 0.0
+    assert "Jenefar" in captured["prompt"]
