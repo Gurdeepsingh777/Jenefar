@@ -109,6 +109,31 @@ class ProviderVoiceRuntime:
         ]
 
     @staticmethod
+    def _wav_bytes(
+        pcm: bytes,
+        sample_rate: int = 16_000,
+        channels: int = 1,
+    ) -> io.BytesIO:
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setnchannels(channels)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            wav.writeframes(pcm)
+        output.seek(0)
+        output.name = "jenefar_utterance.wav"
+        return output
+
+    def _cooldown_seconds(self, exc: Exception) -> float:
+        message = str(exc).lower()
+        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
+            return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
+        return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
+
+    def _mark_failed_provider(self, provider: str, exc: Exception) -> None:
+        self._audio_pool.cooldown(provider, self._cooldown_seconds(exc))
+
+    @staticmethod
     def _record_microphone(seconds: int) -> bytes:
         try:
             import numpy as np
