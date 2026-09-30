@@ -77,6 +77,16 @@ class ProviderVoiceRuntime:
             else os.getenv("GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english")
         )
 
+    @staticmethod
+    def _tts_usable_provider(provider: str) -> bool:
+        if provider == "openai":
+            return bool(ProviderVoiceRuntime._direct_openai_key())
+        if provider == "groq":
+            if os.getenv("JENEFAR_DISABLE_GROQ_TTS", "").strip().lower() in {"1", "true", "yes"}:
+                return False
+            return bool(os.getenv("GROQ_API_KEY", "").strip())
+        return False
+
     def _provider_order(self) -> list[str]:
         raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
