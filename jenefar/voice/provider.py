@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 
 from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
+from jenefar.voice.speech import clean_for_speech
 
 
 class ProviderVoiceRuntime:
@@ -478,6 +479,9 @@ class ProviderVoiceRuntime:
                     pass
 
     async def speak(self, text: str) -> None:
+        text = clean_for_speech(text)
+        if not text:
+            return
         providers = self._tts_provider_order()
         if not providers:
             raise RuntimeError(

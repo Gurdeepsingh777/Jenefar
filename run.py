@@ -362,6 +362,7 @@ def main() -> int:
                         print("[JENEFAR] No STT provider configured; switching to terminal text mode.")
                         orchestrator.run()
         finally:
+            browser_voice.shutdown()
             avatar_server.stop()
         return 0
 
