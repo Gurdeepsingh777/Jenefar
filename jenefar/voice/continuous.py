@@ -158,9 +158,9 @@ class ContinuousVoiceRuntime:
                 samples.append(self._rms(np.asarray(chunk)))
         ambient = float(np.mean(samples)) if samples else 0.0
         self._ambient_threshold = max(
-            self.config.start_threshold,
-            ambient * float(os.getenv("JENEFAR_VOICE_AMBIENT_MULTIPLIER", "2.2"))
-            + float(os.getenv("JENEFAR_VOICE_AMBIENT_OFFSET", "0.006")),
+            float(os.getenv("JENEFAR_VOICE_START_THRESHOLD", "0.018")),
+            ambient * float(os.getenv("JENEFAR_VOICE_AMBIENT_MULTIPLIER", "1.35"))
+            + float(os.getenv("JENEFAR_VOICE_AMBIENT_OFFSET", "0.003")),
         )
         self._legacy_ready = True
         print(
@@ -172,10 +172,10 @@ class ContinuousVoiceRuntime:
         import sounddevice as sd
 
         blocksize = int(self.config.sample_rate * self.config.block_ms / 1000)
-        timeout = float(os.getenv("JENEFAR_LEGACY_LISTEN_TIMEOUT", "5"))
-        phrase_limit = float(os.getenv("JENEFAR_LEGACY_PHRASE_LIMIT", "10"))
+        timeout = float(os.getenv("JENEFAR_LEGACY_LISTEN_TIMEOUT", "8"))
+        phrase_limit = float(os.getenv("JENEFAR_LEGACY_PHRASE_LIMIT", "12"))
         silence_after_phrase = float(
-            os.getenv("JENEFAR_LEGACY_PAUSE_THRESHOLD", "0.8")
+            os.getenv("JENEFAR_LEGACY_PAUSE_THRESHOLD", "1.0")
         )
         pre_roll_blocks = max(1, int(0.25 * self.config.sample_rate / blocksize))
         pre_roll: deque[np.ndarray] = deque(maxlen=pre_roll_blocks)
