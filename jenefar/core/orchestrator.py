@@ -11,6 +11,7 @@ from jenefar.agents.cybersecurity.cyber import CybersecurityAgent
 from jenefar.agents.cybersecurity.kali import KaliSecurityAgent
 from jenefar.agents.research.research import ResearchAgent
 from jenefar.agents.robotics.robotics import RoboticsAgent
+from jenefar.agents.utility import UtilityAgent
 from jenefar.core.config import load_config
 from jenefar.core.planner import Planner
 from jenefar.core.router import AgentRouter
@@ -64,6 +65,7 @@ class JenefarOrchestrator:
             CybersecurityAgent(tool_broker=self.tool_broker),
             BugBountyAgent(tool_broker=self.tool_broker),
             RoboticsAgent(tool_broker=self.tool_broker),
+            UtilityAgent(tool_broker=self.tool_broker),
             ResearchAgent(tool_broker=self.tool_broker),
         ])
         self.verifier = Verifier()
