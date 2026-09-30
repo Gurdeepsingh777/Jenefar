@@ -373,7 +373,8 @@ class ProviderVoiceRuntime:
         providers = self._tts_provider_order()
         if not providers:
             raise RuntimeError(
-                "No text-to-speech provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
+                "No text-to-speech provider is configured. "
+                "Configure OpenAI/Groq TTS or install/configure local Piper TTS."
             )
 
         last_error: Exception | None = None
