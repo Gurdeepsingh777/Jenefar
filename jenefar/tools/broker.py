@@ -96,6 +96,18 @@ class ToolBroker:
             self._screen_vision_ready = True
         return self.screen_vision
 
+    @staticmethod
+    def _local_time() -> dict[str, str]:
+        from datetime import datetime
+
+        now = datetime.now().astimezone()
+        return {
+            "iso": now.isoformat(),
+            "date": now.strftime("%A, %d %B %Y"),
+            "time": now.strftime("%I:%M:%S %p"),
+            "timezone": now.tzname() or "local",
+        }
+
     def _register_builtin_tools(self) -> None:
         self.registry.register(ToolSpec(
             name="discover_kali_tools",
@@ -116,6 +128,18 @@ class ToolBroker:
             description="Acknowledge and close Jenefar's current offline-capability notice.",
             handler=lambda _args: {"closed": True, "message": "Offline capability notice closed."},
         ))
+        self.registry.register(ToolSpec(
+            name="local_time",
+            description="Return the current local computer date, time, timezone, and ISO timestamp. Safe read-only system information; no confirmation is required.",
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            handler=lambda _args: self._local_time(),
+        ))
+
         self.registry.register(ToolSpec(
             name="offline_status",
             description="Report online/offline connectivity and which capabilities are unavailable when internet is not reachable.",
