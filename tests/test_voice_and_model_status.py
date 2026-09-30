@@ -56,3 +56,10 @@ def test_voice_provider_status_line(monkeypatch):
     runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
     assert "STT=groq/whisper-large-v3-turbo" in runtime.provider_status_line()
     assert "TTS=groq/canopylabs/orpheus-v1-english" in runtime.provider_status_line()
+
+
+def test_run_py_default_uses_continuous_voice_runtime():
+    from pathlib import Path
+    source = Path("run.py").read_text(encoding="utf-8")
+    assert "ContinuousVoiceRuntime(orchestrator).run()" in source
+    assert "ProviderVoiceRuntime(JenefarOrchestrator()).run()" not in source
