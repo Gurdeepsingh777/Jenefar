@@ -20,6 +20,35 @@ def test_dashboard_renders_empty_state(tmp_path: Path):
     assert "Jenefar Evaluation Dashboard" in html
 
 
+def test_avatar_server_serves_browser_voice_endpoint():
+    from jenefar.avatar.controller import AvatarController
+    from jenefar.avatar.server import AvatarServer
+    import urllib.request
+    import json
+
+    controller = AvatarController()
+    server = AvatarServer(
+        controller,
+        host="127.0.0.1",
+        port=0,
+        voice_handler=lambda text: {"ok": True, "echo": text},
+    )
+    server.start()
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.port}/voice/text",
+            data=json.dumps({"text": "Hello Jenefar"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        payload = json.loads(
+            urllib.request.urlopen(request, timeout=2).read().decode("utf-8")
+        )
+        assert payload == {"ok": True, "echo": "Hello Jenefar"}
+    finally:
+        server.stop()
+
+
 def test_avatar_server_serves_health_endpoint():
     from jenefar.avatar.controller import AvatarController
     from jenefar.avatar.server import AvatarServer
