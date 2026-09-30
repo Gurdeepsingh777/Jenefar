@@ -273,6 +273,7 @@ def main() -> int:
     if args.voice_auto:
         import os
         import webbrowser
+        from pathlib import Path
 
         from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
@@ -285,9 +286,22 @@ def main() -> int:
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
+        # First-run default: provision the licensed VRM sample automatically.
+        avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+        if not avatar_model.is_file():
+            try:
+                from jenefar.assets.provisioning import setup_avatar_asset
+                avatar_model = setup_avatar_asset()
+                print(f"[JENEFAR] VRM avatar ready: {avatar_model}")
+            except Exception as exc:
+                print(
+                    "[JENEFAR] VRM provisioning skipped: "
+                    f"{type(exc).__name__}: {exc}"
+                )
         avatar_server = AvatarServer(
             avatar,
             port=args.avatar_port,
+            vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
         )
         avatar_server.start()
@@ -327,10 +341,10 @@ def main() -> int:
                 print("[JENEFAR] The avatar UI is still available.")
                 orchestrator.run()
             else:
-                if audio_status["stt"] and audio_status["tts"]:
+                if audio_status["stt"]:
                     ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()
                 else:
-                    print("[JENEFAR] Voice providers unavailable; switching to terminal text mode.")
+                    print("[JENEFAR] No STT provider configured; switching to terminal text mode.")
                     orchestrator.run()
         finally:
             avatar_server.stop()
