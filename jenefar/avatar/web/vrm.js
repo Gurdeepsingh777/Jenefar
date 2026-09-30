@@ -4,6 +4,11 @@ import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 
 const canvas = document.getElementById("vrm-canvas");
 const status = document.getElementById("vrm-status");
+function setVRMStatus(text, failed=false) {
+  if (!status) return;
+  status.textContent = text;
+  status.dataset.error = failed ? "true" : "false";
+}
 
 if (canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -49,9 +54,11 @@ if (canvas) {
       vrm.scene.rotation.y = Math.PI;
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");
-      if (status) status.textContent = "VRM AVATAR";
-    } catch (_error) {
-      if (status) status.textContent = "PROCEDURAL AVATAR";
+      setVRMStatus("VRM AVATAR");
+    } catch (error) {
+      console.error("[JENEFAR] VRM load failed", error);
+      setVRMStatus("VRM ERROR", true);
+      document.body.classList.add("vrm-error");
     }
   }
 
