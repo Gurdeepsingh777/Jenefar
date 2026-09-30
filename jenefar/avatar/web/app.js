@@ -11,16 +11,16 @@ const doneCount=document.getElementById("activity-done");
 const errorCount=document.getElementById("activity-errors");
 
 const labels={
-  idle:["IDLE","Jenefar is ready"],
-  queued:["QUEUED","Task added to queue"],
-  listening:["LISTENING","I'm listening…"],
-  thinking:["THINKING","Processing your request…"],
-  result:["RESULT","Result ready"],
-  speaking:["SPEAKING","Jenefar is responding"],
-  speaking_fallback:["SPEAKING","Using browser voice fallback"],
-  completed:["DONE","Task completed"],
-  waiting_approval:["WAITING APPROVAL","A tool needs confirmation"],
-  error:["ERROR","Task needs attention"]
+  idle:["READY","Ready"],
+  queued:["QUEUED","Kaam queue me hai"],
+  listening:["LISTENING","Main sun rahi hoon"],
+  thinking:["WORKING","Kaam kar rahi hoon"],
+  result:["DONE","Result ready"],
+  speaking:["SPEAKING","Jawaab de rahi hoon"],
+  speaking_fallback:["SPEAKING","Browser voice use ho rahi hai"],
+  completed:["DONE","Kaam complete"],
+  waiting_approval:["APPROVAL","Confirmation chahiye"],
+  error:["ERROR","Ek issue aaya hai"]
 };
 
 let width=0,height=0,dpr=1;
@@ -146,14 +146,14 @@ function addActivity(event){
 
   const preview=document.createElement("div");
   preview.className="activity-text";
-  preview.textContent=text||"Jenefar is active";
+  preview.textContent=text||"Ready";
   main.appendChild(meta);
   main.appendChild(preview);
 
   if(text.length>260){
     const details=document.createElement("details");
     const summary=document.createElement("summary");
-    summary.textContent="View full output";
+    summary.textContent="Pura result dekho";
     const pre=document.createElement("pre");
     pre.textContent=text;
     details.appendChild(summary);
