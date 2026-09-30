@@ -336,6 +336,8 @@ class JenefarOrchestrator:
         return ModelRouter().role_for_intent(plan.intent, plan.agent)
 
     def _avatar_activity(self, state: str, text: str = "") -> None:
+        if text:
+            print(f"[JENEFAR][ACTIVITY] {state.upper()}: {text}")
         if self.avatar is not None:
             self.avatar.publish(state, text)
 
