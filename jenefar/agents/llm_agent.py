@@ -56,6 +56,7 @@ class BaseLLMAgent(BaseAgent):
             )
 
         graph = context.metadata.get("knowledge_graph", [])
+        procedural_memory = context.metadata.get("procedural_memory", [])
         runtime_text = context.metadata.get("runtime", {})
         capability_text = context.metadata.get("capabilities", [])
         skill_text = context.metadata.get("skills", [])
@@ -66,6 +67,16 @@ class BaseLLMAgent(BaseAgent):
                 f"{item.get('subject')} --{item.get('predicate')}--> {item.get('object')}"
                 for item in graph[:8]
             )
+
+        procedure_text = ""
+        if procedural_memory:
+            procedure_lines = []
+            for item in procedural_memory[:5]:
+                procedure_lines.append(
+                    f"- {item.get('name')}: "
+                    + " -> ".join(str(step) for step in item.get('steps', []))
+                )
+            procedure_text = "\nRelevant procedural memory:\n" + "\n".join(procedure_lines)
 
         instructions = self.system_prompt + self._language_instruction(
             context.metadata.get("response_language")
@@ -91,7 +102,7 @@ class BaseLLMAgent(BaseAgent):
 
         role = str(context.metadata.get("model_role") or self.model_role)
         response = self.llm.complete(
-            f"Task:\n{context.task}{history_text}{memory_text}{graph_text}",
+            f"Task:\n{context.task}{history_text}{memory_text}{procedure_text}{graph_text}",
             instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,

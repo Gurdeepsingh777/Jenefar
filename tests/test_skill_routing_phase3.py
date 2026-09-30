@@ -16,3 +16,8 @@ def test_skill_prompt_context_contains_enabled_skill(tmp_path: Path):
     skills = SkillManager(tmp_path / "skills.json")
     context = skills.prompt_context()
     assert "local_development" in context
+
+
+def test_planner_routes_memory_and_schedule_to_utility():
+    assert Planner().plan("remember that my ESP32 uses 115200 baud").agent == "utility"
+    assert Planner().plan("remind me every day to run pytest").agent == "utility"

@@ -306,6 +306,34 @@ class ScreenVision:
 
     def analyze(self, task: str) -> dict[str, Any]:
         frame = self.capture(save=False)
+
+        # Safe headless/virtual backend: use deterministic semantic fixtures
+        # without pyautogui, a real display, or a configured vision model.
+        semantic_provider = getattr(self.desktop, "semantic_elements", None)
+        if callable(semantic_provider):
+            payload = {"elements": semantic_provider(task)}
+            elements = self._parse_elements(payload, frame)
+            return {
+                "provider": "headless_fixture",
+                "task": task,
+                "screen": {
+                    "width": frame.width,
+                    "height": frame.height,
+                },
+                "elements": [
+                    {
+                        "label": item.label,
+                        "role": item.role,
+                        "confidence": item.confidence,
+                        "bbox": list(item.bbox),
+                        "center": list(item.center),
+                        "text": item.text,
+                    }
+                    for item in elements
+                ],
+                "errors": [],
+            }
+
         connected = internet_available()
         errors: list[str] = []
 

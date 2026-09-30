@@ -690,3 +690,64 @@ Tool / Service
 ```
 
 Is architecture ka main purpose ye hai ki nayi service integration ko core orchestrator ke andar hard-code karne ki jagah ek isolated connector adapter me add kiya ja sake.
+
+
+## Phase 4 — Safe Headless GUI Validation, Layered Memory/RAG aur Event Scheduler
+
+Phase 4 ne Phase 2 ke live-desktop dependency ko safe virtual backend se close kiya hai. Server/CI machine par:
+
+~~~env
+JENEFAR_DESKTOP_BACKEND=headless
+~~~
+
+set karne par Jenefar deterministic virtual screen fixtures use karta hai. Ye backend pyautogui, real display, mouse, keyboard ya configured vision model ko access nahi karta. Semantic observe → locate → click/type → verify path wahi rehta hai jo live GUI flow use karta hai.
+
+Safe smoke test:
+
+~~~bash
+python run.py --gui-smoke-test
+~~~
+
+Live machine par JENEFAR_DESKTOP_BACKEND=native hone par existing pyautogui + configured online/local multimodal vision path use hota hai.
+
+### Layered memory/RAG
+
+Local SQLite memory ab in layers ko support karti hai:
+
+- episodic — conversation/session events
+- semantic — durable facts
+- procedural — reusable playbooks
+
+Retrieval lexical FTS + optional local embeddings + importance + time-decay + access recency fuse karti hai. Embeddings optional hain; embedding package/model unavailable hone par lexical/recency retrieval continue hoti hai.
+
+Procedural memory execute nahi hoti; wo reusable steps aur constraints ke roop me store hoti hai. memory_procedure_save sirf playbook save karta hai, execution nahi.
+
+### Persistent scheduler/event engine
+
+Supported trigger types:
+
+~~~text
+once
+interval (minimum 60 seconds)
+daily (HH:MM + IANA timezone)
+watch (explicit application event + optional exact payload filters)
+~~~
+
+CLI:
+
+~~~bash
+python run.py --events-list
+python run.py --events-run
+~~~
+
+Scheduled prompts Jenefar ke normal orchestrator path se run hote hain. Scheduler tool confirmation ya authorized-security boundaries ko bypass nahi karta. Scheduled prompt me koi approval-gated action ho to existing approval workflow hi apply hota hai.
+
+Natural-language examples:
+
+~~~text
+Hello Jenefar, every day 09:00 par mujhe Python practice yaad dilana.
+Hello Jenefar, jab download.finished event aaye tab mujhe summary dena.
+Hello Jenefar, mera ESP32 debugging procedure memory me save karo.
+~~~
+
+Phase 4 data local data/jenefar_memory.db aur data/events.db me persist hota hai.

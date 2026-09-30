@@ -11,12 +11,15 @@ from jenefar.agents.cybersecurity.cyber import CybersecurityAgent
 from jenefar.agents.cybersecurity.kali import KaliSecurityAgent
 from jenefar.agents.research.research import ResearchAgent
 from jenefar.agents.robotics.robotics import RoboticsAgent
+from jenefar.agents.utility import UtilityAgent
 from jenefar.core.config import load_config
 from jenefar.core.planner import Planner
 from jenefar.core.router import AgentRouter
 from jenefar.core.session import Session
 from jenefar.memory.store import MemoryStore
 from jenefar.memory.graph import KnowledgeGraph
+from jenefar.memory.advanced import AdvancedMemory
+from jenefar.events.engine import EventEngine
 from jenefar.evaluation.loop import EvaluationLoop
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
@@ -34,7 +37,9 @@ class JenefarOrchestrator:
         self.state = JenefarState.SLEEPING
         self.session = Session()
         self.memory = MemoryStore()
+        self.memory_engine = AdvancedMemory(self.memory)
         self.graph = KnowledgeGraph(self.memory.path)
+        self.events = EventEngine()
         self.capabilities = CapabilityStore()
         self.skills = SkillManager()
         self.evaluator = EvaluationLoop()
@@ -46,6 +51,9 @@ class JenefarOrchestrator:
             audit=self.audit,
             scope=self.scope,
             skills=self.skills,
+            memory=self.memory_engine,
+            events=self.events,
+            event_handler=self._handle_scheduled_event,
         )
         self.router = AgentRouter([
             RepositoryAgent(tool_broker=self.tool_broker),
@@ -57,6 +65,7 @@ class JenefarOrchestrator:
             CybersecurityAgent(tool_broker=self.tool_broker),
             BugBountyAgent(tool_broker=self.tool_broker),
             RoboticsAgent(tool_broker=self.tool_broker),
+            UtilityAgent(tool_broker=self.tool_broker),
             ResearchAgent(tool_broker=self.tool_broker),
         ])
         self.verifier = Verifier()
@@ -118,13 +127,26 @@ class JenefarOrchestrator:
             if raw:
                 print(f"Jenefar > {self.handle(raw)}")
 
-    def handle(self, text: str, response_language: str | None = None) -> str:
+    def handle(
+        self,
+        text: str,
+        response_language: str | None = None,
+        *,
+        source: str = "user",
+        event_id: int | None = None,
+    ) -> str:
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "Processing your request…")
         self.session.add("user", text)
-        self.memory.remember_message(self.session.session_id, "user", text)
+        self.memory_engine.record_message(
+            self.session.session_id,
+            "user",
+            text,
+            importance=0.55 if source == "user" else 0.5,
+        )
         self.graph.learn_text(text)
-        retrieved = self.memory.search(text, limit=6)
+        recall = self.memory_engine.recall(text, limit=8)
+        retrieved = recall.hits
         graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
         plan = self.planner.plan(text)
         task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
@@ -158,6 +180,8 @@ class JenefarOrchestrator:
                 "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
                 "model_role": self._model_role_for_plan(plan),
                 "response_language": response_language,
+                "source": source,
+                "event_id": event_id,
                 "runtime": runtime,
                 "capabilities": self.capabilities.list(),
                 "skills": [
@@ -167,9 +191,16 @@ class JenefarOrchestrator:
                 ],
                 "history": self.session.recent(8),
                 "retrieved_memory": [
-                    {"source": hit.source, "title": hit.title, "content": hit.content}
+                    {
+                        "source": hit.source,
+                        "title": hit.title,
+                        "content": hit.content,
+                        "layer": hit.layer,
+                        "score": hit.score,
+                    }
                     for hit in retrieved
                 ],
+                "procedural_memory": list(recall.procedures),
                 "knowledge_graph": [
                     {
                         "subject": relation.subject,
@@ -182,8 +213,19 @@ class JenefarOrchestrator:
         )
         output = self.verifier.verify(text, result.content)
         self.session.add("assistant", output)
-        self.memory.remember_message(self.session.session_id, "assistant", output)
+        self.memory_engine.record_message(
+            self.session.session_id,
+            "assistant",
+            output,
+            importance=0.5,
+        )
         self.graph.learn_text(output)
+        if len(self.session.messages) % 6 == 0:
+            self.memory_engine.consolidate_messages(
+                self.session.session_id,
+                self.session.recent(12),
+                importance=0.72,
+            )
         self.evaluator.evaluate(
             text,
             output,
@@ -301,6 +343,18 @@ class JenefarOrchestrator:
 
         output = self.verifier.verify(workflow["task"], final_result.content)
         self.session.add("assistant", output)
-        self.memory.remember_message(self.session.session_id, "assistant", output)
+        self.memory_engine.record_message(
+            self.session.session_id,
+            "assistant",
+            output,
+            importance=0.55,
+        )
         self.state = JenefarState.SLEEPING
         return output
+
+    def _handle_scheduled_event(self, prompt: str, event) -> str:
+        return self.handle(
+            prompt,
+            source="scheduler",
+            event_id=getattr(event, "id", None),
+        )
