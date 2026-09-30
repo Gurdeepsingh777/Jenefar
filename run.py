@@ -274,9 +274,19 @@ def main() -> int:
         import os
         from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
+        from jenefar.voice.continuous import ContinuousVoiceRuntime
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
-        ProviderVoiceRuntime(JenefarOrchestrator()).run()
+
+        orchestrator = JenefarOrchestrator()
+        audio_status = ProviderVoiceRuntime.audio_status()
+        if not audio_status["stt"]:
+            print("[JENEFAR] No STT provider configured. Starting text mode fallback.")
+            orchestrator.run()
+            return 0
+
+        print("[JENEFAR] Default runtime: continuous voice -> STT -> Jenefar -> TTS.")
+        ContinuousVoiceRuntime(orchestrator).run()
         return 0
 
     if args.setup_assets:

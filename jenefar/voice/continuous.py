@@ -253,6 +253,11 @@ class ContinuousVoiceRuntime:
 
         try:
             import sounddevice as sd
+            print(
+                f"[JENEFAR] Microphone: {self.config.sample_rate} Hz, "
+                f"threshold={self.config.start_threshold:.4f}, "
+                f"silence={self.config.silence_ms}ms"
+            )
         except ImportError as exc:
             print(f"[JENEFAR] sounddevice is required: {exc}")
             return
@@ -272,17 +277,14 @@ class ContinuousVoiceRuntime:
             ):
                 while not self._stop.is_set():
                     try:
-                        chunk = await asyncio.to_thread(
-                            self._audio_queue.get,
-                            True,
-                            0.25,
-                        )
+                        chunk = await asyncio.to_thread(self._audio_queue.get, True, 0.25)
                     except queue.Empty:
                         continue
 
                     pcm = self._consume_block(chunk)
                     if pcm:
                         await self._process_utterance(pcm)
+
         except KeyboardInterrupt:
             pass
         except Exception as exc:
