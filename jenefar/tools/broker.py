@@ -160,6 +160,12 @@ class ToolBroker:
             action=True,
         ))
         self.registry.register(ToolSpec(
+            name="desktop_backend_status",
+            description="Check whether local desktop automation is ready before screen, mouse, keyboard or GUI actions.",
+            parameters={"type":"object","properties":{},"required":[],"additionalProperties":False},
+            handler=lambda _args: self.desktop.backend_status(),
+        ))
+        self.registry.register(ToolSpec(
             name="local_time",
             description="Return the current local computer date, time, timezone, and ISO timestamp. Safe read-only system information; no confirmation is required.",
             parameters={
