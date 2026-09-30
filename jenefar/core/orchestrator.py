@@ -51,6 +51,7 @@ class JenefarOrchestrator:
         self.planner = Planner(skills=self.skills)
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
+        self.avatar = avatar
         self.tool_broker = ToolBroker(
             require_confirmation=self.config.require_confirmation_for_tools,
             audit=self.audit,
@@ -59,6 +60,7 @@ class JenefarOrchestrator:
             memory=self.memory_engine,
             events=self.events,
             event_handler=self._handle_scheduled_event,
+            activity_handler=self._avatar_activity,
         )
         self.router = AgentRouter([
             RepositoryAgent(tool_broker=self.tool_broker),
@@ -75,7 +77,6 @@ class JenefarOrchestrator:
         ])
         self.verifier = Verifier()
         self.wakeword = WakeWord(self.config.wake_phrases)
-        self.avatar = avatar
         self.pending_approval_workflows: dict[str, dict] = {}
         self.offline_notice_open = False
 
@@ -228,6 +229,10 @@ class JenefarOrchestrator:
                     for relation in graph_hits
                 ],
             }
+            self._avatar_activity(
+                "thinking",
+                f"Agent selected: {plan.agent} | intent={plan.intent}",
+            )
             result = self.self_healing.run(
                 "agent_dispatch",
                 lambda: self.router.dispatch(text, metadata=dispatch_metadata),
@@ -241,6 +246,10 @@ class JenefarOrchestrator:
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
             trace.actual_agent = result.agent
+            self._avatar_activity(
+                "thinking",
+                f"Agent completed: {result.agent}",
+            )
             trace.provider = str(result.metadata.get("provider", ""))
             for pending in result.metadata.get("pending_tools", []) or []:
                 trace.add_tool_call(
@@ -326,9 +335,12 @@ class JenefarOrchestrator:
         from jenefar.core.model_router import ModelRouter
         return ModelRouter().role_for_intent(plan.intent, plan.agent)
 
-    def _avatar_state(self, state: str, text: str = "") -> None:
+    def _avatar_activity(self, state: str, text: str = "") -> None:
         if self.avatar is not None:
             self.avatar.publish(state, text)
+
+    def _avatar_state(self, state: str, text: str = "") -> None:
+        self._avatar_activity(state, text)
 
     def _register_pending_workflow(
         self,
