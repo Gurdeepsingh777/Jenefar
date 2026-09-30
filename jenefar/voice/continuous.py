@@ -55,6 +55,12 @@ class ContinuousVoiceRuntime:
         self._wakeword = WakeWordEngine.from_environment()
         self._wake_triggered = not self._wakeword.available
         self._voice = ProviderVoiceRuntime(orchestrator, avatar=avatar)
+        self._processing_utterance = False
+        self._last_transcript = ""
+        self._last_transcript_at = 0.0
+        self._transcript_repeat_window = float(
+            os.getenv("JENEFAR_VOICE_TRANSCRIPT_REPEAT_WINDOW", "2.5")
+        )
 
     @staticmethod
     def _rms(chunk: np.ndarray) -> float:
@@ -170,16 +176,31 @@ class ContinuousVoiceRuntime:
         await self._voice.speak(text)
 
     async def _process_utterance(self, pcm: bytes) -> None:
+        if self._processing_utterance:
+            return
+        self._processing_utterance = True
         try:
             text = await self._transcribe(pcm)
         except Exception as exc:
             print(f"[JENEFAR] STT error: {type(exc).__name__}: {exc}")
             return
 
-        if not text:
-            return
+        try:
+            if not text:
+                return
 
-        print(f"[USER/STT] {text}")
+            normalized = " ".join(text.lower().strip().split())
+            now = time.monotonic()
+            if (
+                normalized
+                and normalized == self._last_transcript
+                and now - self._last_transcript_at < self._transcript_repeat_window
+            ):
+                return
+            self._last_transcript = normalized
+            self._last_transcript_at = now
+
+            print(f"[USER/STT] {text}")
         if self.avatar is not None:
             self.avatar.publish("listening", text)
 
