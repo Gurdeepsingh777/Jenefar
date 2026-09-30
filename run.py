@@ -303,6 +303,24 @@ def main() -> int:
                     "[JENEFAR] VRM provisioning skipped: "
                     f"{type(exc).__name__}: {exc}"
                 )
+
+        # Premium VRM pipeline is safe-by-default: it never overwrites the
+        # source sample and silently falls back to the source when Blender is absent.
+        premium_output = Path("data/avatar/Jenefar_Premium.vrm")
+        if os.getenv("JENEFAR_PREMIUM_AVATAR", "1").strip().lower() not in {"0", "false", "no"}:
+            try:
+                from jenefar.assets.premium_avatar import prepare_premium_avatar
+                baked = prepare_premium_avatar(avatar_model, premium_output)
+                if baked and baked.is_file():
+                    avatar_model = baked
+                    print(f"[JENEFAR] Premium VRM avatar active: {avatar_model}")
+                else:
+                    print("[JENEFAR] Premium Blender pipeline unavailable; using source VRM with runtime premium styling.")
+            except Exception as exc:
+                print(
+                    "[JENEFAR] Premium VRM pipeline skipped safely: "
+                    f"{type(exc).__name__}: {exc}. Using source VRM."
+                )
         avatar_server = AvatarServer(
             avatar,
             port=args.avatar_port,
