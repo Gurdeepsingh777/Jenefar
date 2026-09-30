@@ -61,7 +61,8 @@ class ToolBroker:
             self.desktop = HeadlessDesktopAutomation()
         else:
             self.desktop = DesktopAutomation()
-        self.screen_vision = ScreenVision(self.desktop)
+        self.screen_vision = None
+        self._screen_vision_ready = False
         self.robotics = SerialRobotController()
         self.mqtt_robot = MqttRobotController()
         self.ros2_robot = Ros2RobotController()
@@ -79,7 +80,7 @@ class ToolBroker:
         self.connectors = ConnectorManager(
             workspace=self.workspace,
             desktop=self.desktop,
-            screen_vision=self.screen_vision,
+            screen_vision=self._get_screen_vision(),
             robotics=self.robotics,
             mqtt_robot=self.mqtt_robot,
             ros2_robot=self.ros2_robot,
@@ -88,6 +89,12 @@ class ToolBroker:
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
+
+    def _get_screen_vision(self):
+        if self.screen_vision is None:
+            self.screen_vision = ScreenVision(self.desktop)
+            self._screen_vision_ready = True
+        return self.screen_vision
 
     def _register_builtin_tools(self) -> None:
         self.registry.register(ToolSpec(
@@ -986,9 +993,10 @@ class ToolBroker:
         return result
 
     def _desktop_observe(self, query: str, save: bool = False) -> dict[str, Any]:
-        result = self.screen_vision.analyze(query)
+        vision = self._get_screen_vision()
+        result = vision.analyze(query)
         if save:
-            frame = self.screen_vision.capture(save=True)
+            frame = vision.capture(save=True)
             result["saved_path"] = frame.path
         self.audit.record("desktop_screen_observed", query=query, provider=result.get("provider", "unknown"))
         return result
