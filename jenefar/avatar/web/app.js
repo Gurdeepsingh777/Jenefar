@@ -558,6 +558,19 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
   btn.addEventListener("click",()=>{
     document.querySelectorAll(".nav-item").forEach(item=>item.classList.remove("active"));
     btn.classList.add("active");
+    const target=btn.dataset.nav||"home";
+    const targets={
+      home:()=>{},
+      chat:()=>document.getElementById("chat-input")?.focus(),
+      voice:()=>document.getElementById("mic-button")?.click(),
+      vision:()=>document.getElementById("stage")?.setAttribute("data-state","thinking"),
+      apps:()=>document.querySelector(".quick-apps")?.scrollIntoView({block:"center"}),
+      web:()=>dispatchDashboardCommand("search web"),
+      notes:()=>document.getElementById("chat-input")?.focus(),
+      automation:()=>dispatchDashboardCommand("show automation"),
+      settings:()=>document.getElementById("chat-input")?.focus()
+    };
+    targets[target]?.();
   });
 });
 
