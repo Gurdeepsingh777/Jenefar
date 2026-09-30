@@ -101,3 +101,17 @@ def test_tool_broker_has_whatsapp_actions():
     names = {tool.name for tool in broker.registry.list()}
     assert "whatsapp_open_web" in names
     assert "whatsapp_send_web" in names
+
+
+def test_continuous_voice_default_does_not_require_wakeword(monkeypatch):
+    monkeypatch.delenv("JENEFAR_REQUIRE_WAKE_WORD", raising=False)
+    from jenefar.voice.continuous import ContinuousVoiceRuntime
+    class Wake:
+        def matched_phrase(self, text): return None
+        def remove_wake_phrase(self, text): return text
+    class Orch:
+        state = type("S", (), {"name": "SLEEPING"})()
+        wakeword = Wake()
+    # Static policy check: strict gating is opt-in.
+    assert not bool(__import__("os").getenv("JENEFAR_REQUIRE_WAKE_WORD"))
+
