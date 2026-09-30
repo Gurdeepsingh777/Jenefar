@@ -36,6 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trace-report", action="store_true", help="show recent runtime execution traces and health summary")
     parser.add_argument("--runtime-health", action="store_true", help="show compact runtime health summary")
     parser.add_argument("--self-healing-policy", action="store_true", help="show bounded self-healing policy and safeguards")
+    parser.add_argument("--provider-status", action="store_true", help="show configured online/local model provider routing without making an LLM request")
+    parser.add_argument("--online-only", action="store_true", help="disable local LLM fallback for this process")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
     parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
@@ -225,6 +227,27 @@ def main() -> int:
 
     if args.doctor:
         return doctor()
+
+    if args.provider_status:
+        import os
+        from jenefar.core.model_router import ModelRouter
+        from jenefar.offline.local_llm import LocalLLMClient
+        router = ModelRouter()
+        print({
+            "openai_api_key": bool(os.getenv("OPENAI_API_KEY")),
+            "openai_model": os.getenv("OPENAI_MODEL", ""),
+            "roles": {
+                role: router.resolve(role).model
+                for role in ("fast", "coding", "research", "security", "robotics", "automation", "vision")
+            },
+            "local_base_url": os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1"),
+            "local_model_detected": bool(LocalLLMClient().detect()),
+        })
+        return 0
+
+    if args.online_only:
+        import os
+        os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
 
     if args.setup_assets:
         try:
