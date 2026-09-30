@@ -321,6 +321,14 @@ function setVoiceInputStatus(text,active=false){
   }
 }
 
+function setMicButton(active, busy=false){
+  if(!micButton) return;
+  micButton.classList.toggle("is-active", active);
+  micButton.classList.toggle("is-busy", busy);
+  micButton.setAttribute("aria-pressed", String(active));
+  micButton.textContent = busy ? "◌ PROCESSING" : active ? "● MIC ON" : "● MIC OFF";
+}
+
 async function sendBrowserTranscript(text){
   const clean=String(text||"").trim();
   if(!clean||voiceLocked||!micEnabled) return;
@@ -336,6 +344,8 @@ async function sendBrowserTranscript(text){
     });
     const result=await response.json();
     if(result?.ignored){
+      voiceLocked=false;
+      setMicButton(micEnabled, false);
       resumeBrowserVoice();
       return;
     }
@@ -347,12 +357,14 @@ async function sendBrowserTranscript(text){
     }
     if(result?.accepted){
       setVoiceInputStatus("TASK "+String(result.task_id||"")+" QUEUED",true);
+      setMicButton(true, false);
     }
     if(result?.exit){
       micEnabled=false;
       voiceLocked=true;
       try{recognition?.stop();}catch(_){}
       setVoiceInputStatus("VOICE OFF",false);
+      setMicButton(false, false);
     }else{
       voiceLocked=false;
       resumeBrowserVoice();
@@ -360,6 +372,7 @@ async function sendBrowserTranscript(text){
   }catch(error){
     addActivity({state:"error",text:"Voice request failed: "+error});
     setVoiceInputStatus("VOICE CONNECTION ERROR",false);
+    setMicButton(false, false);
     voiceLocked=false;
     resumeBrowserVoice();
   }
@@ -386,9 +399,10 @@ function setupBrowserVoice(){
         micEnabled=false;
         voiceLocked=true;
         setVoiceInputStatus("MIC BLOCKED — USE SITE SETTINGS TO ALLOW",false);
-        if(micButton) micButton.textContent="MIC ON";
+        setMicButton(false, false);
       }else{
         setVoiceInputStatus("MIC ERROR: "+code,false);
+        setMicButton(false, false);
       }
       return false;
     }
@@ -408,7 +422,8 @@ function setupBrowserVoice(){
         voiceLocked=false;
         const granted=await requestMicrophonePermission();
         if(!granted) return;
-        setVoiceInputStatus("BROWSER MIC: STARTING",false);
+        setVoiceInputStatus("BROWSER MIC: STARTING",true);
+        setMicButton(true, false);
         resumeBrowserVoice();
       }
     };
@@ -418,6 +433,7 @@ function setupBrowserVoice(){
     voiceSupported=false;
     micEnabled=false;
     setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED",false);
+    setMicButton(false, false);
     if(micButton) micButton.textContent="MIC UNSUPPORTED";
     return;
   }
@@ -432,7 +448,7 @@ function setupBrowserVoice(){
   recognition.onstart=()=>{
     if(voiceLocked||!micEnabled){try{recognition.stop();}catch(_){};return;}
     setVoiceInputStatus("BROWSER MIC: LISTENING",true);
-    if(micButton) micButton.textContent="MIC OFF";
+    setMicButton(true, false);
   };
 
   recognition.onresult=(event)=>{
@@ -453,7 +469,7 @@ function setupBrowserVoice(){
       micEnabled=false;
       voiceLocked=true;
       setVoiceInputStatus("MIC PERMISSION DENIED",false);
-      if(micButton) micButton.textContent="MIC ON";
+      setMicButton(false, false);
     }else{
       setVoiceInputStatus("MIC RETRYING…",false);
     }
@@ -469,7 +485,7 @@ function setupBrowserVoice(){
   micEnabled=false;
   voiceLocked=true;
   setVoiceInputStatus("CLICK MIC ON TO START",false);
-  if(micButton) micButton.textContent="MIC ON";
+  setMicButton(false, false);
 }
 
 
