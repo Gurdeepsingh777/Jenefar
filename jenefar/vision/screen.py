@@ -121,7 +121,7 @@ class ScreenVision:
         payload: dict[str, Any],
         frame: ScreenFrame,
     ) -> list[ScreenElement]:
-        raw_elements = payload.get("elements") or []
+        raw_elements = payload.get("elements", [])
         if not isinstance(raw_elements, list):
             raise ValueError("Vision response 'elements' must be a list.")
 
@@ -407,7 +407,8 @@ class ScreenVision:
             text_miss = int(normalized not in visible_text)
             return exact, text_miss, -float(item["confidence"])
 
-        result["match"] = sorted(elements, key=rank)[0]
+        result["match"] = dict(sorted(elements, key=rank)[0])
+        result["match"]["center"] = tuple(result["match"]["center"])
         return result
 
     def locate_and_click(self, query: str) -> dict[str, Any]:
