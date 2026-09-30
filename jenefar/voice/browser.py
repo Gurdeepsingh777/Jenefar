@@ -86,12 +86,8 @@ class BrowserVoiceBridge:
     def _task_callback(self, task_id: str, future) -> None:
         try:
             future.result()
-        except Exception as exc:
-            self._publish(
-                "error",
-                f"Task {task_id} failed: {type(exc).__name__}: {exc}",
-                task_id,
-            )
+        except Exception:
+            self._publish("error", "Ek task issue aaya hai.", task_id)
 
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
@@ -106,11 +102,7 @@ class BrowserVoiceBridge:
                 if matched is not None:
                     command = self.orchestrator.wakeword.remove_wake_phrase(raw)
                 elif strict:
-                    self._publish(
-                        "idle",
-                        "Wake word required; task ignored.",
-                        task_id,
-                    )
+                    self._publish("idle", "", task_id)
                     return
                 else:
                     command = raw
@@ -137,13 +129,9 @@ class BrowserVoiceBridge:
             if speech_text:
                 self._speech_queue.put((task_id, speech_text))
             else:
-                self._publish("completed", "Task completed.", task_id)
-        except Exception as exc:
-            self._publish(
-                "error",
-                f"Task {task_id}: {type(exc).__name__}: {exc}",
-                task_id,
-            )
+                self._publish("completed", "", task_id)
+        except Exception:
+            self._publish("error", "Task complete nahi ho saka.", task_id)
             self._speech_queue.put(
                 (
                     task_id,
