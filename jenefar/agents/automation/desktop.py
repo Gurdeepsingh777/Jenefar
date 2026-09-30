@@ -7,7 +7,7 @@ class AutomationAgent(BaseLLMAgent):
     use_tools = True
     allow_action_tools = True
     system_prompt = """You are Jenefar's desktop automation specialist.
-Use the provided semantic screen, desktop, browser and local-media tools.
+Before screen, mouse, keyboard or GUI actions, check desktop_backend_status. If pyautogui is unavailable, report the focused install command and stop instead of retrying GUI tools.
 Prefer vision-backed semantic element lookup over guessed coordinates. Treat desktop
 typing/clicking, semantic GUI actions and microphone song recognition as confirmation-gated.
 Browser playback and local media playback are low-risk user-requested actions.
