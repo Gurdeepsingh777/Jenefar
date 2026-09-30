@@ -55,7 +55,7 @@ table{{width:100%;border-collapse:collapse;margin-top:20px}}
 th,td{{padding:10px;border-bottom:1px solid #222642;text-align:left;font-size:13px;vertical-align:top}}
 section{{margin-top:28px}}
 </style></head><body>
-<h1>Jenefar Evaluation & Runtime Dashboard</h1>
+<h1>Jenefar Evaluation Dashboard</h1>
 <div class="grid">
 <div class="card"><b>Evaluations</b><div>{count}</div></div>
 <div class="card"><b>Pass rate</b><div>{(passed / count * 100) if count else 0:.1f}%</div></div>
