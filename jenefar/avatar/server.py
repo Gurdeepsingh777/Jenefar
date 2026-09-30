@@ -44,6 +44,11 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             self._vrm()
             return
 
+        if path == "/avatar-photo.svg":
+            body = self._photo_avatar_svg()
+            self._send(200, "image/svg+xml; charset=utf-8", body.encode("utf-8"))
+            return
+
         if path == "/settings":
             self._send(
                 200,
@@ -166,6 +171,49 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             json.dumps({"result": parsed}).encode("utf-8"),
         )
 
+    @staticmethod
+    def _photo_avatar_svg() -> str:
+        return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 800">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#253044"/>
+      <stop offset="55%" stop-color="#0b0f18"/>
+      <stop offset="100%" stop-color="#03050a"/>
+    </radialGradient>
+    <radialGradient id="skin" cx="48%" cy="35%" r="62%">
+      <stop offset="0%" stop-color="#f5d9d0"/>
+      <stop offset="100%" stop-color="#9e6f72"/>
+    </radialGradient>
+    <linearGradient id="hair" x1="0" x2="1">
+      <stop offset="0%" stop-color="#05060a"/>
+      <stop offset="50%" stop-color="#201d2c"/>
+      <stop offset="100%" stop-color="#07080d"/>
+    </linearGradient>
+    <linearGradient id="dress" x1="0" x2="1">
+      <stop offset="0%" stop-color="#0c1420"/>
+      <stop offset="50%" stop-color="#1c2636"/>
+      <stop offset="100%" stop-color="#0a111b"/>
+    </linearGradient>
+    <filter id="shadow"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+  <rect width="640" height="800" rx="48" fill="url(#bg)"/>
+  <ellipse cx="320" cy="740" rx="230" ry="38" fill="#000" opacity=".5" filter="url(#shadow)"/>
+  <ellipse cx="320" cy="386" rx="165" ry="220" fill="#000" opacity=".3" filter="url(#soft)"/>
+  <path d="M155 396c-35-185 55-310 165-311 125-1 213 129 165 311l-46-38c-12-130-64-186-131-186s-114 48-132 186z" fill="url(#hair)"/>
+  <ellipse cx="320" cy="360" rx="126" ry="155" fill="url(#skin)"/>
+  <path d="M196 300c7-95 59-153 124-153 74 0 119 74 124 154-38-36-81-54-124-54-43 0-84 18-124 53z" fill="url(#hair)" opacity=".94"/>
+  <path d="M238 355c20-15 43-17 64-8M338 347c21-9 44-7 64 8" fill="none" stroke="#4f3940" stroke-width="9" stroke-linecap="round"/>
+  <ellipse cx="273" cy="375" rx="16" ry="10" fill="#f7fbff"/><ellipse cx="367" cy="375" rx="16" ry="10" fill="#f7fbff"/>
+  <circle cx="273" cy="376" r="5" fill="#67dfff"/><circle cx="367" cy="376" r="5" fill="#67dfff"/>
+  <path d="M317 376c-2 23-8 37-18 50 11 7 23 8 39 2" fill="none" stroke="#9a6d70" stroke-width="4" stroke-linecap="round"/>
+  <path d="M278 463c27 20 58 20 85 0-9 35-73 40-85 0z" fill="#7f3e55"/>
+  <path d="M238 498v80h164v-80" fill="url(#skin)"/>
+  <path d="M235 535c-87 14-142 79-166 192h502c-24-113-79-178-166-192l-85 82z" fill="url(#dress)"/>
+  <path d="M231 539l89 83 89-83 31 54-120 115-120-115z" fill="#16263a" stroke="#61dfff" stroke-width="5" opacity=".9"/>
+  <path d="M320 590l33 34-33 66-33-66z" fill="#9a7cff" opacity=".7" filter="url(#soft)"/>
+  <circle cx="320" cy="625" r="8" fill="#e7fbff"/>
+</svg>"""
     def _vrm(self) -> None:
         if not self.vrm_path or not self.vrm_path.is_file():
             self._send(404, "text/plain; charset=utf-8", b"No VRM model configured")
