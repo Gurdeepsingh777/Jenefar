@@ -96,9 +96,9 @@ def test_groq_stt_request_uses_accuracy_options(monkeypatch):
     result = asyncio.run(runtime._transcribe_groq(runtime._wav_bytes(pcm)))
     assert result == "Hello Jenefar"
     assert captured["model"] == "whisper-large-v3"
-    assert captured["language"] == "en"
+    assert captured["language"] == "hi"
     assert captured["temperature"] == 0.0
-    assert "Jenefar" in captured["prompt"]
+    assert "prompt" not in captured
 
 
 def test_wakeword_normalizes_common_jennifer_variant():
