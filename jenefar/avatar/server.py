@@ -91,3 +91,153 @@ class AvatarServer:
         self._server = None
         self._thread = None
 
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+    def _json(self, status: int, payload: dict) -> None:
+        self._send(
+            status,
+            "application/json; charset=utf-8",
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        )
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except Exception as exc:
+            raise ValueError(f"invalid JSON: {type(exc).__name__}: {exc}") from exc
+        return value if isinstance(value, dict) else {}
+
+    def _safe_asset(self, relative: str) -> Path | None:
+        candidate = (ASSET_DIR / relative.lstrip("/")).resolve()
+        try:
+            candidate.relative_to(ASSET_DIR.resolve())
+        except ValueError:
+            return None
+        if candidate.is_file():
+            return candidate
+        return None
+
+    def _serve_file(self, relative: str) -> None:
+        path = self._safe_asset(relative)
+        if path is None:
+            self._send(404, "text/plain; charset=utf-8", b"Not found")
+            return
+        suffix = path.suffix.lower()
+        types = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".svg": "image/svg+xml",
+            ".webp": "image/webp",
+            ".ico": "image/x-icon",
+        }
+        self._send(200, types.get(suffix, "application/octet-stream"), path.read_bytes())
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path or "/"
+        try:
+            if path == "/":
+                self._serve_file("index.html")
+                return
+            if path == "/health":
+                self._json(
+                    200,
+                    {
+                        "status": "ok",
+                        "avatar": self.controller.current(),
+                        "vrm_available": bool(self.vrm_path and self.vrm_path.is_file()),
+                    },
+                )
+                return
+            if path == "/events":
+                subscriber = self.controller.subscribe()
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "keep-alive")
+                    self.end_headers()
+                    while True:
+                        event = subscriber.get()
+                        payload = json.dumps(event, ensure_ascii=False)
+                        self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    self.controller.unsubscribe(subscriber)
+                return
+            if path == "/avatar.vrm":
+                if not self.vrm_path or not self.vrm_path.is_file():
+                    self._send(404, "text/plain; charset=utf-8", b"VRM unavailable")
+                    return
+                self._send(200, "model/gltf-binary", self.vrm_path.read_bytes())
+                return
+            if path == "/evaluation":
+                html = render_dashboard(Path("data/evaluation.jsonl"))
+                self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
+                return
+            if path.startswith("/avatar/"):
+                self._serve_file(path[len("/avatar/"):])
+                return
+            self._serve_file(path.lstrip("/"))
+        except Exception as exc:
+            self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        try:
+            body = self._read_json()
+            if path == "/voice/text":
+                if self.voice_handler is None:
+                    self._json(503, {"error": "Browser voice handler unavailable."})
+                    return
+                result = self.voice_handler(str(body.get("text", "")))
+                self._json(200, result if isinstance(result, dict) else {"result": result})
+                return
+            if path == "/settings":
+                settings = UISettings(Path("data/ui_settings.json"))
+                value = settings.update(body)
+                self._json(200, {"settings": value})
+                return
+            if path == "/approval/reject":
+                pending_id = str(body.get("approve_id", "")).strip()
+                if not self.tool_broker or not pending_id:
+                    self._json(400, {"error": "approval id required"})
+                    return
+                result = self.tool_broker.reject(pending_id)
+                self._json(200, {"result": result})
+                return
+            if path == "/realtime/session":
+                result = create_ephemeral_session(self.tool_broker)
+                self._json(200, result)
+                return
+            if path == "/realtime/tool":
+                pending_id = str(body.get("approve_id", "")).strip()
+                if pending_id and self.tool_broker:
+                    result = self.tool_broker.approve(pending_id)
+                    self._json(200, {"result": result})
+                    return
+                tool_name = str(body.get("name", "")).strip()
+                args = body.get("arguments", {})
+                if not tool_name or not isinstance(args, dict):
+                    self._json(400, {"error": "tool name and object arguments are required"})
+                    return
+                result = invoke_realtime_tool(tool_name, args)
+                self._json(200, {"result": result})
+                return
+            self._send(404, "text/plain; charset=utf-8", b"Not found")
+        except RealtimeSessionError as exc:
+            self._json(400, {"error": str(exc)})
+        except Exception as exc:
+            self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
