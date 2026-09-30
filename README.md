@@ -96,6 +96,8 @@ Bounded voice mode:
 python run.py --voice
 ```
 
+Voice audio providers are selected automatically. A direct OpenAI key is preferred when available; otherwise a configured Groq key provides both STT and TTS through Groq's OpenAI-compatible audio endpoints. The active STT/TTS provider and model are printed when voice mode starts.
+
 Continuous voice mode:
 
 ```bash
@@ -104,7 +106,7 @@ python run.py --voice-continuous
 
 Continuous mode microphone ko open rakhta hai, local energy-based VAD se utterances detect karta hai, detected utterances ko STT ke liye bhejta hai, wake-word gate apply karta hai, phir same orchestrator routing use karta hai aur TTS response speakers par play karta hai.
 
-Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai.
+Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai. Groq voice ke liye `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, aur `GROQ_TTS_VOICE` configure kiye ja sakte hain.
 
 ## Avatar aur realtime voice
 
