@@ -207,3 +207,33 @@ def test_main_desktop_backend_has_status_method():
 def test_python314_optional_dependency_guards_are_present():
     optional = (ROOT / "requirements-optional.txt").read_text(encoding="utf-8")
     assert 'python_version < "3.14"' in optional
+
+
+
+def test_desktop_semantic_actions_verify_postconditions():
+    from jenefar.automation.headless import HeadlessDesktopAutomation
+    from jenefar.vision.screen import ScreenVision
+
+    vision = ScreenVision(HeadlessDesktopAutomation())
+    clicked = vision.locate_and_click("Submit button", verify="Submitted")
+    assert clicked["action"]["target"] == "Submit button"
+    assert clicked["postcondition"]["matched"] is True
+    assert clicked["postcondition"]["match"]["text"] == "Submitted"
+
+    typed = vision.locate_and_type("Search box", "jenefar", verify="jenefar")
+    assert typed["type"]["text"] == "jenefar"
+    assert typed["postcondition"]["matched"] is True
+
+
+def test_desktop_requirements_include_wayland_capture_dependencies():
+    desktop = (ROOT / "requirements-desktop.txt").read_text(encoding="utf-8")
+    assert "mss>=10.0.0" in desktop
+    assert "Pillow>=11.0.0" in desktop
+
+
+def test_desktop_action_tools_support_optional_verification():
+    broker = (ROOT / "jenefar" / "tools" / "broker.py").read_text(encoding="utf-8")
+    assert 'name="desktop_click_element"' in broker
+    assert '"verify": {"type": ["string", "null"]' in broker
+    assert 'locate_and_click' in broker
+    assert 'locate_and_type' in broker
