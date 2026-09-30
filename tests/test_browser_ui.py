@@ -163,3 +163,31 @@ def test_dashboard_has_explicit_fixed_regions():
     assert ".avatar-shell{inset:0 350px 0 170px!important" in css
     assert "#vrm-canvas{left:170px!important" in css
     assert ".holo-earth{right:350px" in css
+
+
+def test_roman_hinglish_transliterates_devanagari_instead_of_dropping_it():
+    from jenefar.voice.speech import enforce_hinglish
+
+    value = enforce_hinglish("नमस्ते, मैं आपकी मदद कर सकती हूँ।")
+    assert "Namaste" in value
+    assert "main" in value.lower()
+    assert not any("\u0900" <= ch <= "\u097f" for ch in value)
+
+
+def test_premium_avatar_blender_pipeline_is_wired():
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    launcher = (ROOT / "jenefar" / "assets" / "premium_avatar.py").read_text(encoding="utf-8")
+    blender = (ROOT / "tools" / "blender" / "premium_avatar.py").read_text(encoding="utf-8")
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    assert "prepare_premium_avatar" in run
+    assert "JENEFAR_PREMIUM_AVATAR" in run
+    assert "bpy.ops.import_scene.vrm" in blender
+    assert "bpy.ops.export_scene.vrm" in blender
+    assert "buildPremiumEnvironment" in vrm
+    assert "JenefarPremiumEnvironment" in vrm
+
+
+def test_premium_avatar_source_is_not_overwritten():
+    launcher = (ROOT / "jenefar" / "assets" / "premium_avatar.py").read_text(encoding="utf-8")
+    assert "shutil.copy2(source_path, temporary_input)" in launcher
+    assert "Jenefar_Premium.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
