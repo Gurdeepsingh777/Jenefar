@@ -260,6 +260,51 @@ class ProviderVoiceRuntime:
         sd.play(audio, samplerate=sample_rate)
         sd.wait()
 
+    async def _speak_local(self, text: str) -> None:
+        """Local neural TTS fallback via Piper CLI when available."""
+        import shutil
+        import subprocess
+
+        piper = shutil.which("piper")
+        if not piper:
+            raise RuntimeError("Local Piper TTS is not installed.")
+        model = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        if not model:
+            raise RuntimeError(
+                "JENEFAR_LOCAL_TTS_MODEL is not configured for local Piper TTS."
+            )
+        with tempfile.NamedTemporaryFile(
+            suffix=".wav", prefix="jenefar_local_tts_", delete=False
+        ) as tmp:
+            output_path = tmp.name
+        animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
+        try:
+            process = await asyncio.to_thread(
+                subprocess.run,
+                [piper, "--model", model, "--output_file", output_path],
+                input=text,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=45,
+            )
+            if process.returncode != 0:
+                raise RuntimeError(
+                    f"Local Piper TTS failed: {process.stderr.strip() or process.returncode}"
+                )
+            await asyncio.to_thread(self._play_wav, output_path)
+        finally:
+            if animation is not None:
+                animation.cancel()
+                try:
+                    await animation
+                except asyncio.CancelledError:
+                    pass
+            try:
+                os.unlink(output_path)
+            except FileNotFoundError:
+                pass
+
     async def _speak_openai(self, text: str) -> None:
         from openai import AsyncOpenAI
         from openai.helpers import LocalAudioPlayer
