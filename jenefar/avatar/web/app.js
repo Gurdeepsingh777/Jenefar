@@ -291,11 +291,11 @@ function apply(event){
   updateChatFromEvent(event);
 
   if(currentState==="waiting_approval") showApproval(event);
-  if(currentState==="speaking"||currentState==="speaking_fallback"){
+  if(currentState==="speaking"){
     pauseBrowserVoice();
-    if(currentState==="speaking" && event.text){
-      browserSpeakFallback(event.text);
-    }
+    if(event.text) browserSpeakFallback(event.text);
+  }else if(currentState==="speaking_fallback"){
+    pauseBrowserVoice();
   }else if(currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
