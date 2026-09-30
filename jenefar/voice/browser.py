@@ -7,7 +7,7 @@ import uuid
 from queue import Queue
 from typing import Any
 
-from jenefar.voice.speech import enforce_hinglish
+from jenefar.voice.speech import enforce_hinglish, roman_hinglish_for_voice
 
 
 class BrowserVoiceBridge:
@@ -134,7 +134,7 @@ class BrowserVoiceBridge:
                     response_language=self._conversation_language,
                 )
 
-            speech_text = enforce_hinglish(reply)
+            speech_text = roman_hinglish_for_voice(reply)
             self._publish("result", "", task_id)
             if speech_text:
                 self._speech_queue.put((task_id, speech_text))
