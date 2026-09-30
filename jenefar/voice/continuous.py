@@ -233,9 +233,14 @@ class ContinuousVoiceRuntime:
             if self.avatar is not None:
                 self.avatar.publish("speaking", reply, level=0.2)
             try:
-                await self._speak(reply)
+                if self._voice.audio_status().get("tts"):
+                    await self._speak(reply)
+                else:
+                    print("[JENEFAR] TTS unavailable; continuing listening without spoken output.")
             except Exception as exc:
                 print(f"[JENEFAR] TTS error: {type(exc).__name__}: {exc}")
+                # A failed TTS provider must never poison the microphone/STT loop.
+                self._voice.reset_audio_health()
             finally:
                 if self.avatar is not None:
                     self.avatar.publish("idle", "")
@@ -246,14 +251,16 @@ class ContinuousVoiceRuntime:
 
     async def run_async(self) -> None:
         status = self._voice.audio_status()
-        if not status["stt"] or not status["tts"]:
-            print("[JENEFAR] Continuous voice requires a configured STT and TTS provider.")
+        if not status["stt"]:
+            print("[JENEFAR] Continuous voice requires at least one configured STT provider.")
             print("[JENEFAR] Set OPENAI_API_KEY or GROQ_API_KEY.")
             return
         print(
             f"[JENEFAR] Continuous voice providers: "
             f"STT={status['stt']['provider']}/{status['stt']['model']} "
-            f"TTS={status['tts']['provider']}/{status['tts']['model']}"
+            f"fallback={','.join(status['stt'].get('fallback', [])) or 'none'}; "
+            f"TTS={status['tts']['provider']+'/'+status['tts']['model'] if status['tts'] else 'unavailable'} "
+            f"fallback={','.join(status['tts'].get('fallback', [])) if status['tts'] else 'none'}"
         )
 
         try:

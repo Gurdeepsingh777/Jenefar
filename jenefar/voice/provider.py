@@ -4,6 +4,7 @@ import asyncio
 import io
 import math
 import os
+import shutil
 import tempfile
 import time
 import wave
@@ -102,11 +103,14 @@ class ProviderVoiceRuntime:
         return [name for name in order if self._provider_configured(name)]
 
     def _tts_provider_order(self) -> list[str]:
-        return [
+        order = [
             name
             for name in self._provider_order()
             if self._tts_configured(name)
         ]
+        if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
+            order.append("local")
+        return order
 
     @staticmethod
     def _wav_bytes(
@@ -260,6 +264,51 @@ class ProviderVoiceRuntime:
         sd.play(audio, samplerate=sample_rate)
         sd.wait()
 
+    async def _speak_local(self, text: str) -> None:
+        """Local neural TTS fallback via Piper CLI when available."""
+        import shutil
+        import subprocess
+
+        piper = shutil.which("piper")
+        if not piper:
+            raise RuntimeError("Local Piper TTS is not installed.")
+        model = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        if not model:
+            raise RuntimeError(
+                "JENEFAR_LOCAL_TTS_MODEL is not configured for local Piper TTS."
+            )
+        with tempfile.NamedTemporaryFile(
+            suffix=".wav", prefix="jenefar_local_tts_", delete=False
+        ) as tmp:
+            output_path = tmp.name
+        animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
+        try:
+            process = await asyncio.to_thread(
+                subprocess.run,
+                [piper, "--model", model, "--output_file", output_path],
+                input=text,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=45,
+            )
+            if process.returncode != 0:
+                raise RuntimeError(
+                    f"Local Piper TTS failed: {process.stderr.strip() or process.returncode}"
+                )
+            await asyncio.to_thread(self._play_wav, output_path)
+        finally:
+            if animation is not None:
+                animation.cancel()
+                try:
+                    await animation
+                except asyncio.CancelledError:
+                    pass
+            try:
+                os.unlink(output_path)
+            except FileNotFoundError:
+                pass
+
     async def _speak_openai(self, text: str) -> None:
         from openai import AsyncOpenAI
         from openai.helpers import LocalAudioPlayer
@@ -324,7 +373,8 @@ class ProviderVoiceRuntime:
         providers = self._tts_provider_order()
         if not providers:
             raise RuntimeError(
-                "No text-to-speech provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
+                "No text-to-speech provider is configured. "
+                "Configure OpenAI/Groq TTS or install/configure local Piper TTS."
             )
 
         last_error: Exception | None = None
@@ -334,8 +384,10 @@ class ProviderVoiceRuntime:
             try:
                 if provider == "openai":
                     await self._speak_openai(text)
-                else:
+                elif provider == "groq":
                     await self._speak_groq(text)
+                else:
+                    await self._speak_local(text)
                 return
             except Exception as exc:
                 last_error = exc
@@ -386,6 +438,10 @@ class ProviderVoiceRuntime:
             level = 0.12 + 0.68 * ((0.5 + 0.5 * math.sin(phase)) ** 1.8)
             self.avatar.publish("speaking", text, level=level)
             await asyncio.sleep(0.09)
+
+    def reset_audio_health(self) -> None:
+        """Forget provider cooldowns after a recoverable TTS/STT failure."""
+        self._audio_pool = ProviderPool()
 
     def provider_status_line(self) -> str:
         status = self.audio_status()

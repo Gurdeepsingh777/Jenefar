@@ -80,8 +80,10 @@ body{color:var(--text)}
 #stage[data-emotion="alert"] .avatar{filter:drop-shadow(0 0 52px rgba(255,160,92,.30))}
 
 #vrm-canvas{
-  position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;
+  position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;
 }
+.avatar-shell .avatar{display:none}
+.photo-avatar{z-index:4}
 .realtime-controls{
   position:absolute;right:22px;bottom:22px;z-index:6;
   display:flex;gap:8px;align-items:center;padding:9px 12px;
@@ -124,3 +126,49 @@ body.vrm-loaded .avatar{opacity:.08}
 .approval-actions button:last-child{
   border-color:rgba(103,232,255,.35);background:rgba(58,105,135,.35)
 }
+
+.photo-avatar{
+  position:absolute;
+  width:min(38vw,430px);
+  aspect-ratio:3/4;
+  border-radius:38% 38% 30% 30%;
+  z-index:3;
+  display:grid;
+  place-items:center;
+  pointer-events:none;
+}
+.photo-avatar__portrait{
+  width:92%;
+  height:92%;
+  object-fit:contain;
+  filter:drop-shadow(0 25px 50px rgba(0,0,0,.35));
+}
+.photo-avatar__ring{
+  position:absolute;
+  width:96%;
+  aspect-ratio:1;
+  border-radius:50%;
+  border:1px solid rgba(103,232,255,.18);
+  box-shadow:
+    0 0 50px rgba(103,232,255,.08),
+    inset 0 0 35px rgba(167,139,250,.05);
+}
+.photo-avatar__name{
+  position:absolute;
+  bottom:2%;
+  font-size:10px;
+  letter-spacing:.55em;
+  color:rgba(232,242,255,.72);
+  text-shadow:0 0 18px rgba(103,232,255,.22);
+}
+body.vrm-loaded .photo-avatar{display:none}
+#stage[data-state="speaking"] .photo-avatar__ring{
+  animation:avatarRingPulse 1s ease-in-out infinite;
+  box-shadow:0 0 calc(45px + var(--speech-level,0)*70px) rgba(103,232,255,.12);
+}
+#stage[data-state="thinking"] .photo-avatar__portrait{animation:avatarThink 2.8s ease-in-out infinite}
+#stage[data-state="listening"] .photo-avatar__portrait{animation:avatarListen 1.3s ease-in-out infinite}
+@keyframes avatarRingPulse{50%{transform:scale(1.045)}}
+@keyframes avatarThink{50%{transform:translateX(5px)}}
+@keyframes avatarListen{50%{transform:translateY(-4px) scale(1.01)}}
+@media (max-width:700px){.photo-avatar{width:76vw}}
