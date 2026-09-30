@@ -108,7 +108,7 @@ def test_run_py_default_uses_continuous_voice_runtime():
     from pathlib import Path
 
     source = Path("run.py").read_text(encoding="utf-8")
-    assert "ContinuousVoiceRuntime(orchestrator).run()" in source
+    assert "ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()" in source
     assert "ProviderVoiceRuntime(JenefarOrchestrator()).run()" not in source
 
 
