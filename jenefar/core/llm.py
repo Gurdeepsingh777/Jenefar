@@ -238,6 +238,14 @@ class LLMClient:
                 else "OPENAI_API_KEY not configured"
             )
 
+        if os.getenv("JENEFAR_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}:
+            return LLMResponse(
+                f"Online model unavailable ({online_error}). Local fallback is disabled for this run.",
+                "online_unavailable",
+                model=selected_model,
+                model_role=selected_role,
+            )
+
         try:
             fallback = self._complete_local(
                 prompt,

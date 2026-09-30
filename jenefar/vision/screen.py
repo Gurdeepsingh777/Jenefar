@@ -193,7 +193,9 @@ class ScreenVision:
             "Do not invent elements that are not visible. "
             f"User task: {task}"
         )
-        response = OpenAI().responses.create(
+        response = OpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY")
+        ).responses.create(
             model=model,
             store=False,
             input=[
