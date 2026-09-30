@@ -1273,6 +1273,7 @@ class ToolBroker:
         )
 
     def invoke(self, name: str, arguments: dict[str, Any], *, confirmed: bool = False) -> str:
+        self._activity("thinking", f"Tool requested: {name}")
         try:
             spec = self.registry.get(name)
         except KeyError:
@@ -1288,6 +1289,10 @@ class ToolBroker:
                 tool=name,
                 arguments=arguments,
             )
+            self._activity(
+                "waiting_approval",
+                f"Approval required: {name} [{pending_id}]",
+            )
             return json.dumps({
                 "status": "approval_required",
                 "pending_id": pending_id,
@@ -1296,8 +1301,10 @@ class ToolBroker:
             })
 
         try:
+            self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
             self.audit.record("tool_executed", tool=name, arguments=arguments, result=value)
+            self._activity("thinking", f"Tool result: {name} -> {str(value)[:500]}")
             return json.dumps({"status": "ok", "result": value}, ensure_ascii=False, default=str)
         except Exception as exc:
             self.audit.record(
@@ -1306,11 +1313,24 @@ class ToolBroker:
                 arguments=arguments,
                 error=f"{type(exc).__name__}: {exc}",
             )
+            self._activity(
+                "error",
+                f"Tool error: {name} -> {type(exc).__name__}: {exc}",
+            )
             return json.dumps({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+
+    def reject(self, pending_id: str) -> str:
+        pending = self.pending.pop(pending_id, None)
+        if pending is None:
+            return json.dumps({"status": "error", "error": "Unknown or expired pending tool call."})
+        self.audit.record("tool_rejected", pending_id=pending_id, tool=pending.name)
+        self._activity("idle", f"Action denied: {pending.name}")
+        return json.dumps({"status": "denied", "tool": pending.name})
 
     def approve(self, pending_id: str) -> str:
         pending = self.pending.pop(pending_id, None)
         if pending is None:
             return json.dumps({"status": "error", "error": "Unknown or expired pending tool call."})
         self.audit.record("tool_approved", pending_id=pending_id, tool=pending.name)
+        self._activity("thinking", f"Approval granted: {pending.name}")
         return self.invoke(pending.name, pending.arguments, confirmed=True)
