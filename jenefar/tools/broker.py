@@ -547,7 +547,7 @@ class ToolBroker:
                     "query": {"type": "string", "maxLength": 500},
                     "verify": {"type": ["string", "null"], "maxLength": 500},
                 },
-                "required": ["query", "verify"],
+                "required": ["query"],
                 "additionalProperties": False,
             },
             handler=lambda args: self.screen_vision.locate_and_click(
@@ -567,7 +567,7 @@ class ToolBroker:
                     "text": {"type": "string", "maxLength": 4000},
                     "verify": {"type": ["string", "null"], "maxLength": 500},
                 },
-                "required": ["query", "text", "verify"],
+                "required": ["query", "text"],
                 "additionalProperties": False,
             },
             handler=lambda args: self.screen_vision.locate_and_type(
