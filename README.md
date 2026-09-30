@@ -796,3 +796,34 @@ python run.py --trace-report
 ```
 
 The self-healing layer is recovery-only. It does not grant permissions, change authorized security targets, auto-approve tools, or weaken existing execution policies.
+
+## Kali Linux quick start
+
+Jenefar ko fresh Kali Linux machine par verify karne ke liye:
+
+~~~bash
+git clone https://github.com/Gurdeepsingh777/Jenefar.git
+cd Jenefar
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+python run.py --doctor
+python run.py
+~~~
+
+`--doctor` core dependencies, project Python syntax, configuration, orchestrator imports/init, internet connectivity aur local LLM detection check karta hai. Voice/PDF/DOCX packages optional hain; unke missing hone se basic CLI ko fail nahi kiya jata.
+
+Online OpenAI mode ke liye:
+
+~~~bash
+export OPENAI_API_KEY="your_api_key"
+python run.py
+~~~
+
+Local/offline mode ke liye Ollama ya kisi OpenAI-compatible local LLM server ko start karke `python run.py` chala sakte ho.
+
+Agar sirf CLI/dependency verification karni ho, `python run.py --doctor` sufficient hai.
+

@@ -48,40 +48,85 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 def doctor() -> int:
+    """Run dependency, configuration, source-syntax, and runtime smoke checks."""
+    from pathlib import Path
+    import ast
+    import os
+
     print("[JENEFAR] Doctor")
-    checks = {
+    root = Path(__file__).resolve().parent
+    failed = False
+
+    # Core dependencies are required for every Jenefar mode.
+    core_checks = {
         "yaml": "yaml",
         "dotenv": "dotenv",
-        "openai": "openai",
-        "sounddevice": "sounddevice",
-        "pypdf": "pypdf",
-        "docx": "docx",
     }
-    failed = False
-    for label, module in checks.items():
+    # These are optional features; their absence must not prevent basic CLI use.
+    optional_checks = {
+        "openai": "openai (online LLM)",
+        "sounddevice": "sounddevice (voice)",
+        "pypdf": "pypdf (PDF indexing)",
+        "docx": "docx (DOCX indexing)",
+    }
+
+    for module, label in core_checks.items():
         ok = importlib.util.find_spec(module) is not None
-        print(f"  {label:12} {'OK' if ok else 'MISSING'}")
+        print(f"  {label:28} {'OK' if ok else 'MISSING'}")
         failed = failed or not ok
+
+    for module, label in optional_checks.items():
+        ok = importlib.util.find_spec(module) is not None
+        print(f"  {label:28} {'OK' if ok else 'OPTIONAL/MISSING'}")
+
+    # Catch syntax errors across the project before attempting a full runtime.
+    syntax_errors = []
+    for path in root.rglob("*.py"):
+        if any(part in {".git", "__pycache__", ".venv", "venv"} for part in path.parts):
+            continue
+        try:
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            syntax_errors.append(f"{path.relative_to(root)}: {type(exc).__name__}: {exc}")
+
+    if syntax_errors:
+        print("  source syntax                ERROR")
+        for error in syntax_errors[:20]:
+            print(f"    - {error}")
+        failed = True
+    else:
+        print("  source syntax                OK")
 
     try:
         from jenefar.core.config import load_config
         from jenefar.offline.connectivity import internet_available
         from jenefar.offline.local_llm import LocalLLMClient
+
         config = load_config()
-        online = internet_available()
+        print(f"  config                       OK ({config.name})")
+        print(f"  api key                      {'SET' if os.getenv('OPENAI_API_KEY') else 'NOT SET (local fallback)'}")
+        online = internet_available(timeout=0.8)
+        print(f"  internet                     {'ONLINE' if online else 'OFFLINE'}")
         local_model = LocalLLMClient().detect()
-        print(f"  config       OK ({config.name})")
-        print(f"  api key      {'SET' if __import__('os').getenv('OPENAI_API_KEY') else 'NOT SET'}")
-        print(f"  internet     {'ONLINE' if online else 'OFFLINE'}")
-        print(f"  local model  {'OK (' + local_model.model + ')' if local_model else 'NOT DETECTED'}")
+        print(
+            "  local model                  "
+            + (f"OK ({local_model.model})" if local_model else "NOT DETECTED")
+        )
+
+        # Import the orchestrator to catch dependency/import integration errors.
+        from jenefar.core.orchestrator import JenefarOrchestrator
+        print("  orchestrator import           OK")
+        # Construct it only after syntax/import checks; this validates core wiring.
+        JenefarOrchestrator()
+        print("  orchestrator init             OK")
     except Exception as exc:
-        print(f"  config       ERROR ({type(exc).__name__}: {exc})")
+        print(f"  runtime wiring               ERROR ({type(exc).__name__}: {exc})")
         failed = True
 
     if failed:
-        print("[JENEFAR] Doctor found missing/invalid local dependencies.")
+        print("[JENEFAR] Doctor found core problems. Fix them before normal execution.")
         return 1
-    print("[JENEFAR] Doctor checks passed.")
+    print("[JENEFAR] Doctor checks passed. Optional features may still need extra packages.")
     return 0
 
 def github_command(args: argparse.Namespace) -> int:
