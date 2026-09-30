@@ -290,7 +290,9 @@ function apply(event){
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     pauseBrowserVoice();
-    if(currentState==="speaking_fallback") browserSpeakFallback(event.text||"");
+    if(event.text){
+      browserSpeakFallback(event.text);
+    }
   }else if(currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
