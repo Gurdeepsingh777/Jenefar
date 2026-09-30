@@ -367,6 +367,12 @@ function updateChatFromEvent(event){
 /* Browser voice */
 const micButton=document.getElementById("mic-button");
 const browserSpeechReady = "speechSynthesis" in window;
+let voicesReady=false;
+if(browserSpeechReady){
+  const primeVoices=()=>{ window.speechSynthesis.getVoices(); voicesReady=true; };
+  primeVoices();
+  window.speechSynthesis.onvoiceschanged=primeVoices;
+}
 const voiceInputStatus=document.getElementById("voice-input-status");
 let recognition=null;
 let micEnabled=true;
