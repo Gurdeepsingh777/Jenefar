@@ -403,6 +403,11 @@ function setupBrowserVoice(){
         voiceLocked=true;
         setVoiceInputStatus("MIC BLOCKED — USE SITE SETTINGS TO ALLOW",false);
         setMicButton(false, false);
+      }else if(code==="NotFoundError"||code==="DevicesNotFoundError"){
+        micEnabled=false;
+        voiceLocked=true;
+        setVoiceInputStatus("NO MICROPHONE DEVICE FOUND",false);
+        setMicButton(false, false);
       }else{
         setVoiceInputStatus("MIC ERROR: "+code,false);
         setMicButton(false, false);

@@ -56,3 +56,8 @@ def test_mic_button_state_helper_and_permission_flow_are_present():
     assert 'navigator.mediaDevices.getUserMedia({audio:true,video:false})' in js
     assert '.talk-button.is-active' in css
     assert '.talk-button.is-busy' in css
+
+
+def test_browser_mic_reports_missing_device():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "NO MICROPHONE DEVICE FOUND" in js
