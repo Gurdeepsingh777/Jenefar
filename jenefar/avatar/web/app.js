@@ -210,17 +210,35 @@ function showApproval(event){
   overlay.querySelector("pre").textContent="Pending ID: "+pendingId;
   document.body.appendChild(overlay);
   approvalDialogs.set(pendingId,overlay);
-  const close=()=>{approvalDialogs.delete(pendingId);overlay.remove();};
-  overlay.querySelector("[data-action='deny']").onclick=async()=>{
+
+  const close=()=>{ approvalDialogs.delete(pendingId); overlay.remove(); };
+
+  const denyButton=overlay.querySelector("[data-action='deny']");
+  const approveButton=overlay.querySelector("[data-action='approve']");
+
+  denyButton.onclick=async()=>{
     try{
-      await fetch("/approval/reject",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approve_id:pendingId})});
-    }finally{close();}
+      await fetch("/approval/reject",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({approve_id:pendingId})
+      });
+    }finally{
+      close();
+    }
   };
-  overlay.querySelector("[data-action='approve']").onclick=async()=>{
+
+  approveButton.onclick=async()=>{
     overlay.querySelectorAll("button").forEach(button=>button.disabled=true);
     try{
-      await fetch("/realtime/tool",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approve_id:pendingId}));
-    }finally{close();}
+      await fetch("/realtime/tool",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({approve_id:pendingId})
+      });
+    }finally{
+      close();
+    }
   };
 }
 
