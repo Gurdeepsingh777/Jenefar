@@ -561,3 +561,12 @@ body.vrm-loaded #photo-avatar{display:none}
   #activity-panel{width:330px}
   #vrm-canvas{left:165px!important;right:335px!important;width:calc(100% - 500px)!important}
 }
+
+
+/* Response panel: compact, readable, non-overlapping */
+.chat-glass .chat-log{scrollbar-width:thin}
+.chat-glass .chat-row{max-width:100%}
+.chat-glass .bubble{font-size:12px;line-height:1.45}
+.chat-glass .user-bubble{margin-left:auto}
+.premium-controls span{font-size:8px}
+.talk-button.pressed{transform:translateY(1px) scale(.98);box-shadow:inset 0 0 18px rgba(103,232,255,.14)}
