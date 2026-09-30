@@ -99,3 +99,17 @@ def test_index_has_valid_script_tags_for_runtime():
     assert '<script src="/app.js"></script>' in html
     assert '<script type="module" src="/vrm.js"></script>' in html
     assert '<script src="/realtime.js"></script>' in html
+
+
+def test_browser_runtime_has_single_voice_path():
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "ContinuousVoiceRuntime" not in run.split("if args.voice_auto:", 1)[1].split("if args.setup_assets:", 1)[0]
+
+
+def test_roman_hinglish_output_is_explicitly_enforced():
+    speech = (ROOT / "jenefar" / "voice" / "speech.py").read_text(encoding="utf-8")
+    browser = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    llm = (ROOT / "jenefar" / "agents" / "llm_agent.py").read_text(encoding="utf-8")
+    assert "def enforce_hinglish" in speech
+    assert "enforce_hinglish(reply)" in browser
+    assert "LANGUAGE RULE: Output must be Roman Hinglish only." in llm
