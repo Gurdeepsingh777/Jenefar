@@ -93,3 +93,10 @@ def test_ui_js_has_balanced_basic_delimiters():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert js.count("{") == js.count("}")
     assert js.count("(") == js.count(")")
+
+
+def test_index_has_valid_script_tags_for_runtime():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert '<script src="/app.js"></script>' in html
+    assert '<script type="module" src="/vrm.js"></script>' in html
+    assert '<script src="/realtime.js"></script>' in html
