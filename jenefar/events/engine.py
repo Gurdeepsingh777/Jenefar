@@ -191,7 +191,7 @@ class EventEngine:
             name=name,
             kind="once",
             prompt=prompt,
-            timezone_name=str(when.tzinfo or "UTC"),
+            timezone_name="UTC",
             run_at=self._iso(when),
             next_run_at=when,
         )
@@ -291,7 +291,7 @@ class EventEngine:
                 """
                 SELECT * FROM scheduled_events
                 WHERE enabled = 1
-                  AND kind IN ('once', 'interval', 'daily')
+                  AND kind IN ('once', 'interval', 'daily', 'watch')
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= ?
                 ORDER BY next_run_at ASC, id ASC
@@ -303,6 +303,9 @@ class EventEngine:
     def _reschedule(self, event: ScheduledEvent, *, now: datetime) -> None:
         if event.kind == "once":
             enabled = 0
+            next_run = None
+        elif event.kind == "watch":
+            enabled = 1
             next_run = None
         elif event.kind == "interval":
             enabled = 1
@@ -360,7 +363,7 @@ class EventEngine:
                     con.execute(
                         """
                         UPDATE scheduled_events
-                        SET last_run_at = ?, run_count = run_count + 1
+                        SET next_run_at = ?
                         WHERE id = ?
                         """,
                         (self._iso(current), event.id),
