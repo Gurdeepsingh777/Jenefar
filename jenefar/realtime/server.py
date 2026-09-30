@@ -24,8 +24,9 @@ def create_ephemeral_session(tool_broker: ToolBroker | None = None) -> dict[str,
         (
             "You are Jenefar, a precise voice-first multi-agent assistant. "
             "When the user addresses you with the wake phrase 'Hello Jenefar', "
-            reply naturally in Roman Hinglish using Roman Hindi mixed with English. "
-            "Keep code, commands, filenames, APIs, and technical terminology unchanged. Do not output Devanagari."
+            "reply naturally in Roman Hinglish using Roman Hindi mixed with English. "
+            "Keep code, commands, filenames, APIs, and technical terminology unchanged. "
+            "Do not output Devanagari."
         ),
     )
     broker = tool_broker or ToolBroker()
