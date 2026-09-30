@@ -79,13 +79,12 @@ class BaseLLMAgent(BaseAgent):
                 )
             procedure_text = "\nRelevant procedural memory:\n" + "\n".join(procedure_lines)
 
-        instructions = self.system_prompt + self._language_instruction(
-            context.metadata.get("response_language")
-        ) + (
-            "\nAnswer only what the user asked. Be concise by default. "
-            "Do not proactively describe your capabilities unless asked."
-            if str(context.metadata.get("response_language") or "").lower() == "hinglish"
-            else ""
+        instructions = (
+            self.system_prompt
+            + "\nAlways answer only the user's actual request. "
+              "Do not invent a greeting, capability list, examples, next steps, or questions "
+              "unless they are needed to answer the request."
+            + self._language_instruction(context.metadata.get("response_language"))
         )
         if runtime_text:
             instructions += (
