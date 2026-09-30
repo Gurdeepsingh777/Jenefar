@@ -67,3 +67,37 @@ def test_legacy_tts_helpers_are_available():
     from jenefar.voice.provider import ProviderVoiceRuntime
     assert hasattr(ProviderVoiceRuntime, "_legacy_edge_tts_available")
     assert hasattr(ProviderVoiceRuntime, "_local_espeak_available")
+
+ 
+ 
+def test_legacy_voice_does_not_require_pyaudio():
+    from jenefar.voice.continuous import ContinuousVoiceRuntime
+    assert hasattr(ContinuousVoiceRuntime, "_calibrate_microphone")
+    assert hasattr(ContinuousVoiceRuntime, "_capture_phrase_pcm")
+
+
+def test_tts_prefers_edge_when_available(monkeypatch):
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    monkeypatch.setattr(
+        ProviderVoiceRuntime,
+        "_legacy_edge_tts_available",
+        staticmethod(lambda: True),
+    )
+    monkeypatch.setattr(
+        ProviderVoiceRuntime,
+        "_local_espeak_available",
+        staticmethod(lambda: True),
+    )
+    monkeypatch.setenv("GROQ_API_KEY", "test")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    status = ProviderVoiceRuntime.audio_status()
+    assert status["tts"]["provider"] == "edge"
+
+
+def test_tool_broker_has_whatsapp_actions():
+    from jenefar.tools.broker import ToolBroker
+    broker = ToolBroker(require_confirmation=True)
+    names = {tool.name for tool in broker.registry.list()}
+    assert "whatsapp_open_web" in names
+    assert "whatsapp_send_web" in names
