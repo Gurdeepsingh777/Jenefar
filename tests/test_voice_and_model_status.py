@@ -33,6 +33,13 @@ def test_voice_prefers_direct_openai_key(monkeypatch):
     assert status["tts"]["fallback"] == ["groq"]
 
 
+def test_native_tts_is_opt_in(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("JENEFAR_ENABLE_NATIVE_TTS", raising=False)
+    assert ProviderVoiceRuntime.audio_status() == {"stt": None, "tts": None}
+
+
 def test_voice_can_prefer_groq(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
     monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
