@@ -31,7 +31,6 @@ from jenefar.skills.manager import SkillManager
 from jenefar.connectors.manager import ConnectorManager
 from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
-from jenefar.tools.phase4 import register_phase4_tools
 
 
 @dataclass
@@ -88,12 +87,7 @@ class ToolBroker:
         )
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
-        register_phase4_tools(
-            self,
-            memory=self.memory,
-            events=self.events,
-            event_handler=self.event_handler,
-        )
+        self._register_phase4_compat_tools()
 
     def _register_builtin_tools(self) -> None:
         self.registry.register(ToolSpec(
@@ -742,6 +736,197 @@ class ToolBroker:
             handler=self._scope_check,
         ))
 
+
+    def _register_phase4_compat_tools(self) -> None:
+        self.registry.register(ToolSpec(
+            name="memory_recall",
+            description="Search Jenefar's local layered memory and return matching records.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": 1000},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "layers": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["query", "limit", "layers"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: [
+                {
+                    "id": hit.id,
+                    "layer": hit.layer,
+                    "kind": hit.kind,
+                    "source": hit.source,
+                    "title": hit.title,
+                    "content": hit.content,
+                    "score": hit.score,
+                    "importance": hit.importance,
+                }
+                for hit in self.memory.recall(
+                    str(args["query"]),
+                    limit=int(args.get("limit", 8)),
+                    include_procedures=True,
+                ).hits
+            ],
+        ))
+        self.registry.register(ToolSpec(
+            name="memory_remember",
+            description="Persist a fact, episode, or reusable procedure in Jenefar's local memory.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "layer": {"type": "string", "enum": ["episodic", "semantic", "procedural"]},
+                    "title": {"type": "string", "maxLength": 300},
+                    "content": {"type": "string", "maxLength": 12000},
+                    "source": {"type": "string", "maxLength": 200},
+                    "importance": {"type": "number", "minimum": 0, "maximum": 1},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "steps": {"type": "array", "items": {"type": "string"}},
+                    "trigger_text": {"type": "string"},
+                    "constraints": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["layer", "title", "content", "source", "importance", "tags", "steps", "trigger_text", "constraints"],
+                "additionalProperties": False,
+            },
+            handler=self._memory_remember,
+        ))
+        self.registry.register(ToolSpec(
+            name="event_catalog",
+            description="List persistent Jenefar scheduled events and watchers.",
+            handler=lambda _args: [
+                {
+                    "id": event.id,
+                    "name": event.name,
+                    "kind": event.kind,
+                    "prompt": event.prompt,
+                    "enabled": event.enabled,
+                    "timezone": event.timezone,
+                    "next_run_at": event.next_run_at,
+                    "event_type": event.event_type,
+                }
+                for event in self.events.list()
+            ],
+        ))
+        self.registry.register(ToolSpec(
+            name="event_schedule_once",
+            description="Schedule one persistent prompt for a future ISO-8601 time.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "run_at": {"type": "string"},
+                },
+                "required": ["name", "prompt", "run_at"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._event_schedule_once(args),
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="event_schedule_interval",
+            description="Schedule a persistent repeating prompt; interval must be at least 60 seconds.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "every_seconds": {"type": "integer", "minimum": 60},
+                    "start_at": {"type": ["string", "null"]},
+                },
+                "required": ["name", "prompt", "every_seconds", "start_at"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.events.schedule_interval(
+                str(args["name"]),
+                str(args["prompt"]),
+                int(args["every_seconds"]),
+                start_at=args.get("start_at"),
+            ).__dict__,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="event_schedule_daily",
+            description="Schedule a persistent daily prompt at an IANA timezone.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "daily_time": {"type": "string"},
+                    "timezone": {"type": "string"},
+                    "start_at": {"type": ["string", "null"]},
+                },
+                "required": ["name", "prompt", "daily_time", "timezone", "start_at"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.events.schedule_daily(
+                str(args["name"]),
+                str(args["prompt"]),
+                str(args["daily_time"]),
+                timezone_name=str(args["timezone"]),
+                start_at=args.get("start_at"),
+            ).__dict__,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="event_watch",
+            description="Watch for an application event type with optional equality filters and queue a Jenefar prompt.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "event_type": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "filters": {"type": "object"},
+                },
+                "required": ["name", "event_type", "prompt", "filters"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.events.watch(
+                str(args["name"]),
+                str(args["event_type"]),
+                str(args["prompt"]),
+                filters=dict(args.get("filters") or {}),
+            ).__dict__,
+            requires_confirmation=True,
+            action=True,
+        ))
+
+    def _memory_remember(self, args: dict[str, Any]) -> dict[str, Any]:
+        layer = str(args["layer"]).strip().lower()
+        title = str(args["title"])
+        content = str(args["content"])
+        source = str(args["source"])
+        importance = float(args["importance"])
+        tags = [str(x) for x in (args.get("tags") or [])]
+        if layer == "episodic":
+            self.memory.record_episode(title=title, content=content, source=source, importance=importance, tags=tags)
+        elif layer == "semantic":
+            self.memory.remember_fact(title=title, content=content, source=source, importance=importance, tags=tags)
+        elif layer == "procedural":
+            self.memory.save_procedure(
+                name=title,
+                trigger_text=str(args.get("trigger_text") or title),
+                steps=[str(x) for x in (args.get("steps") or [content])],
+                constraints=[str(x) for x in (args.get("constraints") or [])],
+                source=source,
+                importance=importance,
+            )
+        else:
+            raise ValueError("layer must be episodic, semantic or procedural")
+        return {"saved": True, "layer": layer, "title": title}
+
+    def _event_schedule_once(self, args: dict[str, Any]) -> dict[str, Any]:
+        event = self.events.schedule_once(
+            str(args["name"]),
+            str(args["prompt"]),
+            str(args["run_at"]),
+        )
+        return event.__dict__
 
     def _connector_execute(
         self,
