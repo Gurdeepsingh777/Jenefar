@@ -101,14 +101,14 @@ def test_default_runtime_starts_avatar_server():
     assert "AvatarController()" in source
     assert "AvatarServer(" in source
     assert "webbrowser.open(runtime_url)" in source
-    assert "ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()" in source
+    assert "BrowserVoiceBridge(orchestrator, avatar=avatar)" in source
 
 
-def test_run_py_default_uses_continuous_voice_runtime():
+def test_run_py_default_uses_browser_voice_runtime():
     from pathlib import Path
 
     source = Path("run.py").read_text(encoding="utf-8")
-    assert "ContinuousVoiceRuntime(orchestrator, avatar=avatar).run()" in source
+    assert "BrowserVoiceBridge(orchestrator, avatar=avatar)" in source
     assert "ProviderVoiceRuntime(JenefarOrchestrator()).run()" not in source
 
 

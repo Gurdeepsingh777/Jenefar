@@ -25,7 +25,7 @@ class BrowserVoiceBridge:
         )
         self._conversation_language = "Hinglish"
         self._executor = ThreadPoolExecutor(
-            max_workers=max(1, int(os.getenv("JENEFAR_VOICE_TASK_WORKERS", "3"))),
+            max_workers=1,
             thread_name_prefix="jenefar-task",
         )
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)

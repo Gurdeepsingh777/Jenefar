@@ -32,7 +32,7 @@ class BaseLLMAgent(BaseAgent):
             return ""
         return (
             "\nLANGUAGE RULE: Output must be Roman Hinglish only. "
-            "Use normal Hindi spoken in Roman letters mixed naturally with English. "
+            "Use normal Hindi spoken as Roman Hindi in Roman letters, mixed naturally with English. "
             "Never output Devanagari/Hindi-script text. Never answer fully in formal English. "
             "Keep technical names, commands, code, filenames, APIs, and standard English "
             "technical terms unchanged. Do not add greetings, capability lists, examples, "
