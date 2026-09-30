@@ -53,6 +53,7 @@ class ToolBroker:
         memory: AdvancedMemory | None = None,
         events: EventEngine | None = None,
         event_handler=None,
+        activity_handler=None,
     ):
         self.registry = ToolRegistry()
         self.terminal = TerminalTool()
@@ -72,6 +73,7 @@ class ToolBroker:
         self.memory = memory or AdvancedMemory()
         self.events = events or EventEngine()
         self.event_handler = event_handler
+        self.activity_handler = activity_handler
         self.require_confirmation = require_confirmation
         self.audit = audit or AuditLogger()
         self.scope = scope or ScopePolicy()
@@ -89,6 +91,13 @@ class ToolBroker:
         self.pending: dict[str, PendingToolCall] = {}
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
+
+    def _activity(self, state: str, text: str) -> None:
+        if self.activity_handler is not None:
+            try:
+                self.activity_handler(state, text)
+            except Exception:
+                pass
 
     def _get_screen_vision(self):
         if self.screen_vision is None:
