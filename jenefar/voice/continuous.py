@@ -181,11 +181,6 @@ class ContinuousVoiceRuntime:
         self._processing_utterance = True
         try:
             text = await self._transcribe(pcm)
-        except Exception as exc:
-            print(f"[JENEFAR] STT error: {type(exc).__name__}: {exc}")
-            return
-
-        try:
             if not text:
                 return
 
@@ -201,46 +196,48 @@ class ContinuousVoiceRuntime:
             self._last_transcript_at = now
 
             print(f"[USER/STT] {text}")
-        if self.avatar is not None:
-            self.avatar.publish("listening", text)
-
-        lowered = text.lower().strip()
-        if lowered == "exit":
-            self._stop.set()
-            return
-
-        if self.orchestrator.state.name == "SLEEPING":
-            matched_phrase = self.orchestrator.wakeword.matched_phrase(text)
-            if matched_phrase is None:
-                return
-            command = self.orchestrator.wakeword.remove_wake_phrase(text)
-            response_language = (
-                "Hinglish" if matched_phrase == "hello jenefar" else None
-            )
-            if not command:
-                reply = (
-                    "Haan, boliye. Main sun rahi hoon."
-                    if response_language == "Hinglish"
-                    else "Yes, I'm listening."
-                )
-            else:
-                reply = self.orchestrator.handle(
-                    command,
-                    response_language=response_language,
-                )
-        else:
-            reply = self.orchestrator.handle(text)
-
-        print(f"[JENEFAR] {reply}")
-        if self.avatar is not None:
-            self.avatar.publish("speaking", reply, level=0.2)
-        try:
-            await self._speak(reply)
-        except Exception as exc:
-            print(f"[JENEFAR] TTS error: {type(exc).__name__}: {exc}")
-        finally:
             if self.avatar is not None:
-                self.avatar.publish("idle", "")
+                self.avatar.publish("listening", text)
+
+            lowered = normalized
+            if lowered == "exit":
+                self._stop.set()
+                return
+
+            if self.orchestrator.state.name == "SLEEPING":
+                matched_phrase = self.orchestrator.wakeword.matched_phrase(text)
+                if matched_phrase is None:
+                    return
+                command = self.orchestrator.wakeword.remove_wake_phrase(text)
+                response_language = "Hinglish" if matched_phrase == "hello jenefar" else None
+                if not command:
+                    reply = (
+                        "Haan, boliye. Main sun rahi hoon."
+                        if response_language == "Hinglish"
+                        else "Yes, I'm listening."
+                    )
+                else:
+                    reply = self.orchestrator.handle(
+                        command,
+                        response_language=response_language,
+                    )
+            else:
+                reply = self.orchestrator.handle(text)
+
+            print(f"[JENEFAR] {reply}")
+            if self.avatar is not None:
+                self.avatar.publish("speaking", reply, level=0.2)
+            try:
+                await self._speak(reply)
+            except Exception as exc:
+                print(f"[JENEFAR] TTS error: {type(exc).__name__}: {exc}")
+            finally:
+                if self.avatar is not None:
+                    self.avatar.publish("idle", "")
+        except Exception as exc:
+            print(f"[JENEFAR] Voice processing error: {type(exc).__name__}: {exc}")
+        finally:
+            self._processing_utterance = False
 
     async def run_async(self) -> None:
         status = self._voice.audio_status()
