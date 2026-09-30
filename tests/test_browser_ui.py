@@ -61,3 +61,23 @@ def test_mic_button_state_helper_and_permission_flow_are_present():
 def test_browser_mic_reports_missing_device():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert "NO MICROPHONE DEVICE FOUND" in js
+
+
+def test_cinematic_scene_has_holographic_environment():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert 'id="holo-earth"' in html
+    assert 'id="earth-canvas"' in html
+    assert 'id="holo-particles"' in html
+    assert 'function setupHolographicEnvironment' in js
+    assert 'earth-canvas' in js
+    assert '.holo-earth' in css
+    assert '.chair-silhouette' in css
+
+
+def test_interactive_controls_are_not_covered_by_decorative_layers():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert 'pointer-events:none!important' in css
+    assert '.talk-button,.dock-btn,.orb-button' in css or '.talk-button' in css
+    assert 'pointer-events:auto!important' in css
