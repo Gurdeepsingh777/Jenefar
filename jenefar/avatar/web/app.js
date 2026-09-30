@@ -293,7 +293,7 @@ function apply(event){
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     pauseBrowserVoice();
-    if(event.text){
+    if(currentState==="speaking" && event.text){
       browserSpeakFallback(event.text);
     }
   }else if(currentState==="idle"||currentState==="completed"){
