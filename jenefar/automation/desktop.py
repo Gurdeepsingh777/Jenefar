@@ -63,7 +63,23 @@ class DesktopAutomation:
     def capture_frame(self, *, max_dimension: int = 1600, save: bool = False):
         from jenefar.vision.screen import ScreenFrame
 
-        image = self._pyautogui().screenshot()
+        image = None
+        try:
+            image = self._pyautogui().screenshot()
+        except Exception as exc:
+            try:
+                import mss
+                from PIL import Image
+                with mss.mss() as capture:
+                    monitor = capture.monitors[0]
+                    shot = capture.grab(monitor)
+                    image = Image.frombytes("RGB", shot.size, shot.rgb)
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    "Unable to capture the desktop screen. "
+                    f"PyAutoGUI error: {type(exc).__name__}: {exc}; "
+                    f"mss fallback error: {type(fallback_exc).__name__}: {fallback_exc}"
+                ) from fallback_exc
         width, height = int(image.width), int(image.height)
         max_dimension = max(640, min(int(max_dimension), 2560))
         encoded = image
