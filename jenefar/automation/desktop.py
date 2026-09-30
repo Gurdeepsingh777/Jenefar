@@ -22,6 +22,28 @@ class DesktopAutomation:
         self.screenshot_dir = Path(screenshot_dir)
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)
 
+    def backend_status(self) -> dict[str, object]:
+        status: dict[str, object] = {
+            "python": os.sys.version.split()[0],
+            "pyautogui": False,
+            "display": os.getenv("DISPLAY", ""),
+            "wayland_display": os.getenv("WAYLAND_DISPLAY", ""),
+            "session_type": os.getenv("XDG_SESSION_TYPE", ""),
+        }
+        try:
+            import pyautogui
+            status["pyautogui"] = True
+            try:
+                size = pyautogui.size()
+                status["screen"] = {"width": int(size.width), "height": int(size.height)}
+            except Exception as exc:
+                status["screen_error"] = f"{type(exc).__name__}: {exc}"
+        except Exception as exc:
+            status["import_error"] = f"{type(exc).__name__}: {exc}"
+        if not status["pyautogui"]:
+            status["install_command"] = "python -m pip install -r requirements-desktop.txt"
+        return status
+
     def _pyautogui(self):
         try:
             import pyautogui
