@@ -1009,6 +1009,114 @@ class ToolBroker:
             "result": value,
         }
 
+    @staticmethod
+    def _whatsapp_script_path() -> str:
+        return os.path.expanduser(
+            os.getenv("JENEFAR_WHATSAPP_SCRIPT", "~/jenefar-tools/whatsapp_web.py")
+        )
+
+    def _whatsapp_open_web(self) -> dict[str, Any]:
+        import shutil
+        import subprocess
+
+        script = self._whatsapp_script_path()
+        if os.path.isfile(script):
+            result = subprocess.run(
+                ["python3", script, "open"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            return {
+                "opened": result.returncode == 0,
+                "method": "jenefar-whatsapp-helper",
+                "stdout": result.stdout[-2000:],
+                "stderr": result.stderr[-2000:],
+                "returncode": result.returncode,
+            }
+
+        opener = shutil.which("xdg-open")
+        if not opener:
+            raise RuntimeError("xdg-open is not available.")
+        result = subprocess.run(
+            [opener, "https://web.whatsapp.com/"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return {
+            "opened": result.returncode == 0,
+            "method": "xdg-open",
+            "returncode": result.returncode,
+        }
+
+    def _whatsapp_send_web(self, args: dict[str, Any]) -> dict[str, Any]:
+        import shutil
+        import subprocess
+        from urllib.parse import quote
+
+        contact = str(args["contact"]).strip()
+        message = str(args["message"]).strip()
+        phone = str(args.get("phone") or "").strip()
+        if not contact and not phone:
+            raise ValueError("Provide a WhatsApp contact name or phone number.")
+
+        script = self._whatsapp_script_path()
+        if os.path.isfile(script):
+            result = subprocess.run(
+                ["python3", script, "send", contact, message],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    result.stderr.strip() or result.stdout.strip() or "WhatsApp helper failed."
+                )
+            return {
+                "sent": True,
+                "method": "jenefar-whatsapp-helper",
+                "contact": contact,
+                "message": message,
+                "stdout": result.stdout[-3000:],
+            }
+
+        if not phone:
+            raise RuntimeError(
+                "WhatsApp helper is not installed, and no phone number was provided for direct browser fallback."
+            )
+
+        normalized = "".join(ch for ch in phone if ch.isdigit())
+        if normalized.startswith("0"):
+            normalized = "91" + normalized[1:]
+        elif len(normalized) == 10:
+            normalized = "91" + normalized
+        if len(normalized) < 10:
+            raise ValueError("Invalid WhatsApp phone number.")
+
+        opener = shutil.which("xdg-open")
+        if not opener:
+            raise RuntimeError("xdg-open is not available.")
+        url = f"https://web.whatsapp.com/send?phone={normalized}&text={quote(message)}"
+        result = subprocess.run(
+            [opener, url],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return {
+            "sent": False,
+            "opened": result.returncode == 0,
+            "method": "xdg-open",
+            "phone": normalized,
+            "message": message,
+            "note": "WhatsApp Web opened with the message prefilled; the visible Send action is still required when the helper is unavailable.",
+        }
+
     def _browser_play_youtube(self, query: str) -> dict[str, Any]:
         try:
             import shutil
