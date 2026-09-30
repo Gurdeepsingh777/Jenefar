@@ -384,6 +384,12 @@ async function sendBrowserTranscript(text){
 function setupBrowserVoice(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 
+  if(micButton){
+    micButton.addEventListener("pointerdown",()=>micButton.classList.add("pressed"),{passive:true});
+    micButton.addEventListener("pointerup",()=>micButton.classList.remove("pressed"),{passive:true});
+    micButton.addEventListener("pointercancel",()=>micButton.classList.remove("pressed"),{passive:true});
+  }
+
   async function requestMicrophonePermission(){
     if(!navigator.mediaDevices?.getUserMedia){
       setVoiceInputStatus("MIC API UNSUPPORTED",false);
