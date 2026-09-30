@@ -110,17 +110,8 @@ class ContinuousVoiceRuntime:
         now = time.monotonic()
         rms = self._rms(chunk)
 
-        if not self._wake_triggered:
-            detected, _score = self._wakeword.process(
-                chunk,
-                sample_rate=self.config.sample_rate,
-            )
-            if not detected:
-                return None
-            self._wake_triggered = True
-            if self.avatar is not None:
-                self.avatar.publish("listening", "Wake word detected", level=0.12)
-
+        # Continuous VAD mode captures speech first; wake-word gating is
+        # applied to the transcript only when explicitly enabled.
         if not self._speaking:
             if rms < self.config.start_threshold:
                 return None
@@ -146,8 +137,6 @@ class ContinuousVoiceRuntime:
         ):
             pcm = np.concatenate(self._buffers).astype(np.int16).tobytes()
             self._reset_utterance()
-            if self._wakeword.available:
-                self._wake_triggered = False
             return pcm
         return None
 
@@ -291,9 +280,16 @@ class ContinuousVoiceRuntime:
 
         if self.orchestrator.state.name == "SLEEPING":
             matched_phrase = self.orchestrator.wakeword.matched_phrase(text)
-            if matched_phrase is None:
+            strict_wake = os.getenv("JENEFAR_REQUIRE_WAKE_WORD", "").strip().lower() in {
+                "1", "true", "yes"
+            }
+            if matched_phrase is None and strict_wake:
                 return
-            command = self.orchestrator.wakeword.remove_wake_phrase(text)
+            command = (
+                self.orchestrator.wakeword.remove_wake_phrase(text)
+                if matched_phrase is not None
+                else text.strip()
+            )
             if matched_phrase == "hello jenefar":
                 self._conversation_language = "Hinglish"
             response_language = self._conversation_language or "Hinglish"
