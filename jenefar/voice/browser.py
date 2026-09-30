@@ -19,7 +19,7 @@ class BrowserVoiceBridge:
     def __init__(self, orchestrator, avatar=None):
         self.orchestrator = orchestrator
         self.avatar = avatar
-        self.voice = ProviderVoiceRuntime(orchestrator, avatar=avatar)
+        self.voice = None
         self._last_text = ""
         self._last_at = 0.0
         self._repeat_window = float(
@@ -147,10 +147,6 @@ class BrowserVoiceBridge:
             try:
                 self._publish("speaking", text, task_id)
                 try:
-                    asyncio.run(self.voice.speak(text))
-                except Exception as exc:
-                    self.voice.reset_audio_health()
-                    self._publish("error", "Voice response nahi aa paya.", task_id)
                     self._publish("speaking_fallback", text, task_id)
                 finally:
                     self._publish("completed", "", task_id)
