@@ -18,3 +18,25 @@ def test_ui_settings_only_persists_allowlisted_values(tmp_path: Path):
 def test_dashboard_renders_empty_state(tmp_path: Path):
     html = render_dashboard(tmp_path / "eval.jsonl")
     assert "Jenefar Evaluation Dashboard" in html
+
+
+def test_avatar_server_serves_health_endpoint():
+    from jenefar.avatar.controller import AvatarController
+    from jenefar.avatar.server import AvatarServer
+    import urllib.request
+    import json
+
+    controller = AvatarController()
+    server = AvatarServer(controller, host="127.0.0.1", port=0)
+    # ThreadingHTTPServer assigns an ephemeral port when port=0.
+    server.port = server._server.server_address[1]
+    server.start()
+    try:
+        payload = json.loads(urllib.request.urlopen(
+            f"http://127.0.0.1:{server.port}/health", timeout=2
+        ).read().decode("utf-8"))
+        assert payload["status"] == "ok"
+        assert "avatar" in payload
+        assert "vrm_available" in payload
+    finally:
+        server.stop()
