@@ -95,6 +95,12 @@ class ProviderVoiceRuntime:
             return bool(os.getenv("GROQ_API_KEY", "").strip()) and disabled not in {
                 "1", "true", "yes"
             }
+        if provider == "edge":
+            return cls._legacy_edge_tts_available()
+        if provider == "espeak":
+            return cls._local_espeak_available()
+        if provider == "local":
+            return bool(shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip())
         return False
 
     @staticmethod
