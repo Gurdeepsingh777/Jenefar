@@ -100,6 +100,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         if path == "/realtime/tool":
             self._realtime_tool()
             return
+        if path == "/approval/reject":
+            self._approval_reject()
+            return
         if path == "/settings":
             self._settings_update()
             return
@@ -119,6 +122,28 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             200,
             "application/json; charset=utf-8",
             json.dumps(result).encode("utf-8"),
+        )
+
+    def _approval_reject(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            pending_id = str(payload.get("approve_id") or "").strip()
+            broker = self.tool_broker
+            if broker is None:
+                raise RealtimeSessionError("Tool broker is unavailable.")
+            result = broker.reject(pending_id)
+        except Exception as exc:
+            self._send(
+                400,
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(exc)}).encode("utf-8"),
+            )
+            return
+        self._send(
+            200,
+            "application/json; charset=utf-8",
+            result.encode("utf-8"),
         )
 
     def _settings_update(self) -> None:
