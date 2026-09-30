@@ -48,3 +48,11 @@ def test_voice_reports_no_audio_provider(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     status = ProviderVoiceRuntime.audio_status()
     assert status == {"stt": None, "tts": None}
+
+
+def test_voice_provider_status_line(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    assert "STT=groq/whisper-large-v3-turbo" in runtime.provider_status_line()
+    assert "TTS=groq/canopylabs/orpheus-v1-english" in runtime.provider_status_line()
