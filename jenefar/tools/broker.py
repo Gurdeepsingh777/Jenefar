@@ -540,30 +540,41 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="desktop_click_element",
-            description="Analyze the current screen and click a semantic UI element matching the user query. Requires explicit confirmation.",
+            description="Analyze the current screen, click a semantic UI element, capture a fresh screen, and optionally verify a visible postcondition. Requires explicit confirmation.",
             parameters={
                 "type": "object",
-                "properties": {"query": {"type": "string", "maxLength": 500}},
-                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "maxLength": 500},
+                    "verify": {"type": ["string", "null"], "maxLength": 500},
+                },
+                "required": ["query", "verify"],
                 "additionalProperties": False,
             },
-            handler=lambda args: self.screen_vision.locate_and_click(str(args["query"])),
+            handler=lambda args: self.screen_vision.locate_and_click(
+                str(args["query"]),
+                verify=str(args["verify"]) if args.get("verify") else None,
+            ),
             requires_confirmation=True,
             action=True,
         ))
         self.registry.register(ToolSpec(
             name="desktop_type_into_element",
-            description="Analyze the current screen, click a semantic input element, and type text into it. Requires explicit confirmation.",
+            description="Analyze the current screen, click a semantic input element, type text, capture a fresh screen, and optionally verify a visible postcondition. Requires explicit confirmation.",
             parameters={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "maxLength": 500},
                     "text": {"type": "string", "maxLength": 4000},
+                    "verify": {"type": ["string", "null"], "maxLength": 500},
                 },
-                "required": ["query", "text"],
+                "required": ["query", "text", "verify"],
                 "additionalProperties": False,
             },
-            handler=lambda args: self.screen_vision.locate_and_type(str(args["query"]), str(args["text"])),
+            handler=lambda args: self.screen_vision.locate_and_type(
+                str(args["query"]),
+                str(args["text"]),
+                verify=str(args["verify"]) if args.get("verify") else None,
+            ),
             requires_confirmation=True,
             action=True,
         ))
