@@ -231,3 +231,18 @@ def test_hinglish_stt_defaults_to_hindi(monkeypatch):
     monkeypatch.delenv("GROQ_STT_LANGUAGE", raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
     assert __import__("os").getenv("GROQ_STT_LANGUAGE") is None
+
+
+def test_workspace_root_request_maps_to_primary_root(tmp_path, monkeypatch):
+    from jenefar.workspace.policy import WorkspacePolicy
+    policy = WorkspacePolicy(roots=[str(tmp_path)])
+    assert policy.require_allowed("/") == tmp_path
+
+
+def test_llm_client_has_repeated_tool_loop_guard():
+    from jenefar.core.llm import LLMClient
+    result = LLMClient._repeated_tool_response(
+        "openrouter", "resp", "model", "role"
+    )
+    assert result.provider == "openrouter"
+    assert "repeated tool loop" in result.text.lower()
