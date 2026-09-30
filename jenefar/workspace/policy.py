@@ -17,12 +17,18 @@ class WorkspacePolicy:
         ]
         self.roots = [Path(item).expanduser().resolve() for item in [*configured, *env_roots]]
 
+    def _normalize_requested_path(self, path: str | Path) -> Path:
+        raw = str(path).strip()
+        if raw in {"", "/"}:
+            return self.roots[0]
+        return Path(path).expanduser().resolve()
+
     def allowed(self, path: str | Path) -> bool:
-        candidate = Path(path).expanduser().resolve()
+        candidate = self._normalize_requested_path(path)
         return any(candidate == root or root in candidate.parents for root in self.roots)
 
     def require_allowed(self, path: str | Path) -> Path:
-        candidate = Path(path).expanduser().resolve()
+        candidate = self._normalize_requested_path(path)
         if not self.allowed(candidate):
             roots = ", ".join(str(root) for root in self.roots)
             raise PermissionError(

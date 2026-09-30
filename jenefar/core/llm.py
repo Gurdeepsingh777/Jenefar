@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -94,6 +95,30 @@ class LLMClient:
             "content": output,
         }
 
+    @staticmethod
+    def _tool_signature(name: str, arguments: dict[str, Any]) -> str:
+        try:
+            encoded = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+        except TypeError:
+            encoded = str(arguments)
+        return f"{name}:{encoded}"
+
+    @staticmethod
+    def _repeated_tool_response(
+        provider: str,
+        response_id: str | None,
+        model: str,
+        model_role: str,
+    ) -> LLMResponse:
+        return LLMResponse(
+            "I stopped a repeated tool loop. The latest tool result is already visible in the workspace panel. "
+            "A more specific next step is needed before I run that same action again.",
+            provider,
+            response_id,
+            model=model,
+            model_role=model_role,
+        )
+
     def _complete_openai_responses(
         self,
         provider: str,
@@ -116,6 +141,7 @@ class LLMClient:
 
         request_input: Any = prompt
         last_response = None
+        tool_counts: Counter[str] = Counter()
         for _ in range(max(1, min(max_tool_rounds, 20))):
             kwargs: dict[str, Any] = {
                 "model": model,
@@ -155,7 +181,17 @@ class LLMClient:
                     arguments = json.loads(getattr(call, "arguments", "{}") or "{}")
                 except json.JSONDecodeError:
                     arguments = {}
-                output = tool_broker.invoke(getattr(call, "name", ""), arguments)
+                tool_name = getattr(call, "name", "")
+                signature = self._tool_signature(tool_name, arguments)
+                tool_counts[signature] += 1
+                if tool_counts[signature] > 1:
+                    return self._repeated_tool_response(
+                        provider,
+                        getattr(response, "id", None),
+                        model,
+                        model_role,
+                    )
+                output = tool_broker.invoke(tool_name, arguments)
                 try:
                     parsed = json.loads(output)
                 except json.JSONDecodeError:
@@ -213,6 +249,7 @@ class LLMClient:
             {"role": "user", "content": prompt},
         ]
         tools = self._chat_tools(tool_broker, allow_action_tools)
+        tool_counts: Counter[str] = Counter()
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
             kwargs: dict[str, Any] = {
@@ -270,6 +307,15 @@ class LLMClient:
                     arguments = json.loads(getattr(function, "arguments", "{}") or "{}")
                 except json.JSONDecodeError:
                     arguments = {}
+                signature = self._tool_signature(name, arguments)
+                tool_counts[signature] += 1
+                if tool_counts[signature] > 1:
+                    return self._repeated_tool_response(
+                        provider,
+                        getattr(response, "id", None),
+                        model,
+                        model_role,
+                    )
                 output = tool_broker.invoke(name, arguments)
                 try:
                     parsed = json.loads(output)
