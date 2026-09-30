@@ -22,10 +22,10 @@ class VoiceConfig:
     sample_rate: int = 16_000
     channels: int = 1
     block_ms: int = 50
-    start_threshold: float = 0.025
-    stop_threshold: float = 0.014
-    silence_ms: int = 1100
-    max_utterance_seconds: float = 10.0
+    start_threshold: float = 0.012
+    stop_threshold: float = 0.007
+    silence_ms: int = 1500
+    max_utterance_seconds: float = 14.0
 
 
 class ContinuousVoiceRuntime:
