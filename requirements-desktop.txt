@@ -1,3 +1,5 @@
 # Desktop automation only. Kept separate from heavyweight optional ML/wake-word extras.
 pyautogui>=0.9.54
 python3-Xlib>=0.15; platform_system == "Linux"
+Pillow>=11.0.0
+pyscreeze>=1.0.1
