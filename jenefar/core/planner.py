@@ -102,15 +102,17 @@ class Planner:
             )
 
         if any(x in t for x in (
-            "schedule", "remind me", "every day", "every hour", "every week",
-            "watch for", "when this happens", "trigger an event", "event watcher",
+            "remember", "save in memory", "store in memory", "recall from memory",
+            "procedure", "playbook", "schedule", "remind me", "every day",
+            "every hour", "every week", "watch for", "when this happens",
+            "trigger an event", "event watcher",
         )):
             return self._make_plan(
                 text,
-                "scheduling",
-                "research",
-                confidence=0.96,
-                reason="scheduler/event keyword match",
+                "utility",
+                "utility",
+                confidence=0.97,
+                reason="persistent memory/scheduler keyword match",
                 needs_tool=True,
             )
 
