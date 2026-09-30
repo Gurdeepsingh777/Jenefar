@@ -45,6 +45,12 @@ class ProviderVoiceRuntime:
             return bool(os.getenv("GROQ_API_KEY", "").strip())
         return False
 
+    @staticmethod
+    def _native_tts_enabled() -> bool:
+        return os.getenv("JENEFAR_ENABLE_NATIVE_TTS", "").strip().lower() in {
+            "1", "true", "yes"
+        }
+
     @classmethod
     def audio_status(cls) -> dict[str, dict | None]:
         stt_providers = cls._configured_audio_providers()
