@@ -30,8 +30,8 @@ class ProviderVoiceRuntime:
     def _configured_audio_providers(cls) -> list[str]:
         raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
-        valid = [name for name in ("openai", "groq") if name in requested]
-        ordered = valid or ["openai", "groq"]
+        ordered = requested or ["openai", "groq"]
+        ordered = [name for name in ordered if name in ("openai", "groq")]
         return [name for name in ordered if cls._provider_configured(name)]
 
     @classmethod
