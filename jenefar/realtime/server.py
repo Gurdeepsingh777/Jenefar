@@ -68,13 +68,23 @@ def create_ephemeral_session(tool_broker: ToolBroker | None = None) -> dict[str,
     return {"value": value, "model": model}
 
 
-def invoke_realtime_tool(name: str, arguments: dict[str, Any]) -> str:
-    """Execute only read-only tools exposed to browser Realtime sessions."""
-    broker = ToolBroker()
-    allowed = {item["name"] for item in broker.schemas(
-        allow_action_tools=False,
-        include_confirmation_tools=False,
-    )}
-    if name not in allowed:
-        raise RealtimeSessionError(f"Realtime tool '{name}' is not exposed by policy.")
+def invoke_realtime_tool(
+    name: str,
+    arguments: dict[str, Any],
+    tool_broker: ToolBroker | None = None,
+) -> str:
+    """Invoke a Realtime tool through the session's persistent broker.
+
+    A persistent broker is required for action/approval tools because pending
+    approval IDs are stored on the broker instance. Direct callers without a
+    broker are limited to read-only, non-confirmation tools.
+    """
+    broker = tool_broker or ToolBroker()
+    spec = broker.registry.get(name)
+
+    if tool_broker is None and (spec.action or spec.requires_confirmation):
+        raise RealtimeSessionError(
+            f"Realtime tool '{name}' requires the active avatar session broker."
+        )
+
     return broker.invoke(name, arguments)
