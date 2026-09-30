@@ -113,3 +113,21 @@ def test_roman_hinglish_output_is_explicitly_enforced():
     assert "def enforce_hinglish" in speech
     assert "enforce_hinglish(reply)" in browser
     assert "LANGUAGE RULE: Output must be Roman Hinglish only." in llm
+
+
+def test_browser_bridge_does_not_construct_native_audio_output():
+    voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert "self.voice = None" in voice
+    assert "asyncio.run(self.voice.speak" not in voice
+
+
+def test_orchestrator_does_not_append_provider_metadata_to_user_output():
+    orch = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert "provider_label" not in orch
+
+
+def test_final_layout_has_dedicated_regions():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert ".avatar-shell{inset:0 350px 0 170px!important" in css
+    assert "#activity-panel{right:20px;top:440px;width:350px" in css
+    assert ".chat-glass{left:210px;top:238px;width:330px;height:330px" in css
