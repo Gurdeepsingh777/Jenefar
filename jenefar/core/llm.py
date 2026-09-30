@@ -53,7 +53,7 @@ class LLMClient:
         config = self.providers.CONFIGS[provider]
         from openai import OpenAI
 
-        kwargs = {"api_key": os.environ[config.api_key_env]}
+        kwargs = {"api_key": self.providers.api_key(provider)}
         if config.base_url:
             kwargs["base_url"] = config.base_url
         self._clients[provider] = OpenAI(**kwargs)
