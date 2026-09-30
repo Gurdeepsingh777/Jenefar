@@ -17,6 +17,79 @@
 </head>
 <body>
   <main id="stage" data-state="idle">
+    <div class="siri-topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark">J</div>
+        <div><div class="brand-name">JENEFAR</div><div class="brand-sub">YOUR AI COMPANION</div></div>
+      </div>
+      <div class="top-clock" id="ui-clock">--:--</div>
+      <div class="top-status">
+        <span class="status-dot"></span><span>ONLINE</span>
+      </div>
+    </div>
+    <nav class="side-nav" aria-label="Primary">
+      <button class="nav-item active" type="button" data-nav="home"><span>⌂</span><b>Home</b></button>
+      <button class="nav-item" type="button" data-nav="chat"><span>◌</span><b>Chat</b></button>
+      <button class="nav-item" type="button" data-nav="voice"><span>◉</span><b>Voice</b></button>
+      <button class="nav-item" type="button" data-nav="vision"><span>◈</span><b>Vision</b></button>
+      <button class="nav-item" type="button" data-nav="apps"><span>▦</span><b>Apps</b></button>
+      <button class="nav-item" type="button" data-nav="web"><span>◎</span><b>Web</b></button>
+      <button class="nav-item" type="button" data-nav="notes"><span>▤</span><b>Notes</b></button>
+      <button class="nav-item" type="button" data-nav="automation"><span>◷</span><b>Automation</b></button>
+      <button class="nav-item" type="button" data-nav="settings"><span>⚙</span><b>Settings</b></button>
+    </nav>
+    <section class="hero-copy">
+      <div class="hero-kicker">LOCAL AI • LIVE WORKFLOW</div>
+      <h1>Talk to Jenefar.<br><span>Let the system work.</span></h1>
+      <p>Voice, tools, research and coding workflows — visible in one premium workspace.</p>
+    </section>
+    <aside class="system-card">
+      <div class="card-title">SYSTEM STATUS</div>
+      <div class="status-grid">
+        <div><span class="ring-meter cpu">32%</span><small>CPU</small></div>
+        <div><span class="ring-meter ram">46%</span><small>RAM</small></div>
+        <div><span class="ring-meter gpu">28%</span><small>GPU</small></div>
+      </div>
+      <div class="service-list">
+        <div><span class="service-light"></span>Online <b id="service-online">●</b></div>
+        <div><span class="service-light"></span>Voice <b id="service-voice">●</b></div>
+        <div><span class="service-light"></span>VRM <b id="service-vrm">●</b></div>
+      </div>
+    </aside>
+    <section class="command-stack">
+      <button type="button" class="command-chip" data-command="open app">▣ <span>Open App</span></button>
+      <button type="button" class="command-chip" data-command="search web">⌕ <span>Search Web</span></button>
+      <button type="button" class="command-chip" data-command="play music">♫ <span>Play Music</span></button>
+      <button type="button" class="command-chip" data-command="smart home">⌂ <span>Smart Home</span></button>
+    </section>
+    <section class="chat-glass">
+      <div class="chat-head"><span>CHAT WITH JENEFAR</span><button type="button" id="clear-activity">CLEAR</button></div>
+      <div class="chat-log" id="chat-log">
+        <div class="chat-row bot"><div class="mini-avatar">J</div><div class="bubble">Hello! I’m Jenefar.<br><span>How can I help you today?</span></div></div>
+        <div class="chat-row user"><div class="bubble user-bubble">Tell me something about your system.</div></div>
+      </div>
+      <form class="chat-composer" id="chat-form">
+        <input id="chat-input" autocomplete="off" placeholder="Type a message…">
+        <button type="submit">➤</button>
+      </form>
+    </section>
+    <section class="quick-apps">
+      <div class="card-title">QUICK APPS</div>
+      <div class="app-grid">
+        <button type="button" data-command="open youtube">▶<small>YouTube</small></button>
+        <button type="button" data-command="open gmail">✉<small>Gmail</small></button>
+        <button type="button" data-command="open maps">⌖<small>Maps</small></button>
+        <button type="button" data-command="open whatsapp">◉<small>WhatsApp</small></button>
+        <button type="button" data-command="open vscode">⌘<small>VS Code</small></button>
+        <button type="button" data-command="open terminal">▣<small>Terminal</small></button>
+        <button type="button" data-command="open browser">◌<small>Browser</small></button>
+        <button type="button" data-command="open files">▱<small>Files</small></button>
+      </div>
+    </section>
+    <section class="media-card">
+      <div class="card-title">NOW PLAYING</div>
+      <div class="media-main"><div class="cover-art">♪</div><div class="media-meta"><strong id="now-playing-title">Jenefar Voice</strong><span>Workspace audio</span><div class="media-wave"></div></div><button type="button" id="media-pause">Ⅱ</button></div>
+    </section>
     <div class="backdrop"></div>
     <canvas id="particles" aria-hidden="true"></canvas>
     <canvas id="vrm-canvas" aria-hidden="true"></canvas>
@@ -91,13 +164,26 @@
       </div>
     </section>
 
-    <aside id="activity-panel" aria-label="Jenefar live workflow">
+    <aside id="activity-panel" aria-label="Jenefar live workflow" class="workspace-card">
+      <div class="activity-header">
+        <div><strong>LIVE WORKSPACE</strong><span id="activity-connection">ONLINE • TASK STREAM</span></div>
+        <button id="clear-workspace" type="button">CLEAR</button>
+      </div>
+      <div class="activity-stats"><div><span>RUNNING</span><b id="activity-running">0</b></div><div><span>QUEUE</span><b id="activity-queued">0</b></div><div><span>DONE</span><b id="activity-done">0</b></div><div><span>ERROR</span><b id="activity-errors">0</b></div></div>
+      <div class="activity-filters" role="tablist" aria-label="Workflow filters">
+        <button type="button" data-activity-filter="all" data-active="true">ALL</button>
+        <button type="button" data-activity-filter="running">RUNNING</button>
+        <button type="button" data-activity-filter="results">RESULTS</button>
+        <button type="button" data-activity-filter="errors">ERRORS</button>
+      </div>
+      <div id="activity-list"></div>
+    </aside>
       <div class="activity-header">
         <div>
           <strong>JENEFAR WORKSPACE</strong>
           <span id="activity-connection">LIVE</span>
         </div>
-        <button id="clear-activity" type="button">CLEAR</button>
+        <button id="clear-activity" type="button" hidden>CLEAR</button>
       </div>
       <div class="activity-stats">
         <div><span>RUNNING</span><b id="activity-running">0</b></div>
@@ -113,13 +199,13 @@
       </div>
       <div id="activity-list"></div>
     </aside>
-    <div class="realtime-controls">
-      <button id="mic-button" type="button">MIC ON</button>
+    <div class="realtime-controls premium-controls">
+      <button id="mic-button" type="button" class="talk-button">● TALK</button>
       <span id="voice-input-status">BROWSER MIC: STARTING</span>
       <span id="realtime-state">LOCAL VOICE ACTIVE</span>
       <span id="vrm-status">VRM CHECKING</span>
     </div>
-    <div class="mode-pill">3D VRM • LIVE WORKFLOW • VOICE</div>
+    <div class="bottom-dock"><button type="button" class="dock-btn" id="dock-talk">◉<span>Talk</span></button><button type="button" class="dock-btn" id="dock-vision">◈<span>Vision</span></button><button type="button" class="orb-button" id="dock-orb"><span>J</span></button><button type="button" class="dock-btn" id="dock-chat">▢<span>Chat</span></button><button type="button" class="dock-btn" id="dock-more">▦<span>More</span></button></div>
   </main>
   <script src="/app.js"></script>
   <script type="module" src="/vrm.js"></script>
