@@ -9,6 +9,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--voice", action="store_true", help="run bounded microphone -> STT -> agent -> TTS mode")
     parser.add_argument("--voice-continuous", action="store_true", help="run continuous microphone VAD -> STT -> agent -> TTS mode")
+    parser.add_argument("--text", action="store_true", help="force typed CLI mode instead of the default voice-first runtime")
     parser.add_argument("--avatar", action="store_true", help="show Jenefar's local real-time particle avatar UI")
     parser.add_argument("--realtime", action="store_true", help="launch the avatar UI for browser Realtime speech-to-speech")
     parser.add_argument("--desktop", action="store_true", help="launch Jenefar inside the optional native desktop shell")
@@ -254,6 +255,20 @@ def main() -> int:
     if args.online_only:
         import os
         os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
+
+    if not args.text and not any(
+        getattr(args, name)
+        for name in (
+            "doctor", "provider_status", "online_only", "voice", "voice_continuous",
+            "voice_auto", "avatar", "realtime", "desktop", "discover_tools",
+            "index_file", "index_dir", "index_document", "index_url", "index_github",
+            "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
+            "evaluation_report", "trace_report", "runtime_health", "self_healing_policy",
+            "evaluation_dashboard", "setup_assets", "wakeword_prepare_validation",
+            "wakeword_prepare", "wakeword_train", "analyze_github", "plan_github",
+        )
+    ):
+        args.voice_auto = True
 
     if args.voice_auto:
         import os
