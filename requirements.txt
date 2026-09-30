@@ -6,3 +6,5 @@ pypdf>=5.0
 python-docx>=1.1
 numpy>=2.0.2
 sounddevice>=0.5.1
+edge-tts>=7.0.0
+SpeechRecognition>=3.14.0
