@@ -52,6 +52,19 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/health":
+            payload = {
+                "status": "ok",
+                "avatar": self.controller.current(),
+                "vrm_available": bool(self.vrm_path and self.vrm_path.is_file()),
+            }
+            self._send(
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            )
+            return
+
         if path == "/evaluation":
             self._send(200, "text/html; charset=utf-8", render_dashboard().encode("utf-8"))
             return
@@ -215,6 +228,7 @@ class AvatarServer:
             self.vrm_path = (Path.cwd() / self.vrm_path).resolve()
 
         self._server = ThreadingHTTPServer((host, port), _AvatarHandler)
+        self.host, self.port = self._server.server_address[0], self._server.server_address[1]
         self._server.RequestHandlerClass.controller = controller
         self._server.RequestHandlerClass.vrm_path = self.vrm_path
         self._server.RequestHandlerClass.tool_broker = tool_broker

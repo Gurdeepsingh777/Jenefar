@@ -44,22 +44,38 @@ class ProviderVoiceRuntime:
 
     @classmethod
     def audio_status(cls) -> dict[str, dict | None]:
-        providers = cls._configured_audio_providers()
-        primary = providers[0] if providers else None
-        fallback = providers[1:] if len(providers) > 1 else []
+        stt_providers = cls._configured_audio_providers()
+        tts_providers = [
+            name
+            for name in stt_providers
+            if cls._tts_configured(name)
+        ]
         result: dict[str, dict | None] = {"stt": None, "tts": None}
-        if primary:
+
+        if stt_providers:
             result["stt"] = {
-                "provider": primary,
-                "model": cls._stt_model(primary),
-                "fallback": fallback,
+                "provider": stt_providers[0],
+                "model": cls._stt_model(stt_providers[0]),
+                "fallback": stt_providers[1:],
             }
+        if tts_providers:
             result["tts"] = {
-                "provider": primary,
-                "model": cls._tts_model(primary),
-                "fallback": fallback,
+                "provider": tts_providers[0],
+                "model": cls._tts_model(tts_providers[0]),
+                "fallback": tts_providers[1:],
             }
         return result
+
+    @classmethod
+    def _tts_configured(cls, provider: str) -> bool:
+        if provider == "openai":
+            return bool(cls._direct_openai_key())
+        if provider == "groq":
+            disabled = os.getenv("JENEFAR_DISABLE_GROQ_TTS", "").strip().lower()
+            return bool(os.getenv("GROQ_API_KEY", "").strip()) and disabled not in {
+                "1", "true", "yes"
+            }
+        return False
 
     @staticmethod
     def _stt_model(provider: str) -> str:
@@ -85,17 +101,19 @@ class ProviderVoiceRuntime:
             order = ["openai", "groq"]
         return [name for name in order if self._provider_configured(name)]
 
-    def _cooldown_seconds(self, exc: Exception) -> float:
-        message = str(exc).lower()
-        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
-            return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
-        return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
-
-    def _mark_failed_provider(self, provider: str, exc: Exception) -> None:
-        self._audio_pool.cooldown(provider, self._cooldown_seconds(exc))
+    def _tts_provider_order(self) -> list[str]:
+        return [
+            name
+            for name in self._provider_order()
+            if self._tts_configured(name)
+        ]
 
     @staticmethod
-    def _wav_bytes(pcm: bytes, sample_rate: int = 16_000, channels: int = 1) -> io.BytesIO:
+    def _wav_bytes(
+        pcm: bytes,
+        sample_rate: int = 16_000,
+        channels: int = 1,
+    ) -> io.BytesIO:
         output = io.BytesIO()
         with wave.open(output, "wb") as wav:
             wav.setnchannels(channels)
@@ -105,6 +123,15 @@ class ProviderVoiceRuntime:
         output.seek(0)
         output.name = "jenefar_utterance.wav"
         return output
+
+    def _cooldown_seconds(self, exc: Exception) -> float:
+        message = str(exc).lower()
+        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
+            return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
+        return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
+
+    def _mark_failed_provider(self, provider: str, exc: Exception) -> None:
+        self._audio_pool.cooldown(provider, self._cooldown_seconds(exc))
 
     @staticmethod
     def _record_microphone(seconds: int) -> bytes:
@@ -294,7 +321,7 @@ class ProviderVoiceRuntime:
                     pass
 
     async def speak(self, text: str) -> None:
-        providers = self._provider_order()
+        providers = self._tts_provider_order()
         if not providers:
             raise RuntimeError(
                 "No text-to-speech provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
@@ -312,6 +339,24 @@ class ProviderVoiceRuntime:
                 return
             except Exception as exc:
                 last_error = exc
+                # Groq Orpheus can reject the request with a model-terms error
+                # even though the API key itself is valid. Treat this as a
+                # provider capability failure rather than repeatedly retrying it.
+                message = str(exc).lower()
+                if provider == "groq" and (
+                    "terms" in message
+                    or "model_terms_required" in message
+                ):
+                    self._mark_failed_provider(
+                        provider,
+                        RuntimeError("groq tts model terms required"),
+                    )
+                    raise RuntimeError(
+                        "Groq TTS is unavailable because the Orpheus model terms "
+                        "have not been accepted for this organization. "
+                        "Enable JENEFAR_DISABLE_GROQ_TTS=true or accept the model "
+                        "terms in the Groq console, then restart Jenefar."
+                    ) from exc
                 if not is_retryable_provider_error(exc):
                     raise
                 self._mark_failed_provider(provider, exc)
