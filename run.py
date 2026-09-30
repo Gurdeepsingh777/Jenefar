@@ -294,6 +294,7 @@ def main() -> int:
 
         runtime_url = avatar_server.url
         print(f"[JENEFAR] Avatar UI: {runtime_url}")
+        print(f"[JENEFAR] Avatar health: {runtime_url}health")
         print("[JENEFAR] Opening Jenefar UI in the default browser...")
         try:
             webbrowser.open(runtime_url)
