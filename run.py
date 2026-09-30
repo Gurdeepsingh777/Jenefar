@@ -278,7 +278,6 @@ def main() -> int:
 
         from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
-        from jenefar.voice.continuous import ContinuousVoiceRuntime
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
