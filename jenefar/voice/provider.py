@@ -85,6 +85,10 @@ class ProviderVoiceRuntime:
             order = ["openai", "groq"]
         return [name for name in order if self._provider_configured(name)]
 
+    def _tts_provider_order(self) -> list[str]:
+        order = self._provider_order()
+        return [name for name in order if self._tts_usable_provider(name)]
+
     def _cooldown_seconds(self, exc: Exception) -> float:
         message = str(exc).lower()
         if "insufficient_quota" in message or "credit_balance_exhausted" in message:
@@ -294,7 +298,7 @@ class ProviderVoiceRuntime:
                     pass
 
     async def speak(self, text: str) -> None:
-        providers = self._provider_order()
+        providers = self._tts_provider_order()
         if not providers:
             raise RuntimeError(
                 "No text-to-speech provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
