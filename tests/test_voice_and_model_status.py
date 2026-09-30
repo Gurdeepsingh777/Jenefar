@@ -99,3 +99,16 @@ def test_groq_stt_request_uses_accuracy_options(monkeypatch):
     assert captured["language"] == "en"
     assert captured["temperature"] == 0.0
     assert "Jenefar" in captured["prompt"]
+
+
+def test_wakeword_normalizes_common_jennifer_variant():
+    from jenefar.voice.wakeword import WakeWord
+    wake = WakeWord(["Hi Jenefar", "Hello Jenefar"])
+    assert wake.matched_phrase("Hello Jennifer") == "hello jenefar"
+    assert wake.remove_wake_phrase("Hello Jennifer") == ""
+
+
+def test_hinglish_stt_defaults_to_hindi(monkeypatch):
+    monkeypatch.delenv("GROQ_STT_LANGUAGE", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
+    assert __import__("os").getenv("GROQ_STT_LANGUAGE") is None
