@@ -117,7 +117,7 @@ def test_roman_hinglish_output_is_explicitly_enforced():
 
 def test_browser_bridge_does_not_construct_native_audio_output():
     voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
-    assert "self.voice = None" in voice
+    assert "ProviderVoiceRuntime" not in voice
     assert "asyncio.run(self.voice.speak" not in voice
 
 
