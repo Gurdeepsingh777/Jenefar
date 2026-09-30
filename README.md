@@ -2,6 +2,18 @@
 
 Jenefar ek modular, voice-first multi-agent AI assistant hai jo dheere-dheere ek powerful desktop automation, coding, cybersecurity, research, robotics aur authorized tool-execution platform ke roop me grow karne ke liye design kiya gaya hai.
 
+## Desktop automation setup
+
+For screen capture, mouse/keyboard control, and GUI automation, install only the desktop dependencies:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements-desktop.txt
+python -c "import pyautogui; print(pyautogui.size())"
+```
+
+On Linux, the broad `requirements-optional.txt` bundle intentionally skips the native wake-word and WebRTC extras on Python 3.14 because their published Linux wheels do not cover that interpreter. Desktop control does not require those packages.
+
 ## Current release
 
 Abhi Jenefar ke core me ye features available hain:
