@@ -9,7 +9,7 @@
 *{box-sizing:border-box}
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:Inter,system-ui,sans-serif}
 body{color:var(--text)}
-#stage{position:relative;width:100%;height:100%;isolation:isolate}
+#stage{position:relative;width:100%;height:100%;isolation:isolate;cursor:default}
 .backdrop{position:absolute;inset:0;background:
  radial-gradient(circle at 50% 45%,rgba(83,44,145,.28),transparent 30%),
  radial-gradient(circle at 25% 20%,rgba(32,200,255,.10),transparent 24%),
@@ -520,3 +520,8 @@ body.vrm-loaded #photo-avatar{display:none}
 /* Prevent invisible/decorative canvas surfaces from stealing pointer input. */
 #particles,#earth-canvas,.holo-particles,.holo-earth,.backdrop,.sci-fi-bg,.room-lights,.chair-silhouette{pointer-events:none!important}
 .chat-glass input,.chat-glass button,.command-chip,.quick-apps button,.nav-item,.talk-button,.dock-btn,.orb-button,.workspace-card button,.activity-filters button{position:relative;z-index:100;pointer-events:auto!important}
+
+
+/* Guarantee visual layers never intercept user interaction. */
+#particles,#vrm-canvas,.backdrop,.sci-fi-bg,.room-lights,.holo-particles,.holo-earth,.chair-silhouette,.avatar-shell,.photo-avatar{pointer-events:none!important}
+.siri-topbar,.side-nav,.hero-copy,.system-card,.command-stack,.chat-glass,.quick-apps,.media-card,.workspace-card,.realtime-controls,.bottom-dock{pointer-events:auto!important}
