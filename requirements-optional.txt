@@ -1,6 +1,8 @@
 # Optional native wake-word / desktop / robotics integrations
+# Desktop-only setup: pip install -r requirements-desktop.txt
+# Python 3.14 on Linux skips wake-word/WebRTC extras whose published wheels do not support cp314.
 # Wake-word training also needs the pinned Piper sample generator dependencies.
-openwakeword>=0.6.0
+openwakeword>=0.6.0; python_version < "3.14" or platform_system != "Linux"
 pyautogui>=0.9.54
 pyserial>=3.5
 sentence-transformers>=5.0
@@ -10,6 +12,6 @@ soundfile>=0.12.1
 audiomentations>=0.37.0
 espeak-phonemizer>=1.0.0
 torch>=2.0
-webrtcvad>=2.0.10
+webrtcvad>=2.0.10; python_version < "3.14"
 shazamio>=0.8.1
 yt-dlp>=2025.1.1
