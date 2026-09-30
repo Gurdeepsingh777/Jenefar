@@ -575,3 +575,38 @@ body.vrm-loaded #photo-avatar{display:none}
 @media (max-width:1180px){
   #stage{min-width:1000px}
 }
+
+
+/* Final cinematic content cleanup */
+.hero-copy{width:300px!important;max-width:300px!important}
+.hero-copy p{max-width:290px!important;line-height:1.45}
+.chat-glass{background:linear-gradient(180deg,rgba(8,20,38,.88),rgba(4,11,23,.94))!important;backdrop-filter:blur(22px);border-color:rgba(64,202,255,.22)}
+.chat-log{padding:12px!important}
+.chat-row{margin:7px 0!important}
+.chat-row.bot .bubble{max-width:92%!important;background:rgba(28,72,130,.48)!important;border:1px solid rgba(87,202,255,.18)!important}
+.chat-row.user .bubble{max-width:88%!important}
+#activity-panel{background:linear-gradient(180deg,rgba(7,15,29,.92),rgba(3,9,18,.96))!important}
+#activity-list{overflow:auto!important;scrollbar-width:thin}
+.activity-item{padding:9px 10px!important;margin:6px 0!important}
+.activity-item .activity-text{font-size:11px!important;line-height:1.38!important;max-height:4.2em;overflow:hidden}
+.activity-item details pre{white-space:pre-wrap;word-break:break-word;font-size:10px}
+#stage{
+  background:
+    radial-gradient(circle at 50% 45%,rgba(32,119,255,.12),transparent 24%),
+    radial-gradient(circle at 78% 29%,rgba(110,55,255,.09),transparent 22%),
+    radial-gradient(circle at 24% 18%,rgba(30,212,255,.08),transparent 20%),
+    linear-gradient(180deg,#020611 0%,#020914 48%,#01040a 100%)!important;
+}
+.sci-fi-bg{opacity:.96!important}
+.room-lights{opacity:.72}
+.avatar-shell:before{content:"";position:absolute;left:50%;top:18%;width:38%;aspect-ratio:1;transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle,rgba(60,211,255,.11),rgba(73,72,255,.05) 42%,transparent 72%);filter:blur(18px);pointer-events:none}
+.holo-earth{filter:drop-shadow(0 0 36px rgba(42,199,255,.24))}
+.command-stack .command-chip{height:42px}
+.bottom-dock{backdrop-filter:blur(20px)!important}
+@media(min-width:1400px){
+  .chat-glass{left:205px;top:252px;width:340px;height:350px}
+  .hero-copy{left:205px;top:92px}
+  .system-card{right:20px;top:76px;width:320px}
+  .command-stack{right:20px;top:252px;width:320px}
+  #activity-panel{right:20px;top:440px;width:350px}
+}
