@@ -138,6 +138,28 @@ class ToolBroker:
             handler=lambda _args: {"closed": True, "message": "Offline capability notice closed."},
         ))
         self.registry.register(ToolSpec(
+            name="whatsapp_open_web",
+            description="Open the logged-in WhatsApp Web session in the visible browser. Uses Jenefar's WhatsApp helper when available, otherwise opens web.whatsapp.com.",
+            handler=lambda _args: self._whatsapp_open_web(),
+        ))
+        self.registry.register(ToolSpec(
+            name="whatsapp_send_web",
+            description="Send a WhatsApp message through the user's visible/logged-in WhatsApp Web session. Prefer a contact name when known; the helper uses the existing browser session. Explicit confirmation is required.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "contact": {"type": "string", "maxLength": 200},
+                    "message": {"type": "string", "maxLength": 4000},
+                    "phone": {"type": ["string", "null"], "maxLength": 32},
+                },
+                "required": ["contact", "message", "phone"],
+                "additionalProperties": False,
+            },
+            handler=self._whatsapp_send_web,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
             name="local_time",
             description="Return the current local computer date, time, timezone, and ISO timestamp. Safe read-only system information; no confirmation is required.",
             parameters={
