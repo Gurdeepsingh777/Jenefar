@@ -17,8 +17,8 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(27, 1, 0.01, 100);
-  camera.position.set(0, 1.35, 3.25);
+  const camera = new THREE.PerspectiveCamera(22, 1, 0.01, 100);
+  camera.position.set(0, 1.18, 4.6);
 
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.position.set(1.5, 2.2, 3.5);
@@ -54,7 +54,7 @@ if (canvas) {
       // The bundled VRM sample already faces the standard camera direction.
       // The previous extra PI rotation showed its back to the user.
       vrm.scene.rotation.y = 0;
-      vrm.scene.position.y = -0.95;
+      vrm.scene.position.y = 0;
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");
       setVRMStatus("VRM AVATAR");
@@ -107,7 +107,7 @@ if (canvas) {
       else if (targetEmotion === "focused") setExpression("relaxed", 0.18);
     }
     if (vrm) {
-      vrm.scene.position.y = -0.95 + Math.sin(performance.now() * 0.0012) * 0.008;
+      vrm.scene.position.y = Math.sin(performance.now() * 0.0012) * 0.004;
       vrm.scene.rotation.y = Math.sin(performance.now() * 0.0004) * 0.025;
       vrm.update(1 / 60);
     }
