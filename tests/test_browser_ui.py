@@ -131,3 +131,22 @@ def test_final_layout_has_dedicated_regions():
     assert ".avatar-shell{inset:0 350px 0 170px!important" in css
     assert "#activity-panel{right:20px;top:440px;width:350px" in css
     assert ".chat-glass{left:210px;top:238px;width:330px;height:330px" in css
+
+
+def test_browser_speech_is_the_only_playback_path():
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "ProviderVoiceRuntime" not in bridge
+    assert "speechSynthesis" in app
+    assert 'utterance.lang="en-IN"' in app
+
+
+def test_dashboard_nav_buttons_have_runtime_actions():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'target=btn.dataset.nav||"home"' in js
+    assert "voice:()=>document.getElementById(" in js
+
+
+def test_no_internal_model_metadata_is_appended_to_spoken_output():
+    orch = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert "[Model:" not in orch
