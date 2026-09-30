@@ -47,3 +47,12 @@ def test_premium_ui_has_reference_dashboard_sections():
         "command-stack", "bottom-dock", "realtime-controls",
     ):
         assert marker in html
+
+
+def test_mic_button_state_helper_and_permission_flow_are_present():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "function setMicButton(active, busy=false)" in js
+    assert 'navigator.mediaDevices.getUserMedia({audio:true,video:false})' in js
+    assert '.talk-button.is-active' in css
+    assert '.talk-button.is-busy' in css
