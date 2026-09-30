@@ -310,6 +310,74 @@ class ProviderVoiceRuntime:
             except FileNotFoundError:
                 pass
 
+    async def _speak_edge(self, text: str) -> None:
+        """Legacy edge-tts -> mpv/ffplay playback path."""
+        import edge_tts
+
+        voice = os.getenv("JENEFAR_EDGE_TTS_VOICE", "en-IN-NeerjaNeural").strip()
+        player = shutil.which("mpv") or shutil.which("ffplay")
+        if not player:
+            raise RuntimeError("edge-tts requires mpv or ffplay.")
+
+        animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
+        output_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp3", prefix="jenefar_edge_", delete=False) as tmp:
+                output_path = tmp.name
+            await edge_tts.Communicate(text, voice).save(output_path)
+            if Path(player).name == "mpv":
+                command = [player, "--no-video", "--really-quiet", output_path]
+            else:
+                command = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", output_path]
+            result = await asyncio.to_thread(
+                subprocess.run, command, capture_output=True, check=False, timeout=90
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "edge-tts playback failed: "
+                    f"{result.stderr.decode(errors='ignore').strip() or result.returncode}"
+                )
+        finally:
+            if animation is not None:
+                animation.cancel()
+                try:
+                    await animation
+                except asyncio.CancelledError:
+                    pass
+            if output_path:
+                try:
+                    os.unlink(output_path)
+                except FileNotFoundError:
+                    pass
+
+    async def _speak_espeak(self, text: str) -> None:
+        """Legacy offline espeak fallback."""
+        binary = shutil.which("espeak-ng") or shutil.which("espeak")
+        if not binary:
+            raise RuntimeError("espeak/espeak-ng is not installed.")
+        rate = os.getenv("JENEFAR_ESPEAK_RATE", "165")
+        animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [binary, "-s", rate, text],
+                capture_output=True,
+                check=False,
+                timeout=90,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "espeak failed: "
+                    f"{result.stderr.decode(errors='ignore').strip() or result.returncode}"
+                )
+        finally:
+            if animation is not None:
+                animation.cancel()
+                try:
+                    await animation
+                except asyncio.CancelledError:
+                    pass
+
     async def _speak_openai(self, text: str) -> None:
         from openai import AsyncOpenAI
         from openai.helpers import LocalAudioPlayer
@@ -387,6 +455,10 @@ class ProviderVoiceRuntime:
                     await self._speak_openai(text)
                 elif provider == "groq":
                     await self._speak_groq(text)
+                elif provider == "edge":
+                    await self._speak_edge(text)
+                elif provider == "espeak":
+                    await self._speak_espeak(text)
                 else:
                     await self._speak_local(text)
                 return
@@ -404,12 +476,8 @@ class ProviderVoiceRuntime:
                         provider,
                         RuntimeError("groq tts model terms required"),
                     )
-                    raise RuntimeError(
-                        "Groq TTS is unavailable because the Orpheus model terms "
-                        "have not been accepted for this organization. "
-                        "Enable JENEFAR_DISABLE_GROQ_TTS=true or accept the model "
-                        "terms in the Groq console, then restart Jenefar."
-                    ) from exc
+                    print("[JENEFAR] Groq TTS terms unavailable; moving to local voice fallback.")
+                    continue
                 if not is_retryable_provider_error(exc):
                     raise
                 self._mark_failed_provider(provider, exc)
