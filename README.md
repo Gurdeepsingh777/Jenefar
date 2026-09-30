@@ -826,4 +826,17 @@ python run.py
 Local/offline mode ke liye Ollama ya kisi OpenAI-compatible local LLM server ko start karke `python run.py` chala sakte ho.
 
 Agar sirf CLI/dependency verification karni ho, `python run.py --doctor` sufficient hai.
+## Model/provider configuration
+
+Jenefar supports an online-first model setup so your Kali CPU does not carry the full LLM workload when an OpenAI API key is configured. Put secrets only in `.env` (never commit them):
+
+~~~bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=your_model_here
+JENEFAR_MODEL_FAST=your_fast_model_here
+JENEFAR_MODEL_CODING=your_coding_model_here
+JENEFAR_MODEL_RESEARCH=your_research_model_here
+~~~
+
+Role-specific variables override `OPENAI_MODEL`. When `OPENAI_API_KEY` is unavailable or the online provider cannot be reached, Jenefar falls back to the detected local OpenAI-compatible model (for example Ollama).
 
