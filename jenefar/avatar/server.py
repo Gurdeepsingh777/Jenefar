@@ -228,6 +228,7 @@ class AvatarServer:
             self.vrm_path = (Path.cwd() / self.vrm_path).resolve()
 
         self._server = ThreadingHTTPServer((host, port), _AvatarHandler)
+        self.host, self.port = self._server.server_address[0], self._server.server_address[1]
         self._server.RequestHandlerClass.controller = controller
         self._server.RequestHandlerClass.vrm_path = self.vrm_path
         self._server.RequestHandlerClass.tool_broker = tool_broker
