@@ -42,17 +42,37 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 
 cp .env.example .env
-# .env me apni OpenAI API key daalo
+# .env me apne available provider keys daalo.
 python run.py
 ```
 
-Phir type karo:
+### One-command runtime
 
-```text
-Hi Jenefar
+`python run.py` ab default launcher hai. Ye ek hi process me:
+
+- local Jenefar avatar web UI start karta hai aur browser me kholta hai
+- continuous microphone VAD + STT start karta hai
+- specialist multi-agent orchestrator use karta hai
+- memory, knowledge graph, scheduler, approval-gated tools, vision/desktop/robotics connectors aur runtime diagnostics ko wahi orchestrator instance se expose karta hai
+- avatar ko listening/thinking/speaking/waiting-approval states ke saath update karta hai
+
+Manual modes available hain:
+
+```bash
+python run.py --text
+python run.py --avatar
+python run.py --avatar --voice-continuous
+python run.py --realtime
+python run.py --doctor
 ```
 
-aur apna question poochho. API key configured nahi hogi to runtime model provider configuration error batayega.
+Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Agar bundled/sample VRM local machine par present nahi hai, procedural avatar automatically visible rehta hai; VRM optional enhancement hai.
+
+Voice provider behavior:
+
+- STT aur TTS capabilities alag evaluate hoti hain.
+- OpenAI key exhausted ho to configured Groq STT fallback try hota hai.
+- Groq Orpheus TTS account/organization terms-gated ho sakta hai; aise case me `JENEFAR_DISABLE_GROQ_TTS=true` set karke Groq STT ko active rakha ja sakta hai while TTS is handled by another configured audio provider.
 
 ## Language behavior
 
