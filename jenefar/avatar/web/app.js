@@ -176,14 +176,15 @@ function applyActivityFilter(){
 }
 
 const clearActivityButton=document.getElementById("clear-activity");
-if(clearActivityButton){
-  clearActivityButton.onclick=()=>{
-    activityList.innerHTML="";
-    taskState.clear();
-    updateTaskCounts();
-    lastActivityKey="";
-  };
+const clearWorkspaceButton=document.getElementById("clear-workspace");
+function clearActivity(){
+  if(activityList) activityList.innerHTML="";
+  taskState.clear();
+  updateTaskCounts();
+  lastActivityKey="";
 }
+if(clearActivityButton) clearActivityButton.onclick=clearActivity;
+if(clearWorkspaceButton) clearWorkspaceButton.onclick=clearActivity;
 
 function setupActivityFilters(){
   document.querySelectorAll("[data-activity-filter]").forEach(button=>{
@@ -489,7 +490,30 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
 async function dispatchDashboardCommand(command){
   const clean=String(command||"").trim();
   if(!clean) return;
-  sendBrowserTranscript(clean);
+  // Typed dashboard commands must not depend on the microphone being enabled.
+  // Send them directly to the same browser voice endpoint.
+  const log=document.getElementById("chat-log");
+  try{
+    const response=await fetch("/voice/text",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text:clean})
+    });
+    const result=await response.json();
+    if(result?.error) throw new Error(result.error);
+    if(log){
+      const bot=document.createElement("div");
+      bot.className="chat-row bot";
+      bot.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
+      bot.querySelector(".bubble").textContent=result?.accepted ? "Task queued: "+result.task_id : "Command received.";
+      log.appendChild(bot);
+      log.scrollTop=log.scrollHeight;
+    }
+    return result;
+  }catch(error){
+    addActivity({state:"error",text:"Dashboard command failed: "+error});
+    return null;
+  }
 }
 document.querySelectorAll("[data-command]").forEach(btn=>{
   btn.addEventListener("click",()=>dispatchDashboardCommand(btn.dataset.command||""));
