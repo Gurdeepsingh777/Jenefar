@@ -564,7 +564,7 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
       chat:()=>document.getElementById("chat-input")?.focus(),
       voice:()=>document.getElementById("mic-button")?.click(),
       vision:()=>document.getElementById("stage")?.setAttribute("data-state","thinking"),
-      apps:()=>document.querySelector(".quick-apps")?.scrollIntoView({block:"center"}),
+      apps:()=>document.querySelector(".quick-apps")?.classList.toggle("panel-focus"),
       web:()=>dispatchDashboardCommand("search web"),
       notes:()=>document.getElementById("chat-input")?.focus(),
       automation:()=>dispatchDashboardCommand("show automation"),
@@ -731,3 +731,13 @@ setupBrowserVoice();
   requestAnimationFrame(drawEarth);
 })();
 
+
+
+document.getElementById("media-pause")?.addEventListener("click",()=>{
+  if("speechSynthesis" in window){
+    window.speechSynthesis.cancel();
+    browserSpeechActive=false;
+    voiceLocked=false;
+    resumeBrowserVoice();
+  }
+});
