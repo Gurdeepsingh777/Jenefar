@@ -107,7 +107,14 @@ def doctor() -> int:
 
         config = load_config()
         print(f"  config                       OK ({config.name})")
-        print(f"  api key                      {'SET' if os.getenv('OPENAI_API_KEY') else 'NOT SET (local fallback)'}")
+        configured_keys = any(
+            os.getenv(name, "").strip()
+            for name in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
+        )
+        print(
+            "  online provider keys         "
+            + ("CONFIGURED" if configured_keys else "NONE (local fallback)")
+        )
         online = internet_available(timeout=0.8)
         print(f"  internet                     {'ONLINE' if online else 'OFFLINE'}")
         local_model = LocalLLMClient().detect()
@@ -250,6 +257,7 @@ def main() -> int:
 
     if args.voice_auto:
         import os
+        from jenefar.core.orchestrator import JenefarOrchestrator
         from jenefar.voice.provider import ProviderVoiceRuntime
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
@@ -486,8 +494,8 @@ def main() -> int:
 
     try:
         if args.voice:
-            from jenefar.voice.openai_voice import OpenAIVoiceRuntime
-            OpenAIVoiceRuntime(
+            from jenefar.voice.provider import ProviderVoiceRuntime
+            ProviderVoiceRuntime(
                 orchestrator,
                 avatar=avatar,
             ).run()

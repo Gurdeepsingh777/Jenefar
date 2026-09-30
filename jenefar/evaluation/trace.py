@@ -78,7 +78,7 @@ class TraceStore:
         payload = trace.as_dict()
         payload["recorded_at"] = datetime.now(timezone.utc).isoformat()
         with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False, default=str) + "\\n")
+            fh.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         if limit <= 0 or not self.path.exists():
