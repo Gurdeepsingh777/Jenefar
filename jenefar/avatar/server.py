@@ -170,7 +170,10 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 if not tool_name or not isinstance(args, dict):
                     self._json(400, {"error": "tool name and object arguments are required"})
                     return
-                self._json(200, {"result": invoke_realtime_tool(tool_name, args)})
+                self._json(
+                    200,
+                    {"result": invoke_realtime_tool(tool_name, args, self.tool_broker)},
+                )
                 return
 
             self._send(404, "text/plain; charset=utf-8", b"Not found")
