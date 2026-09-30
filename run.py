@@ -338,6 +338,7 @@ def main() -> int:
         except Exception:
             print(f"[JENEFAR] Open this URL manually: {runtime_url}")
 
+        from jenefar.voice.provider import ProviderVoiceRuntime
         audio_status = ProviderVoiceRuntime.audio_status()
         desktop_status = orchestrator.tool_broker.desktop.backend_status()
         print(
