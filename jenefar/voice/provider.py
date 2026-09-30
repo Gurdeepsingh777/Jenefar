@@ -30,9 +30,9 @@ class ProviderVoiceRuntime:
 
     @classmethod
     def _configured_audio_providers(cls) -> list[str]:
-        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "groq,openai")
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
-        ordered = requested or ["openai", "groq"]
+        ordered = requested or ["groq", "openai"]
         ordered = [name for name in ordered if name in ("openai", "groq")]
         return [name for name in ordered if cls._provider_configured(name)]
 
@@ -52,6 +52,12 @@ class ProviderVoiceRuntime:
             for name in stt_providers
             if cls._tts_configured(name)
         ]
+        if cls._legacy_edge_tts_available():
+            tts_providers.append("edge")
+        if cls._local_espeak_available():
+            tts_providers.append("espeak")
+        if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
+            tts_providers.append("local")
         result: dict[str, dict | None] = {"stt": None, "tts": None}
 
         if stt_providers:
@@ -67,6 +73,18 @@ class ProviderVoiceRuntime:
                 "fallback": tts_providers[1:],
             }
         return result
+
+    @staticmethod
+    def _legacy_edge_tts_available() -> bool:
+        try:
+            import edge_tts  # noqa: F401
+        except Exception:
+            return False
+        return bool(shutil.which("mpv") or shutil.which("ffplay"))
+
+    @staticmethod
+    def _local_espeak_available() -> bool:
+        return bool(shutil.which("espeak-ng") or shutil.which("espeak"))
 
     @classmethod
     def _tts_configured(cls, provider: str) -> bool:
@@ -89,6 +107,12 @@ class ProviderVoiceRuntime:
 
     @staticmethod
     def _tts_model(provider: str) -> str:
+        if provider == "edge":
+            return os.getenv("JENEFAR_EDGE_TTS_VOICE", "en-IN-NeerjaNeural")
+        if provider == "espeak":
+            return "system-espeak"
+        if provider == "local":
+            return os.getenv("JENEFAR_LOCAL_TTS_MODEL", "piper")
         return (
             os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
             if provider == "openai"
@@ -109,6 +133,10 @@ class ProviderVoiceRuntime:
             for name in self._provider_order()
             if self._tts_configured(name)
         ]
+        if self._legacy_edge_tts_available():
+            order.append("edge")
+        if self._local_espeak_available():
+            order.append("espeak")
         if shutil.which("piper") and os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip():
             order.append("local")
         return order
