@@ -412,5 +412,4 @@ class ContinuousVoiceRuntime:
             asyncio.run(self.run_async())
         except KeyboardInterrupt:
             self._stop.set()
-            print("
-[JENEFAR] Continuous voice mode stopped.")
+            print("\n[JENEFAR] Continuous voice mode stopped.")
