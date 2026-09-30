@@ -35,7 +35,7 @@ def test_voice_uses_groq_when_openai_is_missing(monkeypatch):
     status = ProviderVoiceRuntime.audio_status()
     assert status["stt"] == {
         "provider": "groq",
-        "model": "whisper-large-v3-turbo",
+        "model": "whisper-large-v3",
     }
     assert status["tts"] == {
         "provider": "groq",
@@ -54,7 +54,7 @@ def test_voice_provider_status_line(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
     runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
-    assert "STT=groq/whisper-large-v3-turbo" in runtime.provider_status_line()
+    assert "STT=groq/whisper-large-v3" in runtime.provider_status_line()
     assert "TTS=groq/canopylabs/orpheus-v1-english" in runtime.provider_status_line()
 
 
