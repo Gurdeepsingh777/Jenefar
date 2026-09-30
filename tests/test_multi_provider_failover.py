@@ -9,6 +9,7 @@ def test_provider_order_and_configuration(monkeypatch):
     monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", "openrouter,gemini,groq")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test")
     monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     pool = ProviderPool()
     assert pool.order() == ["openrouter", "gemini", "groq"]
     assert pool.configured("openrouter")
