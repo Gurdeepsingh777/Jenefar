@@ -49,7 +49,8 @@ let emotionIntensity=0;
 
 function draw(t){
   ctx.clearRect(0,0,width,height);
-  const centerX=width/2,centerY=height*.46;
+  const workWidth = width * 0.66;
+  const centerX=workWidth/2,centerY=height*.46;
   const [r,g,b]=palette(currentState);
   const activity = currentState==="speaking" ? speechLevel : currentState==="thinking" ? .22 : currentState==="listening" ? .10 : 0;
   particles.forEach((p,i)=>{
@@ -161,3 +162,139 @@ connect();
 requestAnimationFrame(draw);
 
  
+
+
+const micButton=document.getElementById("mic-button");
+const voiceInputStatus=document.getElementById("voice-input-status");
+let recognition=null;
+let voiceShouldRun=true;
+let voiceSupported=false;
+let restartTimer=null;
+
+function setVoiceInputStatus(text, active=false){
+  if(voiceInputStatus){
+    voiceInputStatus.textContent=text;
+    voiceInputStatus.dataset.active=active ? "true" : "false";
+  }
+}
+
+function browserSpeakFallback(text){
+  if(!text || !("speechSynthesis" in window)) return;
+  try{
+    window.speechSynthesis.cancel();
+    const utterance=new SpeechSynthesisUtterance(text);
+    utterance.lang="hi-IN";
+    utterance.rate=0.98;
+    utterance.pitch=1.02;
+    window.speechSynthesis.speak(utterance);
+  }catch(_){}
+}
+
+async function sendBrowserTranscript(text){
+  const clean=String(text||"").trim();
+  if(!clean) return;
+  setVoiceInputStatus("HEARD: "+clean, true);
+  addActivity({state:"listening",text:"You: "+clean});
+  try{
+    const response=await fetch("/voice/text",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text:clean})
+    });
+    const result=await response.json();
+    if(result?.ignored) return;
+    if(result?.error){
+      addActivity({state:"error",text:"Voice error: "+result.error});
+      setVoiceInputStatus("VOICE ERROR",false);
+      return;
+    }
+    if(result?.reply){
+      addActivity({state:"speaking",text:result.reply});
+    }
+    if(!result?.spoken && result?.reply){
+      browserSpeakFallback(result.reply);
+    }
+    if(result?.exit){
+      voiceShouldRun=false;
+      recognition?.stop();
+    }
+  }catch(error){
+    addActivity({state:"error",text:"Voice request failed: "+error});
+    setVoiceInputStatus("VOICE CONNECTION ERROR",false);
+  }
+}
+
+function setupBrowserVoice(){
+  const Recognition=window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Recognition){
+    voiceSupported=false;
+    voiceShouldRun=false;
+    setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED",false);
+    if(micButton) micButton.textContent="PYTHON MIC";
+    return;
+  }
+
+  voiceSupported=true;
+  recognition=new Recognition();
+  recognition.lang="hi-IN";
+  recognition.continuous=true;
+  recognition.interimResults=false;
+  recognition.maxAlternatives=1;
+
+  recognition.onstart=()=>{
+    setVoiceInputStatus("BROWSER MIC: LISTENING",true);
+    if(micButton) micButton.textContent="MIC OFF";
+  };
+
+  recognition.onresult=(event)=>{
+    for(let i=event.resultIndex;i<event.results.length;i++){
+      const result=event.results[i];
+      if(result.isFinal){
+        const text=(result[0]?.transcript||"").trim();
+        if(text) sendBrowserTranscript(text);
+      }
+    }
+  };
+
+  recognition.onerror=(event)=>{
+    const code=event.error||"unknown";
+    addActivity({state:"error",text:"Browser mic: "+code});
+    if(code==="not-allowed" || code==="service-not-allowed"){
+      voiceShouldRun=false;
+      setVoiceInputStatus("MIC PERMISSION DENIED",false);
+      if(micButton) micButton.textContent="MIC ON";
+    }else{
+      setVoiceInputStatus("MIC RETRYING…",false);
+    }
+  };
+
+  recognition.onend=()=>{
+    if(!voiceShouldRun) return;
+    if(restartTimer) clearTimeout(restartTimer);
+    restartTimer=setTimeout(()=>{
+      try{ recognition.start(); }catch(_){}
+    },500);
+  };
+
+  if(micButton){
+    micButton.onclick=()=>{
+      if(!voiceSupported) return;
+      if(voiceShouldRun){
+        voiceShouldRun=false;
+        try{ recognition.stop(); }catch(_){}
+        setVoiceInputStatus("BROWSER MIC: OFF",false);
+        micButton.textContent="MIC ON";
+      }else{
+        voiceShouldRun=true;
+        try{ recognition.start(); }catch(_){}
+      }
+    };
+  }
+
+  setTimeout(()=>{
+    if(!voiceShouldRun) return;
+    try{ recognition.start(); }catch(_){}
+  },700);
+}
+
+setupBrowserVoice();
