@@ -352,7 +352,10 @@ async function sendBrowserTranscript(text){
     if(result?.error){
       addActivity({state:"error",text:"Voice error: "+result.error});
       setVoiceInputStatus("VOICE ERROR",false);
-      resumeBrowserVoice();
+      setMicButton(false, false);
+      micEnabled=false;
+      voiceLocked=true;
+      try{recognition?.stop();}catch(_){}
       return;
     }
     if(result?.accepted){
