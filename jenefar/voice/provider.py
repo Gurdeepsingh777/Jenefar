@@ -9,6 +9,7 @@ import tempfile
 import time
 import wave
 from pathlib import Path
+import subprocess
 
 from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
 
