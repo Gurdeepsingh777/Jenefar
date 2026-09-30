@@ -2,3 +2,4 @@
 pyautogui>=0.9.54
 python3-Xlib>=0.15; platform_system == "Linux"
 mss>=10.0.0
+Pillow>=11.0.0
