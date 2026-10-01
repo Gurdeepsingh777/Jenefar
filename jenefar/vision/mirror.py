@@ -75,6 +75,12 @@ class DesktopMirror:
         }
 
     def stop(self) -> dict[str, object]:
+        previous = self.status()
+        if previous.get("native_hidden") and previous.get("query"):
+            try:
+                self.restore_native(str(previous["query"]))
+            except Exception:
+                pass
         with self._lock:
             self.state = MirrorState()
         return {"active": False}
@@ -107,7 +113,13 @@ class DesktopMirror:
 
         if state.window_id and state.control_backend in {"wmctrl", "xdotool"}:
             try:
-                return self.window_control.capture(self.window_control.find(state.query))
+                direct = self.window_control.capture(
+                    self.window_control.find(state.query)
+                )
+                image = Image.open(io.BytesIO(direct)).convert("RGB")
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=88, optimize=True)
+                return buffer.getvalue()
             except Exception:
                 pass
 
@@ -153,6 +165,14 @@ class DesktopMirror:
             }
 
         window = self.window_control.find(query)
+        host_titles = ("jenefar avatar", "jenefar ai")
+        if any(marker in window.title.lower() for marker in host_titles):
+            return {
+                **started,
+                "native_hidden": False,
+                "transfer_mode": "mirror_only",
+                "warning": "The Jenefar host window stays visible so the controller remains reachable.",
+            }
         self.window_control.hide(window)
         with self._lock:
             self.state.native_hidden = True
