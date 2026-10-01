@@ -6,10 +6,16 @@ from pathlib import Path
 
 class WorkspacePolicy:
     def __init__(self, roots: list[str] | None = None) -> None:
-        configured = roots or [
-            str(Path.cwd()),
-            "/home/jenefar/Document/Tools",
-        ]
+        if roots:
+            configured = list(roots)
+        else:
+            configured = [str(Path.cwd())]
+            tools_root = Path.home() / "Document" / "Tools"
+            documents_root = Path.home() / "Documents"
+            if tools_root.exists():
+                configured.append(str(tools_root))
+            if documents_root.exists():
+                configured.append(str(documents_root))
         env_roots = [
             item.strip()
             for item in os.getenv("JENEFAR_WORKSPACE_ROOTS", "").split(os.pathsep)
