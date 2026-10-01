@@ -30,7 +30,10 @@ async function refreshDesktopMirror(){
     }
     if(desktopMirror) desktopMirror.hidden=false;
     if(desktopMirrorTitle) desktopMirrorTitle.textContent=(status.title||"LIVE WINDOW").toUpperCase();
-    if(desktopMirrorStatus) desktopMirrorStatus.textContent="LIVE";
+    if(desktopMirrorStatus){
+      const mode=String(status.capture_mode||"screen_crop").replaceAll("_"," ").toUpperCase();
+      desktopMirrorStatus.textContent=status.native_hidden ? "LIVE • NATIVE HIDDEN" : "LIVE • "+mode;
+    }
     if(desktopMirrorImage) desktopMirrorImage.src="/desktop/mirror.jpg?ts="+Date.now();
   }catch(_){
   }finally{
