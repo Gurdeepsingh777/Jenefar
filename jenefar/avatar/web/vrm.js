@@ -99,6 +99,7 @@ if (canvas) {
       // accidentally undo the framing transform.
       const basePosition = new THREE.Vector3(-center.x, -center.y, -center.z);
       vrm.scene.position.copy(basePosition);
+      baseAvatarY = basePosition.y;
 
       // Camera looks down -Z from a stable front position. Compute distance
       // from the actual model height instead of a hard-coded clamp.
@@ -319,7 +320,6 @@ if (canvas) {
       vrm.scene.rotation.y = Math.sin(now * 0.0004) * 0.025;
       vrm.scene.rotation.z = Math.sin(now * 0.00075) * (0.006 + speakingMotion * 0.012);
       updateNaturalFace();
-      baseAvatarY = vrm.scene.position.y - Math.sin(now * 0.0012) * 0.004;
       vrm.update(1 / 60);
     }
     if (premiumGroup) {
