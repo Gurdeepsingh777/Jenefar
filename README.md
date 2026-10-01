@@ -17,7 +17,7 @@ Abhi Jenefar ke core me ye features available hain:
 - Common Kali/Linux security tools ki safe discovery
 - "Hi Jenefar" / "Hello Jenefar" activation logic
 - Immediate testing ke liye text runtime
-- Browser-first microphone -> orchestrator -> browser SpeechSynthesis voice runtime
+- Browser-first microphone -> orchestrator -> browser-played natural TTS voice runtime
 - Separate bounded/continuous Python microphone STT/TTS runtimes for legacy/CLI use
 - Local particle avatar with optional Three.js/VRM rendering aur expressions
 - Ephemeral client secrets ke through browser Realtime speech-to-speech transport
@@ -55,7 +55,7 @@ python run.py
 - browser microphone permission ke baad Web SpeechRecognition input enable karta hai
 - specialist multi-agent orchestrator use karta hai
 - memory, knowledge graph, scheduler, approval-gated tools, vision/desktop/robotics connectors aur runtime diagnostics ko wahi orchestrator instance se expose karta hai
-- browser SpeechSynthesis ko response playback ke liye use karta hai; Python TTS browser runtime me start nahi hota
+- server-generated browser-playable TTS ko prefer karta hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser SpeechSynthesis fallback hota hai; Python speaker playback browser runtime me start nahi hota
 - avatar ko listening/thinking/speaking/waiting-approval states ke saath update karta hai
 
 Manual modes available hain:
@@ -73,7 +73,7 @@ Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime
 Voice provider behavior:
 
 - Default browser runtime me microphone input browser Web SpeechRecognition se aata hai.
-- Default browser runtime me speech output browser Web SpeechSynthesis se hota hai; Python/native TTS playback start nahi hota.
+- Default browser runtime me speech output server-generated audio se hota hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser Web SpeechSynthesis fallback hota hai. Python/native speaker playback start nahi hota.
 - `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
 - Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
 - OpenAI/Groq provider failover diagnostics legacy voice runtime ke liye retained hain.
@@ -919,3 +919,4 @@ JENEFAR_MODEL_RESEARCH=your_research_model_here
 
 Role-specific variables override `OPENAI_MODEL`. When `OPENAI_API_KEY` is unavailable or the online provider cannot be reached, Jenefar falls back to the detected local OpenAI-compatible model (for example Ollama).
 
+\n## Phase 7 — Conversational Engineering Runtime & Live Task Monitor\n\nPhase 7 me browser voice requests ko isolated input values ki jagah continuous engineering instructions ke roop me handle karne ke liye local-development agent ko stronger conversation context diya gaya hai. Recent conversation history deeper window ke saath agent ko milti hai, numbered options ko selected requirements ke roop me preserve kiya jata hai, aur feature/bug/UI tasks ke liye inspect -> research -> baseline -> diagnose -> implement -> retest -> report workflow use hota hai.\n\nAuthorized workspace me user-directed coding ke liye existing files update karna aur new files create karna directly supported hai. Python syntax validation aur repository tests automatic verification path ka hissa hain; arbitrary shell execution aur higher-impact actions existing approval boundaries me rehte hain.\n\nBrowser dashboard ke center me enlarged LIVE TASK CONSOLE current task state, task id, progress aur recent tool results ko avatar ke behind holographic monitor par mirror karta hai. Existing activity panel detailed stream ko retain karta hai.\n\nNatural screen-reading phrases semantic GUI/vision agent tak route hoti hain. Screen inspection aur screenshot saving alag capabilities hain: screen inspection screenshot ko save nahi karta, aur screenshot tool tabhi use kiya jana chahiye jab user explicitly screenshot maange.
