@@ -304,6 +304,7 @@ def test_screen_reading_is_read_only_and_available_without_confirmation():
     locate = broker.registry.get("desktop_find_element")
     assert observe.requires_confirmation is False
     assert observe.action is False
+    assert "save" not in observe.parameters.get("properties", {})
     assert locate.requires_confirmation is False
     assert locate.action is False
 
