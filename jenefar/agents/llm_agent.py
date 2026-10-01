@@ -43,10 +43,15 @@ class BaseLLMAgent(BaseAgent):
         history = context.metadata.get("history", [])
         history_text = ""
         if history:
-            history_text = "\nRecent conversation:\n" + "\n".join(
-                f"{m.get('role', 'user')}: {m.get('content', '')}"
-                for m in history[-24:]
-            )
+            compact_history = []
+            for item in history[-12:]:
+                content = str(item.get("content", ""))
+                if len(content) > 1400:
+                    content = content[:1400] + "..."
+                compact_history.append(
+                    f"{item.get('role', 'user')}: {content}"
+                )
+            history_text = "\nRecent conversation:\n" + "\n".join(compact_history)
 
         retrieved = context.metadata.get("retrieved_memory", [])
         memory_text = ""
