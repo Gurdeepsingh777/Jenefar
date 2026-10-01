@@ -148,6 +148,9 @@ class JenefarOrchestrator:
         source: str = "user",
         event_id: int | None = None,
     ) -> str:
+        # Jenefar's user-facing runtime is intentionally Roman Hinglish-first.
+        # Keep the language stable even when a caller omits the preference.
+        response_language = response_language or "Hinglish"
         trace = ExecutionTrace(
             session_id=self.session.session_id,
             task=text,
@@ -252,6 +255,8 @@ class JenefarOrchestrator:
                     approval_required=True,
                 )
             output = self.verifier.verify(text, result.content)
+            from jenefar.voice.speech import enforce_hinglish
+            output = enforce_hinglish(output, max_chars=12000)
             verification = {
                 "passed": bool(output and output.strip()),
                 "verifier": self.verifier.__class__.__name__,
