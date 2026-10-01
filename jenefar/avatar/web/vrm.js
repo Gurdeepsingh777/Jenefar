@@ -152,67 +152,36 @@ if (canvas) {
 
   function buildPremiumEnvironment(model){
     const group = new THREE.Group();
-    group.name = "JenefarPremiumEnvironment";
+    group.name = "JenefarMinimalEnvironment";
 
-    const chairMat = makePremiumMaterial(0x070d18, 0.72, 0.22, 0x071a2b);
-    const trimMat = makePremiumMaterial(0x3cecff, 0.78, 0.18, 0x0a7ea0);
-    const softMat = makePremiumMaterial(0x16233b, 0.28, 0.55);
+    // Keep the VRM visually clean. The uploaded HUD is now the main visual
+    // environment; the avatar itself only gets two subtle cyan accents.
+    const trimMat = makePremiumMaterial(0x3cecff, 0.74, 0.20, 0x0a7ea0);
 
-    // Futuristic chair silhouette, positioned behind the avatar.
-    addBox(group, [2.25, 2.35, 0.30], [0, 1.85, -0.72], chairMat);
-    addBox(group, [2.45, 0.22, 1.75], [0, 0.68, -0.25], softMat);
-    addBox(group, [0.18, 1.00, 1.25], [-1.05, 1.12, -0.22], chairMat);
-    addBox(group, [0.18, 1.00, 1.25], [1.05, 1.12, -0.22], chairMat);
-
-    const backGlow = new THREE.Mesh(
-      new THREE.BoxGeometry(2.35, 1.72, 0.02),
-      makePremiumMaterial(0x1c7ec4, 0.20, 0.62, 0x0c5f83, 0.05)
-    );
-    backGlow.position.set(0, 1.63, -0.545);
-    backGlow.visible = false;
-    group.add(backGlow);
-
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.55, 0.72, 0.08, 48),
-      chairMat
-    );
-    base.position.set(0, 0.48, -0.10);
-    group.add(base);
-
-    // A thin luminous collar/chest core follows the humanoid rig.
     const humanoid = model?.humanoid;
     const neck = humanoid?.getNormalizedBoneNode("neck");
-    const chest = humanoid?.getNormalizedBoneNode("upperChest") || humanoid?.getNormalizedBoneNode("chest");
-    if(neck){
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.012, 8, 48), trimMat);
+    const chest =
+      humanoid?.getNormalizedBoneNode("upperChest") ||
+      humanoid?.getNormalizedBoneNode("chest");
+
+    if (neck) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.12, 0.009, 8, 40),
+        trimMat
+      );
       ring.rotation.x = Math.PI / 2;
       ring.position.set(0, 0.02, 0);
       neck.add(ring);
     }
-    if(chest){
-      const core = new THREE.Mesh(new THREE.SphereGeometry(0.055, 20, 20), trimMat);
-      core.position.set(0, 0.02, 0.08);
+
+    if (chest) {
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045, 16, 16),
+        trimMat
+      );
+      core.position.set(0, 0.02, 0.07);
       chest.add(core);
     }
-
-    // Holographic particle field around the seated command position.
-    const count = 220;
-    const positions = new Float32Array(count * 3);
-    for(let i=0;i<count;i++){
-      const radius = 1.4 + Math.random() * 2.6;
-      const angle = Math.random() * Math.PI * 2;
-      positions[i*3] = Math.cos(angle) * radius;
-      positions[i*3+1] = 0.55 + Math.random() * 2.8;
-      positions[i*3+2] = -0.2 + Math.sin(angle) * radius * 0.42;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions,3));
-    const points = new THREE.Points(
-      geometry,
-      new THREE.PointsMaterial({color:0x65e8ff,size:0.022,transparent:true,opacity:0.55})
-    );
-    points.name = "JenefarPremiumParticles";
-    group.add(points);
 
     return group;
   }
