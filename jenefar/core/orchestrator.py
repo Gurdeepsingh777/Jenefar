@@ -176,6 +176,21 @@ class JenefarOrchestrator:
         )
         self.graph.learn_text(text)
         try:
+            direct_screen = self._direct_screen_read(text)
+            if direct_screen:
+                from jenefar.voice.speech import devanagari_to_roman
+                output = devanagari_to_roman(direct_screen)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.5,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+                return output
+
             if self._is_local_time_query(text):
                 output = self._local_time_response(text, response_language)
                 self.session.add("assistant", output)
@@ -376,6 +391,46 @@ class JenefarOrchestrator:
             self.pending_approval_workflows.pop(pending_id, None)
         self.state = JenefarState.SLEEPING
         return "Theek hai, ye action nahi karungi."
+
+    @staticmethod
+    def _is_explicit_screen_read_request(text: str) -> bool:
+        lowered = " ".join(str(text or "").lower().split())
+        markers = (
+            "screen par kya", "screen pe kya", "screen me kya",
+            "meri screen", "mere screen", "my screen", "read my screen",
+            "screen dekho", "screen dikh", "screen read",
+            "live screen", "what is on my screen", "what's on my screen",
+        )
+        return any(marker in lowered for marker in markers)
+
+    def _direct_screen_read(self, text: str) -> str | None:
+        if not self._is_explicit_screen_read_request(text):
+            return None
+        self.tool_broker.set_task_context(agent="gui_vision", task=text)
+        try:
+            raw = self.tool_broker.invoke("desktop_observe", {"query": text})
+        finally:
+            self.tool_broker.clear_task_context()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("status") != "ok":
+            return None
+        result = payload.get("result") or {}
+        summary = str(result.get("summary") or "").strip()
+        if summary:
+            return summary
+        elements = result.get("elements") or []
+        labels = []
+        for item in elements[:8]:
+            label = str(item.get("label") or item.get("text") or "").strip()
+            role = str(item.get("role") or "").strip()
+            if label and label not in labels:
+                labels.append(label + (f" ({role})" if role else ""))
+        if labels:
+            return "Screen par ye main items dikh rahe hain: " + ", ".join(labels[:6]) + "."
+        return "Maine live screen capture kar li hai, lekin visible content ka reliable summary nahi mila."
 
     @staticmethod
     def _is_local_time_query(text: str) -> bool:
