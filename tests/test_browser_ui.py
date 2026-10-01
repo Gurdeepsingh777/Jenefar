@@ -562,3 +562,13 @@ def test_phase3_vrm_avatar_isolated_on_center_stage():
     assert 'src="/avatar.vrm"' in vrm
     assert '<canvas id="vrm-canvas"' in html
     assert ".avatar-shell,#photo-avatar,#holo-earth,#task-screen" in css
+
+
+def test_phase4_avatar_style_and_auto_frame():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    pipeline = (ROOT / "tools" / "blender" / "premium_avatar.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "Auto-frame the real model" in vrm
+    assert "Jenefar_Premium_v2.vrm" in run
+    assert 'PREMIUM_WHITE = (0.035, 0.075, 0.13, 1.0)' in pipeline
+    assert 'PREMIUM_CYAN = (0.04, 0.72, 0.95, 1.0)' in pipeline
