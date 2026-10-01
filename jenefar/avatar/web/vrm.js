@@ -92,7 +92,6 @@ if (canvas) {
       const center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
       const modelHeight = Number.isFinite(size.y) && size.y > 0.01 ? size.y : targetHeight;
-      const modelDepth = Math.max(size.z, 0.1);
 
       // Move the model so its visual center is at the origin. Keep this base
       // position separate from the breathing animation so animation cannot
@@ -101,14 +100,16 @@ if (canvas) {
       vrm.scene.position.copy(basePosition);
       baseAvatarY = basePosition.y;
 
-      // Camera looks down -Z from a stable front position. Compute distance
-      // from the actual model height instead of a hard-coded clamp.
+      // IMPORTANT: camera framing is based on MODEL HEIGHT only. Do not use
+      // modelDepth here: VRM exports can contain deep helper/collider nodes
+      // that make Box3.size.z enormous and push the camera several meters
+      // away, producing the tiny avatar seen in the browser.
       const vFov = THREE.MathUtils.degToRad(camera.fov);
       const halfFov = Math.max(vFov * 0.5, THREE.MathUtils.degToRad(8));
-      const fitDistance = (modelHeight * 0.62) / Math.tan(halfFov);
-      const cameraZ = Math.max(modelDepth + 1.25, fitDistance + 0.35);
+      const fitDistance = (modelHeight * 0.56) / Math.tan(halfFov);
+      const cameraZ = Math.max(3.8, fitDistance);
       camera.position.set(0, modelHeight * 0.04, cameraZ);
-      camera.near = Math.max(0.01, cameraZ - modelDepth * 2.5);
+      camera.near = 0.01;
       camera.far = Math.max(50, cameraZ + modelHeight * 4);
       camera.lookAt(0, modelHeight * 0.08, 0);
       camera.updateProjectionMatrix();
@@ -174,6 +175,7 @@ if (canvas) {
         cameraZ: camera.position.z,
         cameraNear: camera.near,
         cameraFar: camera.far,
+        cameraTargetY: modelHeight * 0.08,
         renderables: vrm.scene.getObjectsByProperty("isMesh", true).length,
         basePosition: basePosition.toArray(),
       });
