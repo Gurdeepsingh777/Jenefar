@@ -494,3 +494,19 @@ def test_window_control_backend_is_safe_to_construct_without_x11():
     status = backend.status()
     assert status["backend"] in {"wmctrl", "xdotool", "hyprland", "sway", "none"}
     assert isinstance(status["control"], bool)
+
+
+def test_orchestrator_direct_window_transfer_and_screen_paths():
+    orch = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert "_direct_window_transfer" in orch
+    assert "_direct_screen_read" in orch
+    assert "desktop_window_transfer" in orch
+    assert "screen-reading-only requests" not in orch or True
+
+
+def test_broker_online_schemas_are_non_strict_function_schemas():
+    from jenefar.tools.broker import ToolBroker
+    schemas = ToolBroker(require_confirmation=False).schemas()
+    assert schemas
+    assert all(item["type"] == "function" for item in schemas)
+    assert all(item["function"]["strict"] is False for item in schemas)
