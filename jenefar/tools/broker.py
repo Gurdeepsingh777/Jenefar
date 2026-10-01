@@ -1389,6 +1389,12 @@ class ToolBroker:
             str(args["command"]), approved=True, timeout=int(args["timeout"])
         )
 
+    def desktop_mirror_frame(self) -> bytes | None:
+        return self._get_desktop_mirror().frame()
+
+    def desktop_mirror_status(self) -> dict[str, object]:
+        return self._get_desktop_mirror().status()
+
     def schemas(
         self,
         *,
