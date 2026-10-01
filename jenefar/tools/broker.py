@@ -1373,10 +1373,9 @@ class ToolBroker:
             self.audit.record("tool_unknown", tool=name)
             return json.dumps({"status": "error", "error": f"Unknown tool: {name}"})
 
-        needs_confirmation = (
-            spec.critical
-            or (spec.requires_confirmation and self.require_confirmation)
-        )
+        # User-directed routine work runs directly. Only tools explicitly classified
+        # as critical pause for a natural yes/no confirmation.
+        needs_confirmation = bool(spec.critical)
         if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
             self.pending[pending_id] = PendingToolCall(pending_id, name, arguments)
