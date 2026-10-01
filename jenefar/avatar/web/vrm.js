@@ -60,34 +60,57 @@ if (canvas) {
       // Keep the full avatar visible from head to feet. Some VRM fixtures are
       // authored with a T-pose; there is no safe generic way to infer a
       // natural idle arm pose without editing the actual skeleton animation.
+      // Make every renderable part explicitly visible. Some VRM exporters leave
+      // frustum-culling/visibility flags that are safe in a native viewer but can
+      // make a browser canvas appear empty after runtime transforms.
+      vrm.scene.visible = true;
+      vrm.scene.traverse(node => {
+        if (!node.isMesh) return;
+        node.visible = true;
+        node.frustumCulled = false;
+        node.renderOrder = 10;
+      });
+
+      // Normalize the source asset to a predictable on-screen height.
+      // Sample/authoring VRMs can have very different unit scales.
       vrm.scene.position.set(0, 0, 0);
       vrm.scene.scale.setScalar(1);
       vrm.scene.updateMatrixWorld(true);
 
-      // Normalize the source asset to a predictable on-screen height.
-      // Sample/authoring VRMs can have very different unit scales.
-      const rawBounds = new THREE.Box3().setFromObject(vrm.scene);
+      const rawBounds = new THREE.Box3().setFromObject(vrm.scene, true);
       const rawSize = rawBounds.getSize(new THREE.Vector3());
-      const rawHeight = Math.max(rawSize.y, 0.001);
+      const rawHeight = Number.isFinite(rawSize.y) && rawSize.y > 0.01 ? rawSize.y : 1.7;
       const targetHeight = 2.55;
       const normalizedScale = targetHeight / rawHeight;
       vrm.scene.scale.setScalar(normalizedScale);
       vrm.scene.updateMatrixWorld(true);
 
-      const bounds = new THREE.Box3().setFromObject(vrm.scene);
+      // Auto-frame the real model using its post-scale world bounds.
+      // Three.js recommends updating world matrices before Box3#setFromObject
+      // when transforms have changed.
+      const bounds = new THREE.Box3().setFromObject(vrm.scene, true);
       const center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
-      const modelHeight = Math.max(size.y, 0.001);
+      const modelHeight = Number.isFinite(size.y) && size.y > 0.01 ? size.y : targetHeight;
+      const modelDepth = Math.max(size.z, 0.1);
 
-      // Center the avatar vertically and slightly raise the aim point toward the face.
-      vrm.scene.position.y -= center.y;
-      vrm.scene.position.x = 0;
-      vrm.scene.position.z = 0;
+      // Move the model so its visual center is at the origin. Keep this base
+      // position separate from the breathing animation so animation cannot
+      // accidentally undo the framing transform.
+      const basePosition = new THREE.Vector3(-center.x, -center.y, -center.z);
+      vrm.scene.position.copy(basePosition);
 
+      // Camera looks down -Z from a stable front position. Compute distance
+      // from the actual model height instead of a hard-coded clamp.
       const vFov = THREE.MathUtils.degToRad(camera.fov);
-      const fitDistance = (modelHeight * 0.58) / Math.tan(vFov / 2);
-      camera.position.set(0, modelHeight * 0.06, Math.max(2.05, Math.min(3.8, fitDistance)));
-      camera.lookAt(0, modelHeight * 0.14, 0);
+      const halfFov = Math.max(vFov * 0.5, THREE.MathUtils.degToRad(8));
+      const fitDistance = (modelHeight * 0.62) / Math.tan(halfFov);
+      const cameraZ = Math.max(modelDepth + 1.25, fitDistance + 0.35);
+      camera.position.set(0, modelHeight * 0.04, cameraZ);
+      camera.near = Math.max(0.01, cameraZ - modelDepth * 2.5);
+      camera.far = Math.max(50, cameraZ + modelHeight * 4);
+      camera.lookAt(0, modelHeight * 0.08, 0);
+      camera.updateProjectionMatrix();
 
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
@@ -150,6 +173,10 @@ if (canvas) {
         normalizedScale,
         modelHeight,
         cameraZ: camera.position.z,
+        cameraNear: camera.near,
+        cameraFar: camera.far,
+        renderables: vrm.scene.getObjectsByProperty("isMesh", true).length,
+        basePosition: basePosition.toArray(),
       });
     } catch (error) {
       console.error("[JENEFAR] VRM load failed", error);
@@ -235,6 +262,7 @@ if (canvas) {
 
   // PHASE 5: natural avatar motion
   let targetGazeX = 0, targetGazeY = 0, speakingMotion = 0;
+  let baseAvatarY = 0;
   let blinkTimer = 0, nextBlinkAt = performance.now() + 2200;
 
   function updateNaturalFace(){
@@ -287,10 +315,11 @@ if (canvas) {
     }
     if (vrm) {
       const now = performance.now();
-      vrm.scene.position.y = Math.sin(now * 0.0012) * 0.004;
+      vrm.scene.position.y = baseAvatarY + Math.sin(now * 0.0012) * 0.004;
       vrm.scene.rotation.y = Math.sin(now * 0.0004) * 0.025;
       vrm.scene.rotation.z = Math.sin(now * 0.00075) * (0.006 + speakingMotion * 0.012);
       updateNaturalFace();
+      baseAvatarY = vrm.scene.position.y - Math.sin(now * 0.0012) * 0.004;
       vrm.update(1 / 60);
     }
     if (premiumGroup) {
