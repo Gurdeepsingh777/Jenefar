@@ -77,22 +77,36 @@ if (canvas) {
       vrm.scene.scale.setScalar(1);
       vrm.scene.updateMatrixWorld(true);
 
-      // Build the framing bounds from the actual skinned avatar meshes.
-      // VRM files can also contain helper/collider geometry; including those
-      // nodes in Box3 can make the "model" bounds much larger than the visible
-      // character and causes an incorrectly tiny avatar.
+      // Build framing bounds from the *deformed* skinned vertices. Box3.expandByObject()
+      // uses geometry bounds, but a SkinnedMesh can have a very different rendered
+      // shape after bone transforms. Using getVertexPosition() here prevents a
+      // false oversized bound that makes the real avatar render tiny.
       const skinnedMeshes = [];
       vrm.scene.traverse(node => {
         if (node.isSkinnedMesh && node.geometry && node.visible) skinnedMeshes.push(node);
       });
 
-      const visualBounds = new THREE.Box3();
-      if (skinnedMeshes.length) {
-        for (const mesh of skinnedMeshes) visualBounds.expandByObject(mesh, true);
-      } else {
-        visualBounds.setFromObject(vrm.scene, true);
-      }
+      const getVisualBounds = () => {
+        const result = new THREE.Box3();
+        const localPosition = new THREE.Vector3();
+        const worldPosition = new THREE.Vector3();
+        let vertexCount = 0;
+        for (const mesh of skinnedMeshes) {
+          const position = mesh.geometry.attributes.position;
+          if (!position) continue;
+          mesh.updateMatrixWorld(true);
+          for (let i = 0; i < position.count; i++) {
+            mesh.getVertexPosition(i, localPosition);
+            worldPosition.copy(localPosition).applyMatrix4(mesh.matrixWorld);
+            result.expandByPoint(worldPosition);
+            vertexCount++;
+          }
+        }
+        if (!vertexCount) result.setFromObject(vrm.scene, true);
+        return result;
+      };
 
+      const visualBounds = getVisualBounds();
       const rawSize = visualBounds.getSize(new THREE.Vector3());
       const rawHeight = Number.isFinite(rawSize.y) && rawSize.y > 0.01 ? rawSize.y : 1.7;
       const targetHeight = 2.55;
@@ -102,12 +116,7 @@ if (canvas) {
 
       // Recompute the bounds after normalization, using only the visible
       // humanoid meshes so helper/collider nodes cannot affect framing.
-      const bounds = new THREE.Box3();
-      if (skinnedMeshes.length) {
-        for (const mesh of skinnedMeshes) bounds.expandByObject(mesh, true);
-      } else {
-        bounds.setFromObject(vrm.scene, true);
-      }
+      const bounds = getVisualBounds();
       const center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
       const modelHeight = Number.isFinite(size.y) && size.y > 0.01 ? size.y : targetHeight;
