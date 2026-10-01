@@ -1134,3 +1134,13 @@ if(mainHudCanvas){
   c.title="Jenefar native HUD renderer";
   window.__JENEFAR_HUD_NATIVE__=true;
 })();
+
+/* Phase 16b: center HUD polish */
+(function(){
+  const hud=document.getElementById("hud-canvas");
+  if(!hud) return;
+  hud.addEventListener("click",e=>e.preventDefault());
+  window.addEventListener("resize",()=>{
+    if(typeof hudResize==="function") hudResize();
+  });
+})();
