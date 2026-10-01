@@ -1458,3 +1458,88 @@ body[data-hud-state="error"] .halo-b{opacity:.14!important}
 body.vrm-loaded .avatar{opacity:0!important}
 body.vrm-loaded .photo-avatar{display:none!important}
 body.vrm-error .avatar{opacity:.12!important}
+
+
+/* Phase 15: hard visual override for 1920x1080 dashboard */
+#hud-canvas{
+  left:174px!important;
+  right:360px!important;
+  top:76px!important;
+  bottom:92px!important;
+  z-index:20!important;
+  opacity:1!important;
+}
+#vrm-canvas{
+  left:174px!important;
+  right:360px!important;
+  top:76px!important;
+  bottom:92px!important;
+  width:auto!important;
+  height:auto!important;
+  z-index:25!important;
+}
+.avatar-shell{
+  left:174px!important;
+  right:360px!important;
+  top:76px!important;
+  bottom:92px!important;
+  width:auto!important;
+  height:auto!important;
+  z-index:26!important;
+  overflow:hidden!important;
+}
+.avatar-shell .avatar{display:none!important}
+body.vrm-loaded .avatar{display:none!important}
+body.vrm-loaded #photo-avatar{display:none!important}
+
+/* Put hero copy and chat in the left-center utility column; don't let them overlap the HUD core. */
+.hero-copy{
+  left:176px!important;
+  top:88px!important;
+  width:330px!important;
+  max-width:330px!important;
+  z-index:60!important;
+}
+.chat-glass{
+  left:176px!important;
+  top:246px!important;
+  width:300px!important;
+  height:270px!important;
+  z-index:61!important;
+}
+.quick-apps{
+  left:176px!important;
+  bottom:104px!important;
+  width:300px!important;
+  height:130px!important;
+  z-index:60!important;
+}
+
+/* Keep the center HUD visually open. */
+.halo,.halo-a,.halo-b,.avatar-glow,.avatar-backlight{display:none!important}
+.holo-earth{display:none!important}
+#desktop-mirror{z-index:4!important}
+#task-screen{display:none!important}
+
+/* Right rail stays isolated. */
+.system-card{right:16px!important;top:78px!important;width:334px!important;z-index:70!important}
+.command-stack{right:16px!important;top:262px!important;width:334px!important;z-index:70!important}
+#activity-panel{right:16px!important;top:466px!important;width:334px!important;height:calc(100vh - 570px)!important;z-index:70!important}
+
+/* Remove decorative blocks that visually read as overlap. */
+.chair-silhouette,.holo-particles{display:none!important}
+.media-card{left:14px!important;bottom:14px!important;width:180px!important;z-index:70!important}
+.realtime-controls{right:16px!important;bottom:14px!important;z-index:100!important}
+.bottom-dock{z-index:101!important}
+
+/* Strong center HUD backdrop to guarantee contrast. */
+#stage:after{
+  content:"";
+  position:absolute;
+  left:174px;right:360px;top:76px;bottom:92px;
+  pointer-events:none;
+  z-index:3;
+  background:
+    radial-gradient(circle at 52% 48%,rgba(24,142,255,.14),transparent 30%),
+    radial-gradient(circle at 52% 48%,rgba(84,65,255,.09),transparent 52%);
+}
