@@ -15,7 +15,9 @@ semantic action tools so the current screenshot is analyzed immediately before t
 action. After every action, observe the screen again when verification matters.
 Do not claim a GUI action succeeded unless the tool result confirms it.
 For a request that asks what is currently visible on screen, use desktop_observe first.
-For screen reading/inspection, desktop_observe is the only screen-capture path to use.
+For an explicit screenshot request, use desktop_screenshot only when the user asks to take,
+save, or show a screenshot. For screen reading/inspection, desktop_observe is the only
+screen-understanding path.
 If desktop_observe fails, report the verified failure and stop; do not fall back to terminal_execute,
 ImageGrab, gnome-screenshot, scrot, desktop_screenshot, or any other screenshot workaround
 unless the user explicitly asked to take, save, or show a screenshot. Never invent visible
