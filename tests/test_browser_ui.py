@@ -325,3 +325,43 @@ def test_avatar_events_can_carry_browser_audio():
     event = subscriber.get_nowait()
     assert event["audio_b64"] == "YWJj"
     assert event["audio_mime"] == "audio/wav"
+
+
+def test_live_task_monitor_markup_and_runtime_mirroring():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert 'id="task-screen"' in html
+    assert 'id="task-screen-log"' in html
+    assert "function updateTaskScreen(event)" in js
+    assert "updateTaskScreen(event);" in js
+    assert "LIVE TASK MONITOR / ENLARGED HOLOGRAPHIC SCREEN" in css
+    assert "#task-screen{" in css
+
+
+def test_workspace_create_tool_and_workspace_scope_include_documents():
+    policy = (ROOT / "jenefar" / "workspace" / "policy.py").read_text(encoding="utf-8")
+    service = (ROOT / "jenefar" / "workspace" / "service.py").read_text(encoding="utf-8")
+    broker = (ROOT / "jenefar" / "tools" / "broker.py").read_text(encoding="utf-8")
+    assert 'Path.home() / "Documents"' in policy
+    assert "def create_file" in service
+    assert 'name="workspace_create_file"' in broker
+    assert "requires_confirmation=False" in broker
+
+
+def test_local_development_agent_uses_conversation_context_research_and_self_healing():
+    agent = (ROOT / "jenefar" / "agents" / "coding" / "local_development.py").read_text(encoding="utf-8")
+    task_plan = (ROOT / "jenefar" / "core" / "task_plan.py").read_text(encoding="utf-8")
+    assert "continuous engineering task" in agent
+    assert "selected option numbers" in agent
+    assert "research current documentation" in agent
+    assert "workspace_create_file" in agent
+    assert "max_tool_rounds = 20" in agent
+    assert '"research"' in task_plan
+
+
+def test_browser_tts_has_natural_edge_fallback():
+    voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert "def _synthesize_edge_audio" in voice
+    assert "en-IN-NeerjaNeural" in voice
+    assert 'return self._synthesize_edge_audio(text)' in voice
