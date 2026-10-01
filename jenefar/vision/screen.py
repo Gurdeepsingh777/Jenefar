@@ -65,6 +65,10 @@ class ScreenVision:
             save=save,
         )
 
+    def read_screen(self, task: str) -> dict[str, Any]:
+        """Explicit screen-understanding entry point; always captures a fresh frame."""
+        return self.analyze(task)
+
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         cleaned = text.strip()
