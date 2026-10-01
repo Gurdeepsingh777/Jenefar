@@ -1125,3 +1125,12 @@ if(mainHudCanvas){
   hudSetState("idle",0);
   requestAnimationFrame(drawNativeHud);
 }
+
+/* Phase 15b: HUD diagnostics */
+(function(){
+  const c=document.getElementById("hud-canvas");
+  if(!c) return;
+  c.dataset.hudRenderer="native";
+  c.title="Jenefar native HUD renderer";
+  window.__JENEFAR_HUD_NATIVE__=true;
+})();
