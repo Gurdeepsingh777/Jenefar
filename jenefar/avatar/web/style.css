@@ -1174,3 +1174,323 @@ body.vrm-loaded #photo-avatar{display:none}
   #vrm-canvas{left:calc(50% - 78px)!important;width:156px!important;height:180px!important;bottom:62px!important}
   .avatar-shell{left:calc(50% - 60px)!important;width:120px!important;height:150px!important;bottom:58px!important}
 }
+
+
+/* PHASE 1 — DESKTOP LAYOUT RESET (layout only; no HUD/runtime changes) */
+/*
+  Target viewport: 1920x1080 browser workspace.
+  This phase ONLY establishes spatial ownership for the existing components.
+  HUD behavior, VRM rendering, voice, vision and task logic are intentionally untouched.
+*/
+:root{
+  --p1-left:178px;
+  --p1-right:350px;
+  --p1-top:70px;
+  --p1-bottom:92px;
+  --p1-gap:16px;
+}
+
+html,body,#stage{
+  width:100%!important;
+  height:100%!important;
+  overflow:hidden!important;
+}
+
+#stage{
+  position:relative!important;
+  isolation:isolate!important;
+}
+
+/* ===== 1. GLOBAL LAYERS ===== */
+.backdrop{
+  inset:0!important;
+  z-index:0!important;
+  pointer-events:none!important;
+}
+#particles{
+  inset:0!important;
+  z-index:1!important;
+  pointer-events:none!important;
+}
+.sci-fi-bg,.room-lights,.holo-particles,.chair-silhouette{
+  pointer-events:none!important;
+}
+
+/* ===== 2. TOP BAR ===== */
+.siri-topbar{
+  left:18px!important;
+  right:18px!important;
+  top:12px!important;
+  height:48px!important;
+  z-index:100!important;
+}
+
+/* ===== 3. LEFT NAVIGATION RAIL ===== */
+.side-nav{
+  left:14px!important;
+  right:auto!important;
+  top:72px!important;
+  bottom:104px!important;
+  width:148px!important;
+  z-index:95!important;
+  overflow:hidden!important;
+}
+.side-nav .nav-item{
+  min-height:38px!important;
+  padding:9px 10px!important;
+}
+
+/* ===== 4. MAIN WORKSPACE BOUNDS ===== */
+.hero-copy{
+  left:calc(var(--p1-left) + 16px)!important;
+  right:auto!important;
+  top:82px!important;
+  width:340px!important;
+  max-width:340px!important;
+  z-index:60!important;
+}
+
+#hud-avatar,
+#hud-canvas,
+#vrm-canvas,
+.avatar-shell,
+#desktop-mirror,
+#task-screen{
+  left:var(--p1-left)!important;
+  right:var(--p1-right)!important;
+  top:var(--p1-top)!important;
+  bottom:var(--p1-bottom)!important;
+  width:auto!important;
+  height:auto!important;
+  inset:auto!important;
+}
+
+/* Keep the existing visual layers inside the center workspace. */
+#hud-avatar{
+  z-index:12!important;
+  pointer-events:none!important;
+}
+#hud-canvas{
+  z-index:13!important;
+  pointer-events:none!important;
+}
+#vrm-canvas{
+  z-index:14!important;
+  pointer-events:none!important;
+}
+.avatar-shell{
+  z-index:15!important;
+  pointer-events:none!important;
+  overflow:hidden!important;
+}
+
+/* ===== 5. LEFT-CENTER UTILITY STACK ===== */
+.chat-glass{
+  left:calc(var(--p1-left) + 16px)!important;
+  right:auto!important;
+  top:248px!important;
+  width:330px!important;
+  height:282px!important;
+  z-index:70!important;
+}
+
+.quick-apps{
+  left:calc(var(--p1-left) + 16px)!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:108px!important;
+  width:330px!important;
+  height:128px!important;
+  z-index:70!important;
+}
+
+.media-card{
+  left:14px!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:14px!important;
+  width:148px!important;
+  height:76px!important;
+  z-index:98!important;
+}
+
+/* ===== 6. RIGHT WORKSPACE RAIL ===== */
+.system-card{
+  left:auto!important;
+  right:16px!important;
+  top:72px!important;
+  width:318px!important;
+  height:168px!important;
+  z-index:80!important;
+}
+
+.command-stack{
+  left:auto!important;
+  right:16px!important;
+  top:254px!important;
+  width:318px!important;
+  z-index:80!important;
+}
+
+#activity-panel{
+  left:auto!important;
+  right:16px!important;
+  top:430px!important;
+  width:318px!important;
+  height:calc(100vh - 522px)!important;
+  min-height:250px!important;
+  max-height:none!important;
+  z-index:80!important;
+}
+
+/* ===== 7. TASK CONSOLE: BOTTOM CENTER, NEVER ACROSS THE HERO ===== */
+#task-screen{
+  left:calc(var(--p1-left) + 365px)!important;
+  right:calc(var(--p1-right) + 16px)!important;
+  top:auto!important;
+  bottom:104px!important;
+  width:auto!important;
+  height:82px!important;
+  min-height:0!important;
+  max-height:82px!important;
+  z-index:75!important;
+  overflow:hidden!important;
+}
+
+/* ===== 8. BOTTOM COMMAND AREA ===== */
+.bottom-dock{
+  left:50%!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:12px!important;
+  transform:translateX(-50%)!important;
+  width:350px!important;
+  z-index:110!important;
+}
+
+.realtime-controls{
+  left:auto!important;
+  right:16px!important;
+  top:auto!important;
+  bottom:14px!important;
+  width:318px!important;
+  max-width:318px!important;
+  z-index:111!important;
+}
+
+/* ===== 9. DECORATIVE CENTER CONTENT STAYS INSIDE CENTER, NEVER UNDER PANELS ===== */
+#holo-earth{
+  left:var(--p1-left)!important;
+  right:var(--p1-right)!important;
+  top:var(--p1-top)!important;
+  bottom:var(--p1-bottom)!important;
+  width:auto!important;
+  height:auto!important;
+  z-index:3!important;
+  pointer-events:none!important;
+}
+
+.holo-earth{
+  right:auto!important;
+}
+
+/* ===== 10. PREVENT DECORATIVE/CANVAS LAYERS FROM STEALING INPUT ===== */
+.backdrop,
+#particles,
+#hud-avatar,
+#hud-canvas,
+#vrm-canvas,
+.holo-particles,
+.chair-silhouette,
+.holo-earth,
+.avatar-shell{
+  pointer-events:none!important;
+}
+
+/* ===== 11. 1920x1080 OPTIMIZATION ===== */
+@media (min-width:1600px){
+  .hero-copy h1{font-size:34px!important}
+  .hero-copy p{font-size:11px!important}
+}
+
+@media (max-width:1250px){
+  :root{
+    --p1-left:160px;
+    --p1-right:318px;
+  }
+  .side-nav{width:136px!important}
+  .system-card,.command-stack,#activity-panel{width:292px!important}
+  .chat-glass,.quick-apps{width:305px!important}
+  #task-screen{left:calc(var(--p1-left) + 335px)!important}
+}
+
+@media (max-width:950px){
+  :root{
+    --p1-left:0px;
+    --p1-right:0px;
+    --p1-top:64px;
+    --p1-bottom:76px;
+  }
+  .side-nav{
+    left:8px!important;
+    right:8px!important;
+    top:auto!important;
+    bottom:68px!important;
+    width:auto!important;
+    height:48px!important;
+    display:flex!important;
+    flex-direction:row!important;
+    overflow:auto!important;
+  }
+  .hero-copy{
+    left:16px!important;
+    top:76px!important;
+    width:280px!important;
+  }
+  .chat-glass{
+    left:12px!important;
+    top:auto!important;
+    bottom:138px!important;
+    width:310px!important;
+    height:230px!important;
+  }
+  .quick-apps{
+    left:12px!important;
+    bottom:82px!important;
+    width:310px!important;
+    height:46px!important;
+    overflow:hidden!important;
+  }
+  .system-card{
+    right:12px!important;
+    top:70px!important;
+    width:286px!important;
+    height:148px!important;
+  }
+  .command-stack{
+    right:12px!important;
+    top:228px!important;
+    width:286px!important;
+  }
+  #activity-panel{
+    right:12px!important;
+    top:398px!important;
+    width:286px!important;
+    height:calc(100vh - 474px)!important;
+  }
+  #task-screen{
+    left:12px!important;
+    right:12px!important;
+    bottom:134px!important;
+    height:72px!important;
+    max-height:72px!important;
+  }
+  .bottom-dock{display:none!important}
+  .realtime-controls{
+    left:12px!important;
+    right:12px!important;
+    bottom:8px!important;
+    width:auto!important;
+    max-width:none!important;
+  }
+}
