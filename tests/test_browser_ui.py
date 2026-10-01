@@ -534,3 +534,13 @@ def test_phase15_hud_is_above_center_backdrop_and_avatar_is_hidden_when_vrm_load
     assert "z-index:20!important" in css
     assert "body.vrm-loaded .avatar{display:none!important}" in css
     assert "window.__JENEFAR_HUD_NATIVE__=true" in app
+
+
+def test_phase16_three_zone_layout_is_declared():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "Phase 16: coherent 1920 dashboard layout" in css
+    assert "--rail-left:190px" in css
+    assert "--rail-right:350px" in css
+    assert ".system-card{" in css
+    assert "#activity-panel{" in css
+    assert ".chat-glass{" in css
