@@ -96,7 +96,7 @@ class BrowserVoiceBridge:
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
         if not key:
-            return "", ""
+            return self._synthesize_edge_audio(text)
 
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
         voice = os.getenv("JENEFAR_BROWSER_TTS_VOICE", "coral").strip() or "coral"
