@@ -509,3 +509,19 @@ def test_broker_online_schemas_are_non_strict_function_schemas():
     schemas = ToolBroker(require_confirmation=False).schemas()
     assert schemas
     assert all(item.get("strict") is False for item in schemas)
+
+
+def test_phase14_native_hud_renderer_is_wired():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    assert 'id="hud-canvas"' in html
+    assert "function drawNativeHud" in app
+    assert "#hud-canvas{" in css
+    assert "Phase 14: auto-frame the real VRM bounds." in vrm
+
+def test_phase14_hides_redundant_center_console():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "#task-screen{display:none!important}" in css
+    assert ".avatar-shell .status-card{display:none!important}" in css
