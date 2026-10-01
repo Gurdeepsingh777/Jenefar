@@ -91,6 +91,9 @@ class Planner:
             "find on screen", "locate on screen", "click the", "click on",
             "press the button", "find the button", "search box", "address bar",
             "what is on my screen", "semantic gui", "semantic click",
+            "screen par", "screen pe", "screen kya", "screen read",
+            "live screen", "my screen", "meri screen", "mere screen",
+            "screen dekho", "screen dikh", "screen me kya",
         )):
             return self._make_plan(
                 text,
