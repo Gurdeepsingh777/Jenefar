@@ -440,3 +440,38 @@ def test_holographic_window_mirror_integration():
     assert "Phase 9: clear avatar + real live-window mirror" in css
     assert 'path == "/desktop/mirror.jpg"' in server
     assert 'name="desktop_mirror_start"' in broker
+
+
+def test_online_tool_schemas_are_not_forced_strict():
+    from jenefar.tools.broker import ToolBroker
+    schemas = ToolBroker(require_confirmation=False).schemas()
+    assert schemas
+    assert all(item.get("strict") is False for item in schemas if item.get("type") == "function")
+
+
+def test_workspace_list_directory_accepts_optional_max_items_for_openai_schema():
+    from jenefar.tools.broker import ToolBroker
+    tool = ToolBroker(require_confirmation=False).registry.get("workspace_list_directory")
+    assert tool.parameters["required"] == ["path"]
+    assert "max_items" in tool.parameters["properties"]
+
+
+def test_online_provider_order_moves_gemini_ahead_of_openrouter_free():
+    import os
+    from jenefar.core.provider_pool import ProviderPool
+    previous = os.environ.get("JENEFAR_PROVIDER_ORDER")
+    previous_openrouter = os.environ.get("OPENROUTER_MODEL")
+    try:
+        os.environ["JENEFAR_PROVIDER_ORDER"] = "openai,openrouter,gemini,groq"
+        os.environ["OPENROUTER_MODEL"] = "openrouter/free"
+        order = ProviderPool().order()
+        assert order.index("gemini") < order.index("openrouter")
+    finally:
+        if previous is None:
+            os.environ.pop("JENEFAR_PROVIDER_ORDER", None)
+        else:
+            os.environ["JENEFAR_PROVIDER_ORDER"] = previous
+        if previous_openrouter is None:
+            os.environ.pop("OPENROUTER_MODEL", None)
+        else:
+            os.environ["OPENROUTER_MODEL"] = previous_openrouter
