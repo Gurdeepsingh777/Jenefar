@@ -16,6 +16,7 @@ class ToolSpec:
     })
     requires_confirmation: bool = False
     action: bool = False
+    critical: bool = False
 
 class ToolRegistry:
     def __init__(self):
@@ -33,7 +34,7 @@ class ToolRegistry:
     def openai_tools(self, *, include_confirmation_tools: bool = False, include_action_tools: bool = False) -> list[dict[str, Any]]:
         tools = []
         for spec in self._tools.values():
-            if spec.requires_confirmation and not include_confirmation_tools:
+            if spec.critical and not include_confirmation_tools:
                 continue
             if spec.action and not include_action_tools:
                 continue
