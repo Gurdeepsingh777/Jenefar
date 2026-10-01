@@ -347,7 +347,7 @@ class ToolBroker:
                 str(args["path"]),
                 int(args["timeout"]),
             ),
-            requires_confirmation=True,
+            requires_confirmation=False,
             action=True,
         ))
         self.registry.register(ToolSpec(
@@ -366,12 +366,31 @@ class ToolBroker:
                 str(args["path"]),
                 int(args["timeout"]),
             ),
-            requires_confirmation=True,
+            requires_confirmation=False,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="workspace_create_file",
+            description="Create a new text/code file inside an authorized local workspace root. Parent directories are created when needed.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string", "maxLength": 500000},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.workspace.create_file(
+                str(args["path"]),
+                str(args["content"]),
+            ),
+            requires_confirmation=False,
             action=True,
         ))
         self.registry.register(ToolSpec(
             name="workspace_edit_file",
-            description="Edit an authorized local text/code file by replacing its complete content. A timestamped backup and diff are created. Requires explicit confirmation.",
+            description="Edit or create an authorized local text/code file by replacing its complete content. Existing files get a timestamped backup and diff. User-directed coding tasks may use this directly.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -385,7 +404,7 @@ class ToolBroker:
                 str(args["path"]),
                 str(args["new_content"]),
             ),
-            requires_confirmation=True,
+            requires_confirmation=False,
             action=True,
         ))
         self.registry.register(ToolSpec(
