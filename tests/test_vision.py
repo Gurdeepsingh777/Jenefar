@@ -1,3 +1,4 @@
+from pathlib import Path
 from jenefar.core.planner import Planner
 from jenefar.vision.screen import ScreenFrame, ScreenVision
 
