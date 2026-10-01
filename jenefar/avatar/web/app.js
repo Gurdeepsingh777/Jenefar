@@ -465,6 +465,7 @@ function browserSpeakFallback(text){
 
 function apply(event){
   currentState=event.state||"idle";
+  updateEmbeddedHud(currentState,event.text||"");
   speechLevel=Number(event.level||0);
   stage.dataset.state=currentState;
   emotion=event.emotion||"neutral";
