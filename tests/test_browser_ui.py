@@ -509,3 +509,14 @@ def test_broker_online_schemas_are_non_strict_function_schemas():
     schemas = ToolBroker(require_confirmation=False).schemas()
     assert schemas
     assert all(item.get("strict") is False for item in schemas)
+
+
+def test_phase1_desktop_layout_owns_fixed_spatial_regions():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "PHASE 1 — DESKTOP LAYOUT RESET" in css
+    assert "--p1-left:178px" in css
+    assert "--p1-right:350px" in css
+    assert ".side-nav{" in css
+    assert ".system-card{" in css
+    assert "#activity-panel{" in css
+    assert "#task-screen{" in css
