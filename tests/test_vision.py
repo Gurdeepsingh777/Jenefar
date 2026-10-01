@@ -59,3 +59,16 @@ def test_planner_routes_semantic_screen_requests():
     plan = Planner().plan("find the search box on screen and click it")
     assert plan.agent == "gui_vision"
     assert plan.intent == "semantic_gui"
+
+
+def test_planner_routes_natural_screen_read_phrasing():
+    phrases = (
+        "screen par kya dikh raha hai",
+        "meri screen pe kya hai",
+        "read my screen",
+        "screen pe mujhe kya dikh raha hai",
+    )
+    for phrase in phrases:
+        plan = Planner().plan(phrase)
+        assert plan.agent == "gui_vision"
+        assert plan.intent == "semantic_gui"
