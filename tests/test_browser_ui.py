@@ -267,3 +267,40 @@ def test_avatar_mode_uses_browser_voice_unless_an_explicit_voice_mode_owns_audio
     assert "BrowserVoiceBridge" in run
     assert "if not args.realtime and not args.voice and not args.voice_continuous:" in run
     assert "voice_handler=browser_voice.handle_text if browser_voice else None" in run
+
+
+
+def test_browser_voice_display_transliterates_without_dropping_technical_text():
+    browser = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert "devanagari_to_roman" in browser
+    assert "display_text" in browser
+
+
+def test_screen_reading_is_read_only_and_available_without_confirmation():
+    from jenefar.tools.broker import ToolBroker
+
+    broker = ToolBroker(require_confirmation=True)
+    observe = broker.registry.get("desktop_observe")
+    locate = broker.registry.get("desktop_find_element")
+    assert observe.requires_confirmation is False
+    assert observe.action is False
+    assert locate.requires_confirmation is False
+    assert locate.action is False
+
+
+def test_avatar_events_can_carry_browser_audio():
+    from jenefar.avatar.controller import AvatarController
+
+    controller = AvatarController()
+    subscriber = controller.subscribe()
+    subscriber.get_nowait()
+    controller.publish(
+        "speaking",
+        "Haan, main yahin hoon.",
+        task_id="voice1",
+        audio_b64="YWJj",
+        audio_mime="audio/wav",
+    )
+    event = subscriber.get_nowait()
+    assert event["audio_b64"] == "YWJj"
+    assert event["audio_mime"] == "audio/wav"
