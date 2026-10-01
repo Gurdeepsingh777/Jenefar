@@ -89,8 +89,62 @@ class ToolBroker:
             security=self.security,
         )
         self.pending: dict[str, PendingToolCall] = {}
+        self._task_context: dict[str, str] = {"agent": "", "task": ""}
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
+        self._apply_critical_tool_policy()
+
+    def _apply_critical_tool_policy(self) -> None:
+        critical_names = {
+            "terminal_execute",
+            "whatsapp_send_web",
+            "connector_execute",
+            "kali_tool_execute",
+            "security_tool_execute",
+            "robot_mqtt_publish",
+            "robot_ros2_publish",
+            "robot_command",
+        }
+        for name in critical_names:
+            try:
+                self.registry.get(name).critical = True
+            except KeyError:
+                continue
+
+    def set_task_context(self, *, agent: str = "", task: str = "") -> None:
+        self._task_context = {
+            "agent": str(agent or ""),
+            "task": str(task or ""),
+        }
+
+    def clear_task_context(self) -> None:
+        self._task_context = {"agent": "", "task": ""}
+
+    @staticmethod
+    def _explicit_screenshot_request(task: str) -> bool:
+        lowered = str(task or "").lower()
+        return any(marker in lowered for marker in (
+            "screenshot le lo", "screenshot le", "screenshot bana",
+            "screenshot save", "take a screenshot", "capture a screenshot",
+            "save a screenshot", "screenshot chahiye",
+        ))
+
+    def _guard_screen_tool(self, name: str) -> str | None:
+        agent = self._task_context.get("agent", "")
+        task = self._task_context.get("task", "")
+        if agent != "gui_vision":
+            return None
+        if name == "terminal_execute":
+            return json.dumps({
+                "status": "error",
+                "error": "Screen-reading tasks must not use terminal_execute. Use desktop_observe or semantic GUI tools.",
+            })
+        if name == "desktop_screenshot" and not self._explicit_screenshot_request(task):
+            return json.dumps({
+                "status": "error",
+                "error": "desktop_screenshot is only available when the user explicitly asks for a screenshot.",
+            })
+        return None
 
     def _activity(self, state: str, text: str) -> None:
         if self.activity_handler is not None:
@@ -674,7 +728,7 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="desktop_screenshot",
-            description="Capture and save a desktop screenshot into Jenefar's local data/screenshots directory. Use ONLY when the user explicitly asks to take, save, or show a screenshot; never use it as a screen-inspection workaround. Requires explicit confirmation.",
+            description="Capture and save a desktop screenshot into Jenefar's local data/screenshots directory. Use ONLY when the user explicitly asks to take, save, or show a screenshot; never use it as a screen-inspection workaround.",
             parameters={
                 "type": "object",
                 "properties": {"filename": {"type": "string"}},
@@ -1309,13 +1363,21 @@ class ToolBroker:
 
     def invoke(self, name: str, arguments: dict[str, Any], *, confirmed: bool = False) -> str:
         self._activity("thinking", f"Tool requested: {name}")
+        guarded = self._guard_screen_tool(name)
+        if guarded:
+            self._activity("error", f"Tool blocked by screen policy: {name}")
+            return guarded
         try:
             spec = self.registry.get(name)
         except KeyError:
             self.audit.record("tool_unknown", tool=name)
             return json.dumps({"status": "error", "error": f"Unknown tool: {name}"})
 
-        if spec.requires_confirmation and self.require_confirmation and not confirmed:
+        needs_confirmation = (
+            spec.critical
+            or (spec.requires_confirmation and self.require_confirmation)
+        )
+        if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
             self.pending[pending_id] = PendingToolCall(pending_id, name, arguments)
             self.audit.record(
@@ -1332,7 +1394,18 @@ class ToolBroker:
                 "status": "approval_required",
                 "pending_id": pending_id,
                 "tool": name,
-                "message": "Explicit user confirmation is required before this tool can execute.",
+                "message": (
+                    "This action is marked critical and needs your confirmation before I execute it."
+                    if spec.critical
+                    else "This action needs your confirmation before I execute it."
+                ),
+                "user_prompt": (
+                    f"Kya main {name.replace('_', ' ')} kar doon? "
+                    "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
+                    if spec.critical
+                    else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
+                ),
+                "critical": bool(spec.critical),
             })
 
         try:
