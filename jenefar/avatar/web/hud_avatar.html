@@ -17,7 +17,7 @@
     width:100%; height:100%;
   }
   #top-telemetry {
-    position:absolute; top:16px; left:20px;
+    position:absolute; top:18px; left:50%; transform:translateX(-50%);
     display:flex; align-items:center; gap:12px;
     padding:8px 16px;
     background: rgba(3,10,24,0.82);
@@ -50,7 +50,7 @@
   #caption-box {
     position:absolute; bottom:20px; left:50%;
     transform: translateX(-50%);
-    width: 88%; max-width: 420px;
+    width: 72%; max-width: 520px;
     text-align:center;
     color:#ecfeff;
     font-size:12px; font-weight:600;
@@ -94,13 +94,13 @@
   // ═══════════════════════════════════════════════════════════════
   const CFG = {
     PARTICLES:      420,
-    SPHERE_RADIUS:  88,
+    SPHERE_RADIUS: 150,
     FOV_DIST:       380,
-    RING_RADII:     [155, 172, 190, 208],
+    RING_RADII:     [235, 255, 280, 305],
     FLOOR_DEPTH:    14,
     FLOOR_COLS:     18,
     WAVEFORM_BARS:  72,
-    WAVEFORM_R:     216,
+    WAVEFORM_R:     310,
     SCAN_SPEED:     1.4,
     VIGNETTE:       1.0,
   };
@@ -346,7 +346,7 @@
   // ═══════════════════════════════════════════════════════════════
   function drawCore(rgb, t) {
     const pulse = 1 + Math.sin(t * 3.4) * 0.07 + S.curAmp * 0.4;
-    const r = 62 * pulse;
+    const r = 92 * pulse;
     const grad = ctx.createRadialGradient(CX, CY, 0, CX, CY, r * 2.4);
     grad.addColorStop(0.00, `rgba(255,255,255,${0.65 + S.curAmp * 0.3})`);
     grad.addColorStop(0.18, `rgba(${rgb}, 0.75)`);
