@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import base64
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Any
 
@@ -12,7 +13,7 @@ from jenefar.voice.speech import enforce_hinglish, roman_hinglish_for_voice
 
 
 class BrowserVoiceBridge:
-    """Concurrent browser voice task manager with serialized speech output."""
+    """Browser-first voice task manager with natural browser-played TTS audio."""
 
     def __init__(self, orchestrator, avatar=None):
         self.orchestrator = orchestrator
@@ -29,6 +30,7 @@ class BrowserVoiceBridge:
         )
         self._active_task = None
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
+        self._tts_lock = threading.Lock()
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -36,15 +38,79 @@ class BrowserVoiceBridge:
         )
         self._speech_thread.start()
 
-    def _publish(self, state: str, text: str = "", task_id: str = "") -> None:
+    def _publish(
+        self,
+        state: str,
+        text: str = "",
+        task_id: str = "",
+        *,
+        audio_b64: str = "",
+        audio_mime: str = "",
+    ) -> None:
         if self.avatar is not None:
-            self.avatar.publish(state, text, task_id=task_id)
+            self.avatar.publish(
+                state,
+                text,
+                task_id=task_id,
+                audio_b64=audio_b64,
+                audio_mime=audio_mime,
+            )
+
+    @staticmethod
+    def _display_text(text: str) -> str:
+        return enforce_hinglish(str(text or "").strip(), max_chars=12000)
+
+    @staticmethod
+    def _direct_openai_key() -> str:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+        return "" if not key or key.startswith("sk-or-") else key
+
+    def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
+        key = self._direct_openai_key()
+        if not key:
+            return "", ""
+
+        model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
+        voice = os.getenv("JENEFAR_BROWSER_TTS_VOICE", "coral").strip() or "coral"
+        instructions = os.getenv(
+            "JENEFAR_BROWSER_TTS_INSTRUCTIONS",
+            (
+                "Speak as a warm, natural, emotionally expressive adult female voice. "
+                "Use a relaxed Indian conversational style for Roman Hinglish. "
+                "Sound like a real person talking naturally, not like a narrator or robot. "
+                "Use gentle pauses, natural emphasis, and a friendly confident tone. "
+                "Do not spell out Romanized Hindi words."
+            ),
+        )
+        try:
+            from openai import OpenAI
+
+            with self._tts_lock:
+                response = OpenAI(api_key=key).audio.speech.create(
+                    model=model,
+                    voice=voice,
+                    input=text[:4096],
+                    instructions=instructions,
+                    response_format="wav",
+                    speed=float(os.getenv("JENEFAR_BROWSER_TTS_SPEED", "0.98")),
+                )
+            return (
+                base64.b64encode(response.content).decode("ascii"),
+                "audio/wav",
+            )
+        except Exception as exc:
+            print(
+                "[JENEFAR] Browser TTS generation failed; "
+                f"falling back to Web SpeechSynthesis: {type(exc).__name__}: {exc}"
+            )
+            return "", ""
 
     def submit_text(self, text: str) -> dict[str, Any]:
         raw = " ".join(str(text or "").strip().split())
         if not raw:
             return {"ok": False, "ignored": True, "reason": "empty"}
 
+        display_text = self._display_text(raw)
         normalized = self.orchestrator.wakeword.normalize_stt_text(raw)
         now = time.monotonic()
         if (
@@ -56,17 +122,24 @@ class BrowserVoiceBridge:
                 "ok": True,
                 "ignored": True,
                 "reason": "duplicate",
-                "text": raw,
+                "text": display_text,
+                "display_text": display_text,
             }
 
         if normalized.strip() == "exit":
             self._last_text = normalized
             self._last_at = now
-            return {"ok": True, "exit": True, "text": raw}
+            return {
+                "ok": True,
+                "exit": True,
+                "text": display_text,
+                "display_text": display_text,
+            }
 
         self._last_text = normalized
         self._last_at = now
         task_id = uuid.uuid4().hex[:10]
+        self._publish("listening", "You: " + display_text, task_id)
         self._publish("queued", "", task_id)
 
         if self._active_task is not None and not self._active_task.done():
@@ -76,20 +149,22 @@ class BrowserVoiceBridge:
                 "queued": False,
                 "busy": True,
                 "task_id": task_id,
-                "text": raw,
+                "text": display_text,
+                "display_text": display_text,
                 "status": "busy",
             }
 
         self._active_task = self._task_executor.submit(
             self._run_task,
             task_id,
-            raw,
+            display_text,
         )
         return {
             "ok": True,
             "accepted": True,
             "task_id": task_id,
-            "text": raw,
+            "text": display_text,
+            "display_text": display_text,
             "status": "running",
         }
 
@@ -122,42 +197,60 @@ class BrowserVoiceBridge:
                     if not command
                     else self.orchestrator.handle(
                         command,
-                        response_language=self._conversation_language,
+                        response_language="Hinglish",
                     )
                 )
             else:
                 reply = self.orchestrator.handle(
                     raw,
-                    response_language=self._conversation_language,
+                    response_language="Hinglish",
                 )
 
-            reply = enforce_hinglish(reply)
-            speech_text = roman_hinglish_for_voice(reply)
-            self._publish("result", "", task_id)
+            display_reply = self._display_text(reply)
+            speech_text = roman_hinglish_for_voice(display_reply)
+            self._publish("result", display_reply, task_id)
             if speech_text:
-                self._speech_queue.put((task_id, speech_text))
+                audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+                self._publish(
+                    "speaking",
+                    display_reply,
+                    task_id,
+                    audio_b64=audio_b64,
+                    audio_mime=audio_mime,
+                )
             else:
                 self._publish("completed", "", task_id)
-        except Exception:
-            self._publish("error", "Task complete nahi ho saka.", task_id)
-            self._speech_queue.put(
-                (
-                    task_id,
-                    enforce_hinglish(
-                        "Task complete nahi ho saka. Pura error browser ke result panel me dikh raha hai."
-                    ),
-                )
+        except Exception as exc:
+            error_text = self._display_text(
+                f"Task complete nahi ho saka. Error: {type(exc).__name__}: {exc}"
+            )
+            self._publish("error", error_text, task_id)
+            speech_text = roman_hinglish_for_voice(error_text)
+            audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+            self._publish(
+                "speaking",
+                error_text,
+                task_id,
+                audio_b64=audio_b64,
+                audio_mime=audio_mime,
             )
 
     def _speech_loop(self) -> None:
-        # Browser owns actual audio playback. This worker only publishes the
-        # response event so app.js can use speechSynthesis without Python audio.
+        # This worker only generates browser-playable audio and publishes it.
+        # It never opens a local speaker device.
         while True:
             task_id, text = self._speech_queue.get()
             try:
-                self._publish("speaking", text, task_id)
-                self._publish("speaking_fallback", text, task_id)
-                self._publish("completed", "", task_id)
+                display_text = self._display_text(text)
+                speech_text = roman_hinglish_for_voice(display_text)
+                audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+                self._publish(
+                    "speaking",
+                    display_text,
+                    task_id,
+                    audio_b64=audio_b64,
+                    audio_mime=audio_mime,
+                )
             finally:
                 self._speech_queue.task_done()
                 if self._speech_queue.empty():
