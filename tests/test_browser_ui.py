@@ -190,7 +190,7 @@ def test_premium_avatar_blender_pipeline_is_wired():
 def test_premium_avatar_source_is_not_overwritten():
     launcher = (ROOT / "jenefar" / "assets" / "premium_avatar.py").read_text(encoding="utf-8")
     assert "shutil.copy2(source_path, temporary_input)" in launcher
-    assert "Jenefar_Premium_v2.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "Jenefar_Premium.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
 
 
 def test_main_has_focused_desktop_requirements():
