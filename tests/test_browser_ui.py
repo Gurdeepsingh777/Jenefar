@@ -591,6 +591,14 @@ def test_vrm_runtime_normalizes_model_scale():
     assert "PHASE 5C — center-stage avatar viewport" in css
 
 
+def test_vrm_animation_bone_accessor_is_available_to_animation_loop():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    bone_idx = vrm.index("function bone(name)")
+    natural_face_idx = vrm.index("function updateNaturalFace()")
+    assert bone_idx < natural_face_idx
+    assert "const bone = (name) => humanoid?.getNormalizedBoneNode(name);" not in vrm
+
+
 def test_vrm_render_path_forces_mesh_visibility_and_preserves_frame():
     vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
     assert "node.frustumCulled = false" in vrm
