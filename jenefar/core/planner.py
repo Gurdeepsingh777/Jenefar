@@ -103,6 +103,11 @@ class Planner:
             "screen pe kholo", "screen par shift", "screen pe shift",
             "window ko screen par", "window ko blue screen", "firefox ko blue",
             "browser ko blue", "document folder ko blue", "folder ko blue",
+            "terminal ko screen", "terminal ko blue screen", "terminal ko blue",
+            "firefox ko screen", "firefox ko screen par", "browser ko screen par",
+            "window transfer", "transfer window", "move window to screen",
+            "shift window", "window ko shift", "hide native window",
+            "hide original window", "blue screen par dikhao", "blue screen pe dikhao",
         )):
             return self._make_plan(
                 text,
