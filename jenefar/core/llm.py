@@ -203,6 +203,7 @@ class LLMClient:
                             "pending_id": pending_id,
                             "tool": str(getattr(call, "name", "")),
                             "call_id": str(getattr(call, "call_id", "")),
+                            "prompt": str(parsed.get("user_prompt") or ""),
                         })
                 next_input.append({
                     "type": "function_call_output",
@@ -211,10 +212,11 @@ class LLMClient:
                 })
 
             if pending_tools:
-                ids = ", ".join(item["pending_id"] for item in pending_tools)
+                prompts = [item.get("prompt", "").strip() for item in pending_tools if item.get("prompt")]
+                text = " ".join(prompts) if prompts else "Is action ke liye aapki confirmation chahiye."
                 return LLMResponse(
-                    "A local tool requested explicit confirmation before execution."
-                    + (f" Pending approval id(s): {ids}." if ids else ""),
+                    text,
+
                     "approval_required",
                     getattr(response, "id", None),
                     pending_tools=pending_tools,
@@ -328,14 +330,16 @@ class LLMClient:
                             "pending_id": pending_id,
                             "tool": name,
                             "call_id": str(getattr(call, "id", "")),
+                            "prompt": str(parsed.get("user_prompt") or ""),
                         })
                 messages.append(self._tool_result(call, output))
 
             if pending_tools:
-                ids = ", ".join(item["pending_id"] for item in pending_tools)
+                prompts = [item.get("prompt", "").strip() for item in pending_tools if item.get("prompt")]
+                text = " ".join(prompts) if prompts else "Is action ke liye aapki confirmation chahiye."
                 return LLMResponse(
-                    "A local tool requested explicit confirmation before execution."
-                    + (f" Pending approval id(s): {ids}." if ids else ""),
+                    text,
+
                     "approval_required",
                     getattr(response, "id", None),
                     pending_tools=pending_tools,
