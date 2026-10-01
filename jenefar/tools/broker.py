@@ -26,6 +26,7 @@ from jenefar.automation.browser import play_youtube, first_mp3_in_folder
 from jenefar.media.song import record_and_recognize
 from jenefar.tools.kali import KaliToolManager
 from jenefar.vision.screen import ScreenVision
+from jenefar.vision.mirror import DesktopMirror
 from jenefar.automation.headless import HeadlessDesktopAutomation
 from jenefar.skills.manager import SkillManager
 from jenefar.connectors.manager import ConnectorManager
@@ -64,6 +65,7 @@ class ToolBroker:
             self.desktop = DesktopAutomation()
         self.screen_vision = None
         self._screen_vision_ready = False
+        self.desktop_mirror = None
         self.robotics = SerialRobotController()
         self.mqtt_robot = MqttRobotController()
         self.ros2_robot = Ros2RobotController()
@@ -152,6 +154,14 @@ class ToolBroker:
                 self.activity_handler(state, text)
             except Exception:
                 pass
+
+    def _get_desktop_mirror(self):
+        if self.desktop_mirror is None:
+            self.desktop_mirror = DesktopMirror(
+                self.desktop,
+                self._get_screen_vision(),
+            )
+        return self.desktop_mirror
 
     def _get_screen_vision(self):
         if self.screen_vision is None:
@@ -594,6 +604,35 @@ class ToolBroker:
                 "additionalProperties": False,
             },
             handler=lambda args: self.screen_vision.read_screen(str(args["query"])),
+            requires_confirmation=False,
+            action=False,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_mirror_start",
+            description="Mirror a requested visible desktop window into Jenefar's blue holographic screen. Use when the user explicitly asks to show a window/app on the avatar screen.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": 300},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._get_desktop_mirror().start(str(args["query"])),
+            requires_confirmation=False,
+            action=False,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_mirror_stop",
+            description="Stop the live desktop window mirror on Jenefar's holographic screen.",
+            handler=lambda _args: self._get_desktop_mirror().stop(),
+            requires_confirmation=False,
+            action=False,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_mirror_status",
+            description="Return the current holographic desktop-window mirror status.",
+            handler=lambda _args: self._get_desktop_mirror().status(),
             requires_confirmation=False,
             action=False,
         ))
