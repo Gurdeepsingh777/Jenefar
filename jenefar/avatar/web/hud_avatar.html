@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    background: transparent;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', 'Segoe UI Mono', 'Consolas', monospace;
+    user-select: none;
+    cursor: default;
+  }
+  #stage { width:100vw; height:100vh; position:relative; }
+  #hud {
+    position:absolute; inset:0;
+    width:100%; height:100%;
+  }
+  #top-telemetry {
+    position:absolute; top:16px; left:20px;
+    display:flex; align-items:center; gap:12px;
+    padding:8px 16px;
+    background: rgba(3,10,24,0.82);
+    border:1px solid rgba(0,240,255,0.5);
+    border-radius:12px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 0 22px rgba(0,240,255,0.22);
+    z-index:10;
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+  }
+  .led {
+    width:11px; height:11px; border-radius:50%;
+    background:#00f0ff;
+    box-shadow: 0 0 14px #00f0ff;
+    transition: all 0.3s ease;
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%,100% { transform: scale(1); opacity:1; }
+    50%     { transform: scale(0.82); opacity:0.7; }
+  }
+  #mode-tag {
+    color:#00f0ff;
+    font-size:11px;
+    font-weight:800;
+    letter-spacing:2.2px;
+    text-transform:uppercase;
+    transition: color 0.4s ease;
+  }
+  #caption-box {
+    position:absolute; bottom:20px; left:50%;
+    transform: translateX(-50%);
+    width: 88%; max-width: 420px;
+    text-align:center;
+    color:#ecfeff;
+    font-size:12px; font-weight:600;
+    letter-spacing:0.8px;
+    padding:9px 18px;
+    background: rgba(3,12,28,0.88);
+    border:1px solid rgba(0,240,255,0.38);
+    border-radius:14px;
+    box-shadow: 0 0 22px rgba(0,240,255,0.18);
+    backdrop-filter: blur(12px);
+    z-index:10;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+  }
+  #vignette {
+    position:absolute; inset:0;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0) 0%, rgba(0,0,0,0) 55%,
+      rgba(0,0,0,0.35) 100%);
+    pointer-events:none;
+    z-index:5;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="hud"></canvas>
+  <div id="top-telemetry">
+    <div class="led" id="led"></div>
+    <span id="mode-tag">CORE // ACTIVE</span>
+  </div>
+  <div id="caption-box">System Initialized</div>
+  <div id="vignette"></div>
+</div>
+<script>
+(function() {
+  'use strict';
+
+  // ═══════════════════════════════════════════════════════════════
+  //  CONFIG
+  // ═══════════════════════════════════════════════════════════════
+  const CFG = {
+    PARTICLES:      420,
+    SPHERE_RADIUS:  88,
+    FOV_DIST:       380,
+    RING_RADII:     [155, 172, 190, 208],
+    FLOOR_DEPTH:    14,
+    FLOOR_COLS:     18,
+    WAVEFORM_BARS:  72,
+    WAVEFORM_R:     216,
+    SCAN_SPEED:     1.4,
+    VIGNETTE:       1.0,
+  };
+
+  const STATE_COLORS = {
+    idle:       {r: 0,   g: 240, b: 255, speed: 0.008, amp: 0.05},
+    listening:  {r: 0,   g: 255, b: 150, speed: 0.020, amp: 0.55},
+    thinking:   {r: 200, g: 0,   b: 255, speed: 0.045, amp: 0.80},
+    processing: {r: 200, g: 0,   b: 255, speed: 0.045, amp: 0.80},
+    executing:  {r: 255, g: 160, b: 0,   speed: 0.032, amp: 0.65},
+    speaking:   {r: 255, g: 220, b: 60,  speed: 0.024, amp: 0.70},
+    error:      {r: 255, g: 60,  b: 60,  speed: 0.015, amp: 0.35},
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  //  STATE
+  // ═══════════════════════════════════════════════════════════════
+  const S = {
+    state:        'idle',
+    targetRGB:    {r: 0, g: 240, b: 255},
+    curRGB:       {r: 0, g: 240, b: 255},
+    targetSpeed:  0.008,
+    curSpeed:     0.008,
+    targetAmp:    0.05,
+    curAmp:       0.05,
+    time:         0,
+    rotX:         0,
+    rotY:         0,
+    rotZ:         0,
+    mouseX:       0,   // -1..1
+    mouseY:       0,   // -1..1
+    parallax:     0.6, // how much mouse rotates the scene
+    fps:          60,
+    lastFrame:    0,
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  //  CANVAS
+  // ═══════════════════════════════════════════════════════════════
+  const canvas = document.getElementById('hud');
+  const ctx    = canvas.getContext('2d');
+  let W, H, CX, CY, DPR;
+
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width  = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CX = W / 2;
+    CY = H / 2 - 10;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ═══════════════════════════════════════════════════════════════
+  //  PARTICLES — Fibonacci sphere
+  // ═══════════════════════════════════════════════════════════════
+  const particles = [];
+  (function initParticles() {
+    const N = CFG.PARTICLES;
+    const PHI = Math.PI * (1 + Math.sqrt(5));
+    for (let i = 0; i < N; i++) {
+      const y = 1 - (i / (N - 1)) * 2;
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      const theta = PHI * i;
+      const x = Math.cos(theta) * r;
+      const z = Math.sin(theta) * r;
+      const rr = CFG.SPHERE_RADIUS * (0.82 + Math.random() * 0.35);
+      particles.push({
+        x: x * rr, y: y * rr, z: z * rr,
+        size: 1.1 + Math.random() * 1.6,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  })();
+
+  // ═══════════════════════════════════════════════════════════════
+  //  MOUSE PARALLAX
+  // ═══════════════════════════════════════════════════════════════
+  document.addEventListener('mousemove', (e) => {
+    S.mouseX = (e.clientX / W) * 2 - 1;
+    S.mouseY = (e.clientY / H) * 2 - 1;
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: FLOOR GRID (perspective)
+  // ═══════════════════════════════════════════════════════════════
+  function drawFloor(rgb) {
+    const horizonY = CY + 150;
+    const floorY   = H + 40;
+    const depth    = CFG.FLOOR_DEPTH;
+    const cols     = CFG.FLOOR_COLS;
+    const cxTop    = CX;
+    const cxBot    = CX;
+
+    // Horizontal (perspective) lines
+    for (let i = 0; i <= depth; i++) {
+      const t = i / depth;
+      const yy = horizonY + t * (floorY - horizonY);
+      const alpha = 0.03 + Math.pow(t, 1.6) * 0.18;
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(${rgb}, ${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.moveTo(0, yy);
+      ctx.lineTo(W, yy);
+      ctx.stroke();
+    }
+
+    // Vertical (radiating) lines from vanishing point
+    for (let i = 0; i <= cols; i++) {
+      const t = i / cols;
+      const xTop = cxTop + (t - 0.5) * 80;
+      const xBot = cxBot + (t - 0.5) * W * 1.6;
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(${rgb}, 0.06)`;
+      ctx.lineWidth = 1;
+      ctx.moveTo(xTop, horizonY);
+      ctx.lineTo(xBot, floorY);
+      ctx.stroke();
+    }
+
+    // Horizon glow
+    const grad = ctx.createLinearGradient(0, horizonY - 40, 0, horizonY + 8);
+    grad.addColorStop(0, `rgba(${rgb}, 0)`);
+    grad.addColorStop(1, `rgba(${rgb}, 0.14)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, horizonY - 40, W, 48);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: HUD OUTER RINGS (segmented)
+  // ═══════════════════════════════════════════════════════════════
+  function drawHUDRings(rgb, t) {
+    // Segmented dashed ring
+    const r0 = CFG.RING_RADII[0];
+    const seg = 48;
+    for (let i = 0; i < seg; i++) {
+      const a1 = (i / seg) * Math.PI * 2 + t * 0.15;
+      const a2 = a1 + (Math.PI * 2 / seg) * 0.55;
+      const pulse = 0.15 + Math.sin(i * 0.7 + t * 3.2) * 0.08;
+      ctx.beginPath();
+      ctx.arc(CX, CY, r0, a1, a2);
+      ctx.strokeStyle = `rgba(${rgb}, ${pulse})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+
+    // Inner dashed pulse ring
+    const r1 = CFG.RING_RADII[1] + Math.sin(t * 2.1) * 4;
+    ctx.beginPath();
+    ctx.arc(CX, CY, r1, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${rgb}, 0.28)`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 9]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Corner brackets (HUD)
+    const bR = CFG.RING_RADII[3];
+    const bLen = 22;
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      const x1 = CX + Math.cos(a) * bR;
+      const y1 = CY + Math.sin(a) * bR;
+      const x2 = CX + Math.cos(a - 0.18) * (bR + bLen);
+      const y2 = CY + Math.sin(a - 0.18) * (bR + bLen);
+      const x3 = CX + Math.cos(a + 0.18) * (bR + bLen);
+      const y3 = CY + Math.sin(a + 0.18) * (bR + bLen);
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x3, y3);
+      ctx.strokeStyle = `rgba(${rgb}, 0.55)`;
+      ctx.lineWidth = 1.8;
+      ctx.shadowColor = `rgb(${rgb})`;
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: 3D PARTICLE SPHERE
+  // ═══════════════════════════════════════════════════════════════
+  const _proj = new Array(particles.length);
+  function drawSphere(rgb, t) {
+    const cosY = Math.cos(S.rotY), sinY = Math.sin(S.rotY);
+    const cosX = Math.cos(S.rotX), sinX = Math.sin(S.rotX);
+
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      // Organic breathing wave
+      const wave = Math.sin(t * 1.8 + p.phase) * 3.2 * (0.5 + S.curAmp);
+      const scale = 1 + wave / CFG.SPHERE_RADIUS;
+      let x = p.x * scale;
+      let y = p.y * scale;
+      let z = p.z * scale;
+
+      // Rotate Y
+      let x1 =  x * cosY - z * sinY;
+      let z1 =  z * cosY + x * sinY;
+      // Rotate X
+      let y1 =  y * cosX - z1 * sinX;
+      let z2 =  z1 * cosX + y * sinX;
+
+      _proj[i] = { x: x1, y: y1, z: z2, size: p.size };
+    }
+
+    // Depth sort (back to front)
+    _proj.sort((a, b) => a.z - b.z);
+
+    for (let i = 0; i < _proj.length; i++) {
+      const p = _proj[i];
+      const fov  = CFG.FOV_DIST / (CFG.FOV_DIST + p.z);
+      const px   = CX + p.x * fov;
+      const py   = CY + p.y * fov;
+      const alpha = Math.max(0.08, Math.min(1, (p.z + 130) / 260));
+      const rad  = Math.max(0.8, p.size * fov);
+
+      // Glow halo
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, rad * 5);
+      grad.addColorStop(0, `rgba(${rgb}, ${alpha * 0.6})`);
+      grad.addColorStop(1, `rgba(${rgb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(px, py, rad * 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Solid dot
+      ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, alpha + 0.25)})`;
+      ctx.beginPath();
+      ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: VOLUMETRIC CORE
+  // ═══════════════════════════════════════════════════════════════
+  function drawCore(rgb, t) {
+    const pulse = 1 + Math.sin(t * 3.4) * 0.07 + S.curAmp * 0.4;
+    const r = 62 * pulse;
+    const grad = ctx.createRadialGradient(CX, CY, 0, CX, CY, r * 2.4);
+    grad.addColorStop(0.00, `rgba(255,255,255,${0.65 + S.curAmp * 0.3})`);
+    grad.addColorStop(0.18, `rgba(${rgb}, 0.75)`);
+    grad.addColorStop(0.55, `rgba(${rgb}, 0.18)`);
+    grad.addColorStop(1.00, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(CX, CY, r * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nucleus dot
+    ctx.fillStyle = `rgba(255,255,255,${0.85 + S.curAmp * 0.15})`;
+    ctx.beginPath();
+    ctx.arc(CX, CY, 5 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: 3D ORBIT RINGS
+  // ═══════════════════════════════════════════════════════════════
+  function drawOrbits(rgb, t) {
+    const rings = [
+      { rx: 158, ry: 42, tilt:  Math.PI / 4, speed:  0.85, alpha: 0.55 },
+      { rx: 172, ry: 48, tilt: -Math.PI / 3, speed: -1.10, alpha: 0.38 },
+      { rx: 190, ry: 52, tilt:  Math.PI / 6, speed:  1.35, alpha: 0.24 },
+      { rx: 205, ry: 58, tilt: -Math.PI / 5, speed: -0.70, alpha: 0.16 },
+    ];
+
+    rings.forEach((r, idx) => {
+      ctx.save();
+      ctx.translate(CX, CY);
+      ctx.rotate(r.tilt + S.rotY * r.speed + t * 0.05 * (idx % 2 ? -1 : 1));
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r.rx, r.ry, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${rgb}, ${r.alpha})`;
+      ctx.lineWidth = idx === 0 ? 2.2 : 1.4;
+      ctx.shadowColor = `rgb(${rgb})`;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: WAVEFORM (audio-reactive ring)
+  // ═══════════════════════════════════════════════════════════════
+  function drawWaveform(rgb, t) {
+    const bars = CFG.WAVEFORM_BARS;
+    const baseR = CFG.WAVEFORM_R;
+    const amp = 0.35 + S.curAmp * 0.9;
+
+    for (let i = 0; i < bars; i++) {
+      const ang = (i / bars) * Math.PI * 2 - Math.PI / 2;
+      // layered sine for organic wave
+      const n1 = Math.sin(i * 0.55 + t * 4.2);
+      const n2 = Math.sin(i * 1.30 - t * 6.1) * 0.5;
+      const n3 = Math.sin(i * 2.10 + t * 8.5) * 0.25;
+      const h  = (3 + (n1 + n2 + n3 + 1.75) * 5) * amp;
+
+      const x1 = CX + Math.cos(ang) * baseR;
+      const y1 = CY + Math.sin(ang) * baseR;
+      const x2 = CX + Math.cos(ang) * (baseR + h);
+      const y2 = CY + Math.sin(ang) * (baseR + h);
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.strokeStyle = `rgba(${rgb}, ${0.32 + S.curAmp * 0.45})`;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW: SCAN LINE (radar sweep)
+  // ═══════════════════════════════════════════════════════════════
+  function drawScan(rgb, t) {
+    const ang = (t * CFG.SCAN_SPEED) % (Math.PI * 2);
+    const r   = CFG.RING_RADII[3] + 4;
+    const x2  = CX + Math.cos(ang) * r;
+    const y2  = CY + Math.sin(ang) * r;
+
+    const grad = ctx.createLinearGradient(CX, CY, x2, y2);
+    grad.addColorStop(0, `rgba(${rgb}, 0)`);
+    grad.addColorStop(0.7, `rgba(${rgb}, 0.28)`);
+    grad.addColorStop(1, `rgba(${rgb}, 0.75)`);
+    ctx.beginPath();
+    ctx.moveTo(CX, CY);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = `rgb(${rgb})`;
+    ctx.shadowBlur = 14;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Trailing arc
+    ctx.beginPath();
+    ctx.arc(CX, CY, r, ang - 0.5, ang);
+    ctx.strokeStyle = `rgba(${rgb}, 0.35)`;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  MAIN RENDER LOOP
+  // ═══════════════════════════════════════════════════════════════
+  function tick(ts) {
+    requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (ts - S.lastFrame) / 1000) || 0.016;
+    S.lastFrame = ts;
+    S.time += dt;
+    const t = S.time;
+
+    // Smooth color lerp
+    S.curRGB.r += (S.targetRGB.r - S.curRGB.r) * 0.08;
+    S.curRGB.g += (S.targetRGB.g - S.curRGB.g) * 0.08;
+    S.curRGB.b += (S.targetRGB.b - S.curRGB.b) * 0.08;
+    const rgb = `${Math.round(S.curRGB.r)}, ${Math.round(S.curRGB.g)}, ${Math.round(S.curRGB.b)}`;
+
+    // Smooth speed / amplitude lerp
+    S.curSpeed += (S.targetSpeed - S.curSpeed) * 0.06;
+    S.curAmp   += (S.targetAmp   - S.curAmp)   * 0.10;
+
+    // Rotation — driven by state speed, modulated by mouse parallax
+    S.rotY += S.curSpeed * (1 + Math.abs(S.mouseX) * 0.4);
+    S.rotX += S.curSpeed * 0.55 * (1 + Math.abs(S.mouseY) * 0.3);
+    // Mouse parallax tilt (added to render, not accumulated)
+    const tiltX = S.mouseY * 0.35 * S.parallax;
+    const tiltY = S.mouseX * 0.35 * S.parallax;
+
+    // Clear
+    ctx.clearRect(0, 0, W, H);
+
+    // Render layers, back to front
+    drawFloor(rgb);
+    drawHUDRings(rgb, t);
+    drawWaveform(rgb, t);
+
+    // Apply tilt for center objects only
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.translate(tiltY * 22, tiltX * 22);
+    ctx.translate(-CX, -CY);
+    drawSphere(rgb, t);
+    drawOrbits(rgb, t);
+    drawCore(rgb, t);
+    ctx.restore();
+
+    drawScan(rgb, t);
+  }
+  requestAnimationFrame(tick);
+
+  // ═══════════════════════════════════════════════════════════════
+  //  EXTERNAL API — Python se call hoti hai
+  // ═══════════════════════════════════════════════════════════════
+  window.updateAgentState = function(stateName, text) {
+    const cfg = STATE_COLORS[stateName] || STATE_COLORS.idle;
+    S.state       = stateName;
+    S.targetRGB   = {r: cfg.r, g: cfg.g, b: cfg.b};
+    S.targetSpeed = cfg.speed;
+    S.targetAmp   = cfg.amp;
+
+    // LED + tag
+    const led = document.getElementById('led');
+    const tag = document.getElementById('mode-tag');
+    const cap = document.getElementById('caption-box');
+    const tele = document.getElementById('top-telemetry');
+    if (led) {
+      led.style.background = `rgb(${cfg.r},${cfg.g},${cfg.b})`;
+      led.style.boxShadow  = `0 0 18px rgb(${cfg.r},${cfg.g},${cfg.b})`;
+    }
+    if (tag) tag.style.color = `rgb(${cfg.r},${cfg.g},${cfg.b})`;
+    if (tele) {
+      tele.style.borderColor = `rgba(${cfg.r},${cfg.g},${cfg.b},0.5)`;
+      tele.style.boxShadow   = `0 0 22px rgba(${cfg.r},${cfg.g},${cfg.b},0.22)`;
+    }
+
+    const labels = {
+      idle:       'JENEFAR // READY',
+      listening:  'SENSOR // AUDIO INTAKE',
+      thinking:   'NEURAL // CLOUD SYNAPSE',
+      processing: 'NEURAL // CLOUD SYNAPSE',
+      executing:  'CYBER // EXECUTING TASK',
+      speaking:   'VOICE // SPEAKING',
+      error:      'ALERT // ERROR',
+    };
+    if (tag) tag.innerText = labels[stateName] || 'JENEFAR // READY';
+    if (cap && text) cap.innerText = String(text).slice(0, 120);
+  };
+
+  // Optional: Python se amplitude push kar sakta hai (0..1)
+  window.setAmplitude = function(v) {
+    const val = Math.max(0, Math.min(1, Number(v) || 0));
+    S.targetAmp = val;
+  };
+
+})();
+</script>
+</body>
+</html>
