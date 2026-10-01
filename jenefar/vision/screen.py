@@ -222,7 +222,7 @@ class ScreenVision:
         self,
         frame: ScreenFrame,
         task: str,
-    ) -> list[ScreenElement]:
+    ) -> dict[str, Any]:
         import urllib.error
         import urllib.request
 
@@ -350,38 +350,64 @@ class ScreenVision:
                 "errors": [],
             }
 
-        connected = internet_available()
+        allow_online = os.getenv(
+            "JENEFAR_VISION_ALLOW_ONLINE",
+            "0",
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        local_first = os.getenv(
+            "JENEFAR_VISION_LOCAL_FIRST",
+            "1",
+        ).strip().lower() not in {"0", "false", "no"}
         errors: list[str] = []
+        provider = ""
+        payload: dict[str, Any] | None = None
 
-        if connected and os.getenv("OPENAI_API_KEY"):
+        if local_first:
+            try:
+                payload = self._local_analyze(frame, task)
+                provider = "local_ollama"
+            except Exception as exc:
+                errors.append(
+                    f"local vision: {type(exc).__name__}: {exc}"
+                )
+
+        if payload is None and allow_online and internet_available() and os.getenv("OPENAI_API_KEY"):
             try:
                 elements = self._online_analyze(frame, task)
+                payload = {"elements": [
+                    {
+                        "label": item.label,
+                        "role": item.role,
+                        "confidence": item.confidence,
+                        "bbox": list(item.bbox),
+                        "text": item.text,
+                    }
+                    for item in elements
+                ]}
                 provider = "openai"
             except Exception as exc:
                 errors.append(
                     f"online vision: {type(exc).__name__}: {exc}"
                 )
-                try:
-                    elements = self._local_analyze(frame, task)
-                    provider = "local"
-                except Exception as local_exc:
-                    errors.append(
-                        f"local vision: {type(local_exc).__name__}: {local_exc}"
-                    )
-                    raise RuntimeError("; ".join(errors)) from local_exc
-        else:
+
+        if payload is None and not local_first:
             try:
-                elements = self._local_analyze(frame, task)
-                provider = "local"
+                payload = self._local_analyze(frame, task)
+                provider = "local_ollama"
             except Exception as exc:
                 errors.append(
                     f"local vision: {type(exc).__name__}: {exc}"
                 )
-                raise RuntimeError(
-                    "No usable vision backend is available. Configure an "
-                    "online vision model or an offline multimodal local model."
-                ) from exc
 
+        if payload is None:
+            raise RuntimeError(
+                "No usable local vision backend is available. "
+                + " ".join(errors)
+                + " Install the configured Ollama vision model and keep JENEFAR_VISION_ALLOW_ONLINE=false "
+                  "for a fully local, credit-free vision path."
+            )
+
+        elements = self._parse_elements(payload, frame)
         return {
             "provider": provider,
             "task": task,
@@ -389,6 +415,7 @@ class ScreenVision:
                 "width": frame.width,
                 "height": frame.height,
             },
+            "summary": str(payload.get("summary") or "").strip(),
             "elements": [
                 {
                     "label": item.label,
