@@ -1080,97 +1080,75 @@ body.vrm-loaded #photo-avatar{display:none}
   #task-screen{left:380px!important;right:290px!important}
 }
 
-/* --- Phase 10: supplied HUD + compact avatar presentation --- */
+
+/* --- Phase 11: clean HUD-first presentation --- */
 #hud-avatar{
   position:absolute!important;
-  left:465px!important;
-  right:345px!important;
-  top:112px!important;
-  bottom:112px!important;
-  z-index:10!important;
+  left:470px!important;
+  right:360px!important;
+  top:110px!important;
+  bottom:130px!important;
+  z-index:6!important;
   pointer-events:none!important;
   overflow:hidden!important;
-  border-radius:26px!important;
+  border-radius:22px!important;
 }
 #hud-avatar-frame{
   width:100%!important;
   height:100%!important;
   border:0!important;
-  display:block!important;
-  background:transparent!important;
-  opacity:.62!important;
+  opacity:.30!important;
   pointer-events:none!important;
 }
 #desktop-mirror{
-  left:495px!important;
-  right:375px!important;
-  top:164px!important;
-  bottom:190px!important;
-  z-index:24!important;
-  border-radius:18px!important;
+  left:500px!important;
+  right:390px!important;
+  top:150px!important;
+  bottom:185px!important;
+  z-index:18!important;
 }
-.desktop-mirror-frame{
-  border-radius:16px!important;
-  background:rgba(2,9,18,.90)!important;
-  border:1px solid rgba(100,221,255,.32)!important;
-  box-shadow:0 0 45px rgba(40,188,255,.12)!important;
-}
-#desktop-mirror-image{
-  object-fit:contain!important;
-  padding:28px 8px 8px!important;
-  background:#061321!important;
-}
-.desktop-mirror-header{height:28px!important}
-
+.desktop-mirror-frame{border-radius:14px!important}
+#desktop-mirror-image{padding:28px 6px 6px!important}
 #task-screen{
-  left:495px!important;
-  right:375px!important;
+  left:500px!important;
+  right:390px!important;
   top:auto!important;
   bottom:126px!important;
-  height:54px!important;
-  min-height:54px!important;
-  z-index:30!important;
-  background:rgba(3,12,22,.76)!important;
-  border-radius:14px!important;
-  border:1px solid rgba(89,213,255,.20)!important;
-  overflow:hidden!important;
-  pointer-events:none!important;
+  height:50px!important;
+  min-height:50px!important;
+  z-index:24!important;
+  background:rgba(3,12,22,.80)!important;
+  border:1px solid rgba(89,213,255,.18)!important;
+  border-radius:12px!important;
+  box-shadow:none!important;
 }
-.task-screen-header{
-  width:auto!important;
-  margin:0!important;
-  height:34px!important;
-  padding:7px 12px!important;
-  background:transparent!important;
-  border:0!important;
-}
+.task-screen-header{padding:7px 11px!important}
 .task-screen-kicker{font-size:6px!important}
-.task-screen-header strong{font-size:10px!important;max-width:74%!important}
-#task-screen-state{font-size:7px!important}
-.task-screen-log{display:none!important}
-.task-screen-progress{position:absolute!important;left:0!important;right:0!important;bottom:0!important;width:auto!important;height:2px!important}
-.task-screen-footer{display:none!important}
-
-.avatar-shell{
-  inset:auto!important;
-  left:calc(50% - 115px)!important;
-  bottom:92px!important;
-  width:230px!important;
-  height:310px!important;
-  display:grid!important;
-  place-items:end center!important;
-  z-index:42!important;
+.task-screen-header strong{font-size:9px!important}
+.task-screen-log,.task-screen-footer{display:none!important}
+.task-screen-progress{position:absolute!important;left:0!important;right:0!important;bottom:0!important;width:auto!important;height:2px!important;margin:0!important}
+#vrm-canvas{
+  position:absolute!important;
+  left:calc(50% - 135px)!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:96px!important;
+  width:270px!important;
+  height:290px!important;
+  z-index:40!important;
+  filter:none!important;
   pointer-events:none!important;
 }
-#vrm-canvas{
-  left:calc(50% - 150px)!important;
-  top:auto!important;
-  bottom:76px!important;
-  width:300px!important;
-  height:330px!important;
+.avatar-shell{
+  position:absolute!important;
+  left:calc(50% - 105px)!important;
   right:auto!important;
-  z-index:42!important;
-  filter:none!important;
+  top:auto!important;
+  bottom:92px!important;
+  width:210px!important;
+  height:300px!important;
+  z-index:41!important;
+  pointer-events:none!important;
 }
 .avatar-shell .halo,
 .avatar-shell .avatar-glow,
@@ -1178,72 +1156,44 @@ body.vrm-loaded #photo-avatar{display:none}
 .holo-earth,
 .chair-silhouette,
 .holo-particles,
-#particles{
+#particles,
+.avatar-shell .avatar,
+#photo-avatar{
   display:none!important;
 }
-.avatar-shell .avatar{
-  display:none!important;
-}
-#photo-avatar{display:none!important}
-
 .status-card{
-  min-width:170px!important;
-  width:190px!important;
-  padding:8px 12px!important;
+  min-width:150px!important;
+  width:170px!important;
   bottom:0!important;
-  z-index:44!important;
-  background:rgba(3,10,20,.76)!important;
-  border-radius:12px!important;
-  transform:none!important;
+  padding:7px 10px!important;
+  background:rgba(3,10,20,.72)!important;
 }
-#state{font-size:8px!important}
-#caption{font-size:9px!important;max-width:150px!important}
-
-.bottom-dock{
-  bottom:14px!important;
-  z-index:90!important;
-}
-.orb-button{
-  width:70px!important;
-  height:70px!important;
-  margin-top:-17px!important;
-}
-
-.siri-topbar,.side-nav,.hero-copy,.system-card,.command-stack,.chat-glass,.quick-apps,.media-card,.workspace-card,.realtime-controls,.premium-controls{
+.hero-copy{left:205px!important;top:92px!important;width:250px!important}
+.chat-glass{left:205px!important;top:235px!important;width:280px!important;height:285px!important}
+.system-card{right:18px!important;top:82px!important;width:320px!important}
+.command-stack{right:18px!important;top:272px!important;width:280px!important}
+#activity-panel{right:18px!important;top:430px!important;width:320px!important;height:300px!important}
+.quick-apps{left:18px!important;bottom:130px!important}
+.media-card{left:18px!important;bottom:18px!important;width:300px!important}
+.siri-topbar,.side-nav,.hero-copy,.system-card,.command-stack,.chat-glass,.quick-apps,.media-card,#activity-panel,.bottom-dock{
   z-index:70!important;
 }
-.hero-copy{left:215px!important;top:94px!important;max-width:260px!important}
-.hero-copy h1{font-size:27px!important}
-.hero-copy p{font-size:9px!important;max-width:245px!important}
-.chat-glass{left:215px!important;top:232px!important;width:300px!important;height:300px!important}
-.system-card{right:18px!important;top:82px!important;width:320px!important}
-.command-stack{right:18px!important;top:274px!important;width:280px!important}
-#activity-panel{right:18px!important;top:430px!important;width:320px!important;height:calc(100vh - 535px)!important;max-height:310px!important}
-.quick-apps{left:18px!important;bottom:132px!important;width:165px!important}
-.media-card{left:18px!important;bottom:18px!important;width:300px!important}
-
+.bottom-dock{bottom:12px!important}
 @media(max-width:1250px){
-  #hud-avatar{left:430px!important;right:320px!important}
-  #desktop-mirror,#task-screen{left:455px!important;right:350px!important}
-  #activity-panel{width:285px!important}
-  .system-card{width:285px!important}
-  .chat-glass{width:280px!important}
+  #hud-avatar{left:410px!important;right:320px!important}
+  #desktop-mirror,#task-screen{left:435px!important;right:350px!important}
+  #vrm-canvas{left:calc(50% - 120px)!important;width:240px!important}
+  .avatar-shell{left:calc(50% - 92px)!important;width:184px!important}
 }
 @media(max-width:1000px){
-  #hud-avatar{left:90px!important;right:300px!important;top:118px!important}
-  #desktop-mirror,#task-screen{left:110px!important;right:320px!important}
-  .avatar-shell{left:auto!important;right:318px!important;bottom:94px!important}
-  #vrm-canvas{left:auto!important;right:285px!important;width:250px!important}
-  .hero-copy{left:92px!important;max-width:240px!important}
-  .chat-glass{left:92px!important}
+  #hud-avatar{left:90px!important;right:295px!important}
+  #desktop-mirror,#task-screen{left:110px!important;right:315px!important}
 }
 @media(max-width:800px){
-  #hud-avatar{left:14px!important;right:14px!important;top:105px!important;bottom:145px!important}
-  #desktop-mirror,#task-screen{left:20px!important;right:20px!important}
-  #desktop-mirror{top:150px!important;bottom:205px!important}
-  #task-screen{bottom:145px!important}
-  .avatar-shell{left:calc(50% - 72px)!important;right:auto!important;width:144px!important;height:200px!important;bottom:78px!important}
-  #vrm-canvas{left:calc(50% - 110px)!important;right:auto!important;bottom:62px!important;width:220px!important;height:230px!important}
-  .hero-copy,.chat-glass,.system-card,.command-stack,.quick-apps,.media-card,#activity-panel{display:none!important}
-  .bottom-dock{bottom:10px!important}
+  #hud-avatar{left:12px!important;right:12px!important;top:100px!important;bottom:150px!important}
+  #desktop-mirror{left:18px!important;right:18px!important;top:140px!important;bottom:205px!important}
+  #task-screen{left:18px!important;right:18px!important;bottom:140px!important}
+  #vrm-canvas{left:calc(50% - 100px)!important;width:200px!important;height:220px!important;bottom:70px!important}
+  .avatar-shell{left:calc(50% - 76px)!important;width:152px!important;height:180px!important;bottom:70px!important}
+  .hero-copy,.chat-glass,.system-card,.command-stack,.quick-apps,.media-card,#activity-panel,.side-nav{display:none!important}
 }
