@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
+import tempfile
 import threading
 import time
 import uuid
@@ -66,6 +68,31 @@ class BrowserVoiceBridge:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         return "" if not key or key.startswith("sk-or-") else key
 
+    def _synthesize_edge_audio(self, text: str) -> tuple[str, str]:
+        try:
+            import edge_tts
+            voice = os.getenv("JENEFAR_EDGE_TTS_VOICE", "en-IN-NeerjaNeural")
+            rate = os.getenv("JENEFAR_EDGE_TTS_RATE", "-4%")
+            communicate = edge_tts.Communicate(text[:4096], voice, rate=rate)
+            with tempfile.NamedTemporaryFile(suffix=".mp3", prefix="jenefar_edge_", delete=False) as tmp:
+                output_path = tmp.name
+            try:
+                asyncio.run(communicate.save(output_path))
+                with open(output_path, "rb") as handle:
+                    encoded = base64.b64encode(handle.read()).decode("ascii")
+                return encoded, "audio/mpeg"
+            finally:
+                try:
+                    os.unlink(output_path)
+                except OSError:
+                    pass
+        except Exception as exc:
+            print(
+                "[JENEFAR] Edge browser TTS fallback failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return "", ""
+
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
         if not key:
@@ -102,9 +129,9 @@ class BrowserVoiceBridge:
         except Exception as exc:
             print(
                 "[JENEFAR] Browser TTS generation failed; "
-                f"falling back to Web SpeechSynthesis: {type(exc).__name__}: {exc}"
+                f"trying Edge TTS fallback: {type(exc).__name__}: {exc}"
             )
-            return "", ""
+            return self._synthesize_edge_audio(text)
 
     def submit_text(self, text: str) -> dict[str, Any]:
         raw = " ".join(str(text or "").strip().split())
