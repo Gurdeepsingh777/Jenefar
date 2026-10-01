@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--avatar-port", type=int, default=8787, help="local avatar UI port")
     parser.add_argument("--discover-tools", action="store_true", help="list detected Kali/Linux tools without executing them")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
+    parser.add_argument("--setup-vision", action="store_true", help="install the default local Ollama vision model (no hosted API required)")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
     parser.add_argument("--index-dir", metavar="PATH", help="index supported text/code files under a directory")
     parser.add_argument("--index-document", metavar="PATH", help="extract PDF/DOCX/text content and index it")
@@ -195,6 +196,53 @@ def doctor() -> int:
     print("[JENEFAR] Doctor checks passed. Optional features may still need extra packages.")
     return 0
 
+def setup_vision() -> int:
+    import os
+    import shutil
+    import subprocess
+    import urllib.request
+    import json
+
+    model = os.getenv("JENEFAR_LOCAL_VISION_MODEL", "qwen3-vl:4b").strip() or "qwen3-vl:4b"
+    base = os.getenv("JENEFAR_LOCAL_VISION_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+
+    if not shutil.which("ollama"):
+        print("[JENEFAR] Ollama is not installed. Install Ollama, then run: python run.py --setup-vision")
+        return 1
+
+    try:
+        request = urllib.request.Request(f"{base}/api/tags", headers={"User-Agent": "Jenefar/LocalVision"})
+        with urllib.request.urlopen(request, timeout=2.0) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        installed = {
+            str(item.get("name") or item.get("model") or "")
+            for item in (payload.get("models") or [])
+            if isinstance(item, dict)
+        }
+    except Exception as exc:
+        print(f"[JENEFAR] Ollama is not reachable at {base}: {type(exc).__name__}: {exc}")
+        return 1
+
+    vision_markers = ("qwen3-vl", "qwen2.5vl", "llama3.2-vision", "llava", "minicpm-v", "moondream", "deepseek-ocr")
+    existing = next((name for name in installed if any(marker in name.lower() for marker in vision_markers)), "")
+    if existing:
+        print(f"[JENEFAR] Local vision model ready: {existing}")
+        return 0
+
+    print(f"[JENEFAR] Pulling local vision model: {model}")
+    result = subprocess.run(
+        ["ollama", "pull", model],
+        text=True,
+        timeout=1800,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(f"[JENEFAR] Vision model setup failed with exit code {result.returncode}.")
+        return result.returncode or 1
+
+    print(f"[JENEFAR] Local vision model ready: {model}")
+    return 0
+
 def github_command(args: argparse.Namespace) -> int:
     from jenefar.coding.repository import RepositoryAnalyzer
 
@@ -292,6 +340,9 @@ def main() -> int:
     if args.doctor:
         return doctor()
 
+    if args.setup_vision:
+        return setup_vision()
+
     if args.provider_status:
         import os
         from jenefar.core.llm import LLMClient
@@ -314,7 +365,7 @@ def main() -> int:
     if not args.text and not any(
         getattr(args, name)
         for name in (
-            "doctor", "provider_status", "online_only", "voice", "voice_continuous",
+            "doctor", "setup_vision", "provider_status", "online_only", "voice", "voice_continuous",
             "voice_auto", "avatar", "realtime", "desktop", "discover_tools",
             "index_file", "index_dir", "index_document", "index_url", "index_github",
             "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
