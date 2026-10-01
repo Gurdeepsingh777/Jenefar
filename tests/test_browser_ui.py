@@ -569,7 +569,7 @@ def test_phase4_avatar_style_and_auto_frame():
     pipeline = (ROOT / "tools" / "blender" / "premium_avatar.py").read_text(encoding="utf-8")
     run = (ROOT / "run.py").read_text(encoding="utf-8")
     assert "Auto-frame the real model" in vrm
-    assert "Jenefar_Premium_v2.vrm" in run
+    assert "Jenefar_Premium.vrm" in run
     assert 'PREMIUM_WHITE = (0.035, 0.075, 0.13, 1.0)' in pipeline
     assert 'PREMIUM_CYAN = (0.04, 0.72, 0.95, 1.0)' in pipeline
 
@@ -582,3 +582,11 @@ def test_phase5_vrm_motion_hooks_are_present():
     assert "blinkTimer" in vrm
     assert "speakingMotion" in vrm
     assert "PHASE 5 — AVATAR POLISH + CENTER SCALE" in css
+
+
+def test_vrm_runtime_normalizes_model_scale():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "targetHeight = 2.55" in vrm
+    assert "normalizedScale = targetHeight / rawHeight" in vrm
+    assert "PHASE 5C — center-stage avatar viewport" in css
