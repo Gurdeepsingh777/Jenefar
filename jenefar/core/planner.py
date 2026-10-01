@@ -98,6 +98,11 @@ class Planner:
             "live screen", "my screen", "meri screen", "mere screen",
             "meri screen par kya", "meri screen pe kya",
             "screen dekho", "screen dikh", "screen me kya",
+            "blue screen", "blue display", "background screen", "background display",
+            "holographic screen", "hologram screen", "screen par kholo",
+            "screen pe kholo", "screen par shift", "screen pe shift",
+            "window ko screen par", "window ko blue screen", "firefox ko blue",
+            "browser ko blue", "document folder ko blue", "folder ko blue",
         )):
             return self._make_plan(
                 text,
