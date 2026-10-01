@@ -500,7 +500,8 @@ class JenefarOrchestrator:
                 **filtered_kwargs,
             )
         finally:
-            self.tool_broker.clear_task_context()
+            if hasattr(self.tool_broker, "clear_task_context"):
+                self.tool_broker.clear_task_context()
         pending_tools = final_result.metadata.get("pending_tools", [])
         if pending_tools:
             workflow["remaining"] = {
