@@ -18,8 +18,8 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
-  camera.position.set(0, 1.48, 3.05);
+  const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
+  camera.position.set(0, 1.42, 2.45);
   camera.lookAt(0, 1.32, 0);
 
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
@@ -60,26 +60,91 @@ if (canvas) {
       // Keep the full avatar visible from head to feet. Some VRM fixtures are
       // authored with a T-pose; there is no safe generic way to infer a
       // natural idle arm pose without editing the actual skeleton animation.
-      vrm.scene.position.set(0, 0, 0);
+      // Make every renderable part explicitly visible. Some VRM exporters leave
+      // frustum-culling/visibility flags that are safe in a native viewer but can
+      // make a browser canvas appear empty after runtime transforms.
+      vrm.scene.visible = true;
+      vrm.scene.traverse(node => {
+        if (!node.isMesh) return;
+        node.visible = true;
+        node.frustumCulled = false;
+        node.renderOrder = 10;
+      });
 
-      // Auto-frame the real model instead of assuming a particular VRM unit scale.
-      // This prevents tiny/off-center avatars when the source VRM uses different units.
-      const bounds = new THREE.Box3().setFromObject(vrm.scene);
+      // Normalize the source asset to a predictable on-screen height.
+      // Sample/authoring VRMs can have very different unit scales.
+      vrm.scene.position.set(0, 0, 0);
+      vrm.scene.scale.setScalar(1);
+      vrm.scene.updateMatrixWorld(true);
+
+      // Build framing bounds from the *deformed* skinned vertices. Box3.expandByObject()
+      // uses geometry bounds, but a SkinnedMesh can have a very different rendered
+      // shape after bone transforms. Using getVertexPosition() here prevents a
+      // false oversized bound that makes the real avatar render tiny.
+      const skinnedMeshes = [];
+      vrm.scene.traverse(node => {
+        if (node.isSkinnedMesh && node.geometry && node.visible) skinnedMeshes.push(node);
+      });
+
+      const getVisualBounds = () => {
+        const result = new THREE.Box3();
+        const localPosition = new THREE.Vector3();
+        const worldPosition = new THREE.Vector3();
+        let vertexCount = 0;
+        for (const mesh of skinnedMeshes) {
+          const position = mesh.geometry.attributes.position;
+          if (!position) continue;
+          mesh.updateMatrixWorld(true);
+          for (let i = 0; i < position.count; i++) {
+            mesh.getVertexPosition(i, localPosition);
+            worldPosition.copy(localPosition).applyMatrix4(mesh.matrixWorld);
+            result.expandByPoint(worldPosition);
+            vertexCount++;
+          }
+        }
+        if (!vertexCount) result.setFromObject(vrm.scene, true);
+        return result;
+      };
+
+      const visualBounds = getVisualBounds();
+      const rawSize = visualBounds.getSize(new THREE.Vector3());
+      const rawHeight = Number.isFinite(rawSize.y) && rawSize.y > 0.01 ? rawSize.y : 1.7;
+      const targetHeight = 2.55;
+      const normalizedScale = targetHeight / rawHeight;
+      vrm.scene.scale.setScalar(normalizedScale);
+      vrm.scene.updateMatrixWorld(true);
+
+      // Recompute the bounds after normalization, using only the visible
+      // humanoid meshes so helper/collider nodes cannot affect framing.
+      const bounds = getVisualBounds();
       const center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
-      const modelHeight = Math.max(size.y, 1.0);
-      const modelCenterY = center.y;
-      vrm.scene.position.y -= modelCenterY;
+      const modelHeight = Number.isFinite(size.y) && size.y > 0.01 ? size.y : targetHeight;
+
+      // Move the model so its visual center is at the origin. Keep this base
+      // position separate from the breathing animation so animation cannot
+      // accidentally undo the framing transform.
+      const basePosition = new THREE.Vector3(-center.x, -center.y, -center.z);
+      vrm.scene.position.copy(basePosition);
+      baseAvatarY = basePosition.y;
+
+      // IMPORTANT: camera framing is based on MODEL HEIGHT only. Do not use
+      // modelDepth here: VRM exports can contain deep helper/collider nodes
+      // that make Box3.size.z enormous and push the camera several meters
+      // away, producing the tiny avatar seen in the browser.
       const vFov = THREE.MathUtils.degToRad(camera.fov);
-      const fitDistance = (modelHeight * 0.62) / Math.tan(vFov / 2);
-      camera.position.set(0, 0, Math.max(2.2, Math.min(8.0, fitDistance)));
-      camera.lookAt(0, 0, 0);
+      const halfFov = Math.max(vFov * 0.5, THREE.MathUtils.degToRad(8));
+      const fitDistance = (modelHeight * 0.56) / Math.tan(halfFov);
+      const cameraZ = Math.max(3.8, fitDistance);
+      camera.position.set(0, modelHeight * 0.04, cameraZ);
+      camera.near = 0.01;
+      camera.far = Math.max(50, cameraZ + modelHeight * 4);
+      camera.lookAt(0, modelHeight * 0.08, 0);
+      camera.updateProjectionMatrix();
 
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
       // These values relax the T-pose into a simple arms-down standing pose.
-      const humanoid = vrm.humanoid;
-      const bone = (name) => humanoid?.getNormalizedBoneNode(name);
       const setEuler = (name, x, y, z) => {
         const node = bone(name);
         if (!node) return;
@@ -132,6 +197,17 @@ if (canvas) {
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");
       setVRMStatus("VRM AVATAR");
+      console.info("[JENEFAR] VRM loaded", {
+        normalizedScale,
+        modelHeight,
+        cameraZ: camera.position.z,
+        cameraNear: camera.near,
+        cameraFar: camera.far,
+        cameraTargetY: modelHeight * 0.08,
+        renderables: vrm.scene.getObjectsByProperty("isMesh", true).length,
+        skinnedMeshes: skinnedMeshes.length,
+        basePosition: basePosition.toArray(),
+      });
     } catch (error) {
       console.error("[JENEFAR] VRM load failed", error);
       setVRMStatus("VRM ERROR", true);
@@ -206,11 +282,51 @@ if (canvas) {
     } catch (_) {}
   }
 
+  // Shared humanoid-bone accessor. This must live outside loadVRM() because
+  // updateNaturalFace() runs from the animation loop after loadVRM() returns.
+  function bone(name) {
+    return vrm?.humanoid?.getNormalizedBoneNode(name) || null;
+  }
+
   function phonemeForText(text, phase) {
     const vowels = [...text.toLowerCase()].filter(ch => "aeiou".includes(ch));
     if (!vowels.length) return "aa";
     const vowel = vowels[Math.floor(phase % vowels.length)];
     return ({a: "aa", e: "ee", i: "ih", o: "oh", u: "ou"})[vowel] || "aa";
+  }
+
+
+  // PHASE 5: natural avatar motion
+  let targetGazeX = 0, targetGazeY = 0, speakingMotion = 0;
+  let baseAvatarY = 0;
+  let blinkTimer = 0, nextBlinkAt = performance.now() + 2200;
+
+  function updateNaturalFace(){
+    if(!vrm) return;
+    const now = performance.now();
+    const head = bone("head");
+    const neckNode = bone("neck");
+
+    if(head){
+      head.rotation.y += (targetGazeX * 0.18 - head.rotation.y) * 0.04;
+      head.rotation.x += (-targetGazeY * 0.10 - head.rotation.x) * 0.04;
+    }
+    if(neckNode){
+      neckNode.rotation.y += (targetGazeX * 0.08 - neckNode.rotation.y) * 0.035;
+      neckNode.rotation.x += (-targetGazeY * 0.05 - neckNode.rotation.x) * 0.035;
+    }
+
+    if(now >= nextBlinkAt && mouthLevel < 0.05){
+      blinkTimer = 1;
+      nextBlinkAt = now + 2600 + Math.random() * 2600;
+    }
+    if(blinkTimer > 0){
+      setExpression("blink", Math.min(1, blinkTimer * 3.8));
+      blinkTimer -= 1 / 60;
+      if(blinkTimer <= 0) setExpression("blink", 0);
+    }
+
+    speakingMotion += (mouthLevel - speakingMotion) * 0.12;
   }
 
   function animate() {
@@ -234,8 +350,11 @@ if (canvas) {
       else if (targetEmotion === "focused") setExpression("relaxed", 0.18);
     }
     if (vrm) {
-      vrm.scene.position.y = Math.sin(performance.now() * 0.0012) * 0.004;
-      vrm.scene.rotation.y = Math.sin(performance.now() * 0.0004) * 0.025;
+      const now = performance.now();
+      vrm.scene.position.y = baseAvatarY + Math.sin(now * 0.0012) * 0.004;
+      vrm.scene.rotation.y = Math.sin(now * 0.0004) * 0.025;
+      vrm.scene.rotation.z = Math.sin(now * 0.00075) * (0.006 + speakingMotion * 0.012);
+      updateNaturalFace();
       vrm.update(1 / 60);
     }
     if (premiumGroup) {
@@ -250,6 +369,10 @@ if (canvas) {
   }
 
   window.addEventListener("resize", resize);
+  window.addEventListener("mousemove", event => {
+    targetGazeX = Math.max(-1, Math.min(1, (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1));
+    targetGazeY = Math.max(-1, Math.min(1, (event.clientY / Math.max(1, window.innerHeight)) * 2 - 1));
+  });
   resize();
   loadVRM();
   animate();

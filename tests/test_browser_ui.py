@@ -544,9 +544,9 @@ def test_phase2_blue_hud_isolated_to_center_workspace():
 def test_phase2_hud_occupies_center_column_and_is_enlarged():
     css = (WEB / "style.css").read_text(encoding="utf-8")
     hud = (WEB / "hud_avatar.html").read_text(encoding="utf-8")
-    assert "left:460px!important" in css
-    assert "right:560px!important" in css
-    assert "SPHERE_RADIUS:  150" in hud
+    assert "#vrm-canvas{" in css
+    assert "display:block!important" in css
+    assert "SPHERE_RADIUS: 150" in hud
     assert "RING_RADII:     [235, 255, 280, 305]" in hud
     assert "left:50%; transform:translateX(-50%)" in hud
 
@@ -557,9 +557,8 @@ def test_phase3_vrm_avatar_isolated_on_center_stage():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "PHASE 3 — VRM AVATAR" in css
     assert "#vrm-canvas{" in css
-    assert "left:460px!important" in css
-    assert "right:560px!important" in css
-    assert 'src="/avatar.vrm"' in vrm
+    assert "display:block!important" in css
+    assert '"/avatar.vrm"' in vrm
     assert '<canvas id="vrm-canvas"' in html
     assert ".avatar-shell,#photo-avatar,#holo-earth,#task-screen" in css
 
@@ -568,7 +567,49 @@ def test_phase4_avatar_style_and_auto_frame():
     vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
     pipeline = (ROOT / "tools" / "blender" / "premium_avatar.py").read_text(encoding="utf-8")
     run = (ROOT / "run.py").read_text(encoding="utf-8")
-    assert "Auto-frame the real model" in vrm
-    assert "Jenefar_Premium_v2.vrm" in run
+    assert "Auto-frame the real model using its post-scale world bounds." in vrm
+    assert "Jenefar_Premium.vrm" in run
     assert 'PREMIUM_WHITE = (0.035, 0.075, 0.13, 1.0)' in pipeline
     assert 'PREMIUM_CYAN = (0.04, 0.72, 0.95, 1.0)' in pipeline
+
+
+def test_phase5_vrm_motion_hooks_are_present():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "PHASE 5: natural avatar motion" in vrm
+    assert "targetGazeX" in vrm
+    assert "blinkTimer" in vrm
+    assert "speakingMotion" in vrm
+    assert "PHASE 5 — AVATAR POLISH + CENTER SCALE" in css
+
+
+def test_vrm_runtime_normalizes_model_scale():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "targetHeight = 2.55" in vrm
+    assert "normalizedScale = targetHeight / rawHeight" in vrm
+    assert "PHASE 5C — center-stage avatar viewport" in css
+    assert "height:calc(100vh - 236px)!important" in css
+
+
+def test_vrm_animation_bone_accessor_is_available_to_animation_loop():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    bone_idx = vrm.index("function bone(name)")
+    natural_face_idx = vrm.index("function updateNaturalFace()")
+    assert bone_idx < natural_face_idx
+    assert "const bone = (name) => humanoid?.getNormalizedBoneNode(name);" not in vrm
+
+
+def test_vrm_render_path_forces_mesh_visibility_and_preserves_frame():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    assert "node.frustumCulled = false" in vrm
+    assert "vrm.scene.visible = true" in vrm
+    assert "baseAvatarY = basePosition.y" in vrm
+    assert "camera.far = Math.max(50" in vrm
+    assert "const fitDistance = (modelHeight * 0.56) / Math.tan(halfFov);" in vrm
+    assert "const modelDepth = Math.max(size.z, 0.1);" not in vrm
+    assert "const skinnedMeshes = [];" in vrm
+    assert "visualBounds.expandByObject(mesh, true)" in vrm
+    assert "skinnedMeshes: skinnedMeshes.length" in vrm
+    assert "mesh.getVertexPosition(i, localPosition)" in vrm
+    assert "const getVisualBounds = () =>" in vrm
