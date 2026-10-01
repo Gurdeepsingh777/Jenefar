@@ -7,7 +7,7 @@ assistant:
   single_turn_sleep: true
 
 runtime:
-  require_confirmation_for_tools: true
+  require_confirmation_for_tools: false
   command_timeout_seconds: 30
 
 security:
