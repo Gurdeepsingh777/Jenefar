@@ -1670,3 +1670,23 @@ html,body,#stage{
 #vrm-status{z-index:45!important}
 #hud-avatar{z-index:18!important}
 #phase1-center{z-index:3!important}
+
+/* PHASE 5C — center-stage avatar viewport */
+#vrm-canvas{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  left:430px!important;
+  right:430px!important;
+  top:132px!important;
+  bottom:104px!important;
+  z-index:40!important;
+  pointer-events:none!important;
+}
+#hud-avatar{left:390px!important;right:390px!important;z-index:18!important}
+@media (max-width:1200px){
+  #vrm-canvas{left:300px!important;right:270px!important}
+}
+@media (max-width:900px){
+  #vrm-canvas{left:30px!important;right:30px!important;top:100px!important}
+}
