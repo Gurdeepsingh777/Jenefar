@@ -1587,3 +1587,55 @@ html,body,#stage{
 @media (max-width:800px){
   #hud-avatar{left:12px!important;right:12px!important;top:96px!important;bottom:104px!important}
 }
+
+
+/* PHASE 3 — VRM AVATAR */
+/*
+  Phase 3: put the real VRM avatar in the center stage.
+  The Blue HUD remains the visual background.
+  Legacy SVG/photo avatar and earth/task console remain disabled.
+*/
+#vrm-canvas{
+  display:block!important;
+  position:absolute!important;
+  left:460px!important;
+  right:560px!important;
+  top:132px!important;
+  bottom:108px!important;
+  width:auto!important;
+  height:auto!important;
+  z-index:24!important;
+  pointer-events:none!important;
+  background:transparent!important;
+  filter:drop-shadow(0 18px 30px rgba(0,220,255,.10))!important;
+}
+.avatar-shell,#photo-avatar,#holo-earth,#task-screen{
+  display:none!important;
+}
+#hud-avatar{
+  z-index:18!important;
+}
+#vrm-status{
+  position:absolute!important;
+  left:50%!important;
+  bottom:12px!important;
+  transform:translateX(-50%)!important;
+  z-index:26!important;
+  pointer-events:none!important;
+  padding:5px 12px!important;
+  border:1px solid rgba(103,232,255,.22)!important;
+  border-radius:999px!important;
+  background:rgba(2,10,24,.62)!important;
+  color:rgba(160,240,255,.86)!important;
+  font-size:9px!important;
+  letter-spacing:1.4px!important;
+  backdrop-filter:blur(8px)!important;
+}
+.vrm-loaded #vrm-status{color:#67e8ff!important}
+.vrm-error #vrm-status{color:#ff6677!important}
+@media (max-width:1100px){
+  #vrm-canvas{left:310px!important;right:280px!important;top:120px!important}
+}
+@media (max-width:800px){
+  #vrm-canvas{left:12px!important;right:12px!important;top:104px!important;bottom:108px!important}
+}
