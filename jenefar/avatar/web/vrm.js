@@ -116,8 +116,6 @@ if (canvas) {
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
       // These values relax the T-pose into a simple arms-down standing pose.
-      const humanoid = vrm.humanoid;
-      const bone = (name) => humanoid?.getNormalizedBoneNode(name);
       const setEuler = (name, x, y, z) => {
         const node = bone(name);
         if (!node) return;
@@ -251,6 +249,12 @@ if (canvas) {
     try {
       vrm.expressionManager.setValue(name, value);
     } catch (_) {}
+  }
+
+  // Shared humanoid-bone accessor. This must live outside loadVRM() because
+  // updateNaturalFace() runs from the animation loop after loadVRM() returns.
+  function bone(name) {
+    return vrm?.humanoid?.getNormalizedBoneNode(name) || null;
   }
 
   function phonemeForText(text, phase) {
