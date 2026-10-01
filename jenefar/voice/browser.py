@@ -207,9 +207,9 @@ class BrowserVoiceBridge:
                     response_language="Hinglish",
                 )
 
-            enforce_hinglish(reply)
+            speech_source = enforce_hinglish(reply)
             display_reply = self._display_text(reply)
-            speech_text = roman_hinglish_for_voice(display_reply)
+            speech_text = roman_hinglish_for_voice(speech_source)
             self._publish("result", display_reply, task_id)
             if speech_text:
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
