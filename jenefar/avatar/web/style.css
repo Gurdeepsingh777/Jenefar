@@ -610,3 +610,162 @@ body.vrm-loaded #photo-avatar{display:none}
   .command-stack{right:20px;top:252px;width:320px}
   #activity-panel{right:20px;top:440px;width:350px}
 }
+
+
+/* --- LIVE TASK MONITOR / ENLARGED HOLOGRAPHIC SCREEN --- */
+#task-screen{
+  position:absolute;
+  left:270px;
+  right:340px;
+  top:150px;
+  height:68vh;
+  min-height:500px;
+  z-index:11;
+  overflow:hidden;
+  border:1px solid rgba(78,216,255,.34);
+  border-radius:28px;
+  background:
+    linear-gradient(180deg,rgba(8,72,112,.50),rgba(2,18,38,.68)),
+    radial-gradient(circle at 50% 35%,rgba(76,218,255,.18),transparent 52%);
+  box-shadow:
+    0 0 0 1px rgba(90,180,255,.06) inset,
+    0 0 80px rgba(20,176,255,.18),
+    inset 0 0 90px rgba(27,170,255,.12);
+  backdrop-filter:blur(5px);
+  pointer-events:none;
+}
+#task-screen:before{
+  content:"";
+  position:absolute;inset:0;
+  background:
+    repeating-linear-gradient(180deg,rgba(111,225,255,.045) 0 1px,transparent 1px 5px),
+    linear-gradient(115deg,transparent 0 72%,rgba(129,103,255,.08) 80%,transparent 90%);
+  opacity:.85;pointer-events:none;
+}
+#task-screen:after{
+  content:"";
+  position:absolute;left:5%;right:5%;top:18%;
+  height:38%;
+  border:1px solid rgba(75,221,255,.10);
+  border-radius:22px;
+  box-shadow:0 0 55px rgba(47,198,255,.08) inset;
+  pointer-events:none;
+}
+.task-screen-header{
+  position:relative;z-index:2;
+  display:flex;align-items:flex-start;justify-content:space-between;gap:20px;
+  padding:18px 20px 12px;
+  border-bottom:1px solid rgba(117,224,255,.12);
+}
+.task-screen-kicker{
+  display:block;font-size:8px;letter-spacing:.24em;color:#75e5ff;
+}
+.task-screen-header strong{
+  display:block;margin-top:6px;max-width:72%;
+  font-size:18px;line-height:1.2;color:#eefcff;
+  text-shadow:0 0 20px rgba(76,216,255,.18);
+}
+#task-screen-state{
+  flex:0 0 auto;
+  padding:7px 10px;border-radius:10px;
+  border:1px solid rgba(101,225,255,.22);
+  background:rgba(55,197,255,.08);
+  color:#8deaff;font-size:8px;letter-spacing:.14em;
+}
+.task-screen-progress{
+  position:relative;z-index:2;height:3px;margin:0 20px;
+  background:rgba(255,255,255,.08);overflow:hidden;border-radius:999px;
+}
+#task-screen-progress-bar{
+  display:block;width:0;height:100%;
+  background:linear-gradient(90deg,#54e7ff,#4d8cff,#a87dff);
+  box-shadow:0 0 18px rgba(75,214,255,.55);
+  transition:width .35s ease;
+}
+.task-screen-log{
+  position:absolute;z-index:2;left:20px;right:20px;top:92px;bottom:60px;
+  overflow:hidden;
+  display:flex;flex-direction:column;gap:7px;
+  padding-right:8px;
+  mask-image:linear-gradient(to bottom,transparent 0,black 8%,black 96%,transparent 100%);
+}
+.task-log-line{
+  display:grid;grid-template-columns:8px minmax(0,1fr);gap:9px;
+  padding:8px 10px;border:1px solid rgba(98,218,255,.08);
+  background:rgba(2,15,30,.36);border-radius:10px;
+  box-shadow:inset 0 0 20px rgba(50,180,255,.025);
+}
+.task-log-dot{
+  width:6px;height:6px;border-radius:50%;
+  margin-top:5px;background:#62ddff;box-shadow:0 0 10px #62ddff;
+}
+.task-log-body{min-width:0}
+.task-log-meta{
+  font-size:7px;letter-spacing:.11em;color:#698aa7;
+  text-transform:uppercase;
+}
+.task-log-content{
+  margin-top:3px;font-size:10px;line-height:1.38;
+  color:#dff7ff;overflow:hidden;text-overflow:ellipsis;
+}
+.task-log-error{border-color:rgba(255,89,110,.20);background:rgba(80,9,19,.24)}
+.task-log-error .task-log-dot{background:#ff6c7e;box-shadow:0 0 10px #ff6c7e}
+.task-log-waiting_approval{border-color:rgba(255,191,93,.20)}
+.task-log-waiting_approval .task-log-dot{background:#ffbf64;box-shadow:0 0 10px #ffbf64}
+.task-log-completed .task-log-dot{background:#65ffd8;box-shadow:0 0 10px #65ffd8}
+.task-screen-footer{
+  position:absolute;z-index:3;left:20px;right:20px;bottom:16px;
+  display:flex;justify-content:space-between;gap:14px;
+  color:#6c90ad;font-size:7px;letter-spacing:.13em;
+  border-top:1px solid rgba(255,255,255,.08);padding-top:10px;
+}
+#task-screen-summary{
+  max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#9cc6df;text-align:right;letter-spacing:.03em;
+}
+
+/* Make the holographic monitor visibly larger while preserving panel readability. */
+#vrm-canvas{
+  left:225px!important;
+  right:300px!important;
+  width:calc(100% - 525px)!important;
+  height:82%!important;
+  top:8%!important;
+  z-index:16!important;
+}
+.avatar-shell{
+  inset:0 300px 0 190px!important;
+  z-index:20!important;
+}
+.avatar-shell .avatar{transform:scale(1.10);transform-origin:center 62%}
+.holo-earth{right:305px!important;top:23%!important;width:min(24vw,350px)!important;z-index:18!important}
+#activity-panel{
+  right:18px!important;top:390px!important;
+  width:350px!important;height:calc(100vh - 470px)!important;
+  max-height:none!important;
+}
+.system-card{right:18px!important;top:78px!important;width:350px!important}
+.command-stack{right:18px!important;top:260px!important;width:300px!important}
+.chat-glass{left:210px!important;top:246px!important;width:350px!important;height:350px!important}
+.hero-copy{left:210px!important;top:90px!important;width:310px!important;max-width:310px!important}
+.quick-apps{left:18px!important;bottom:118px!important;width:180px!important}
+.media-card{left:18px!important;bottom:18px!important;width:350px!important}
+.side-nav{left:18px!important;top:82px!important;width:170px!important}
+.premium-controls{right:18px!important;bottom:76px!important}
+
+@media(max-width:1250px){
+  #task-screen{left:220px;right:300px;top:150px;height:62vh;min-height:430px}
+  #vrm-canvas{left:205px!important;right:275px!important;width:calc(100% - 480px)!important}
+  .avatar-shell{inset:0 275px 0 175px!important}
+  .holo-earth{right:280px!important;width:260px!important}
+  #activity-panel{width:310px!important}
+  .system-card{width:300px!important}
+  .chat-glass{width:315px!important}
+}
+@media(max-width:900px){
+  #task-screen{left:80px;right:30px;top:220px;height:48vh;min-height:320px}
+  #vrm-canvas{left:40px!important;right:40px!important;width:calc(100% - 80px)!important}
+  .avatar-shell{inset:0!important}
+  #activity-panel{right:14px!important;left:14px!important;top:auto!important;bottom:155px!important;width:auto!important;height:250px!important}
+  .chat-glass{left:90px!important;width:calc(100vw - 420px)!important}
+}
