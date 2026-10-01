@@ -213,6 +213,39 @@ if (canvas) {
     return ({a: "aa", e: "ee", i: "ih", o: "oh", u: "ou"})[vowel] || "aa";
   }
 
+
+  // PHASE 5: natural avatar motion
+  let targetGazeX = 0, targetGazeY = 0, speakingMotion = 0;
+  let blinkTimer = 0, nextBlinkAt = performance.now() + 2200;
+
+  function updateNaturalFace(){
+    if(!vrm) return;
+    const now = performance.now();
+    const head = bone("head");
+    const neckNode = bone("neck");
+
+    if(head){
+      head.rotation.y += (targetGazeX * 0.18 - head.rotation.y) * 0.04;
+      head.rotation.x += (-targetGazeY * 0.10 - head.rotation.x) * 0.04;
+    }
+    if(neckNode){
+      neckNode.rotation.y += (targetGazeX * 0.08 - neckNode.rotation.y) * 0.035;
+      neckNode.rotation.x += (-targetGazeY * 0.05 - neckNode.rotation.x) * 0.035;
+    }
+
+    if(now >= nextBlinkAt && mouthLevel < 0.05){
+      blinkTimer = 1;
+      nextBlinkAt = now + 2600 + Math.random() * 2600;
+    }
+    if(blinkTimer > 0){
+      setExpression("blink", Math.min(1, blinkTimer * 3.8));
+      blinkTimer -= 1 / 60;
+      if(blinkTimer <= 0) setExpression("blink", 0);
+    }
+
+    speakingMotion += (mouthLevel - speakingMotion) * 0.12;
+  }
+
   function animate() {
     requestAnimationFrame(animate);
     mouthLevel += (targetLevel - mouthLevel) * 0.18;
@@ -234,8 +267,11 @@ if (canvas) {
       else if (targetEmotion === "focused") setExpression("relaxed", 0.18);
     }
     if (vrm) {
-      vrm.scene.position.y = Math.sin(performance.now() * 0.0012) * 0.004;
-      vrm.scene.rotation.y = Math.sin(performance.now() * 0.0004) * 0.025;
+      const now = performance.now();
+      vrm.scene.position.y = Math.sin(now * 0.0012) * 0.004;
+      vrm.scene.rotation.y = Math.sin(now * 0.0004) * 0.025;
+      vrm.scene.rotation.z = Math.sin(now * 0.00075) * (0.006 + speakingMotion * 0.012);
+      updateNaturalFace();
       vrm.update(1 / 60);
     }
     if (premiumGroup) {
@@ -250,6 +286,10 @@ if (canvas) {
   }
 
   window.addEventListener("resize", resize);
+  window.addEventListener("mousemove", event => {
+    targetGazeX = Math.max(-1, Math.min(1, (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1));
+    targetGazeY = Math.max(-1, Math.min(1, (event.clientY / Math.max(1, window.innerHeight)) * 2 - 1));
+  });
   resize();
   loadVRM();
   animate();
