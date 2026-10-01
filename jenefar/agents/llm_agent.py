@@ -105,8 +105,11 @@ class BaseLLMAgent(BaseAgent):
             for word in (
                 "what can you do",
                 "what can jenefar do",
+                "what all can you do",
+                "aap kya kar sakti",
                 "tum kya kar",
                 "tum kya kya",
+                "tum kya kya kar sakti",
                 "capabilit",
                 "kya kar sakti",
             )
@@ -160,7 +163,13 @@ class BaseLLMAgent(BaseAgent):
             f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
             for item in tool_results
         )
-        instructions = self.system_prompt + self._language_instruction(response_language)
+        instructions = (
+            self.system_prompt
+            + "
+Never volunteer a capability list, screenshot suggestion, or alternate-method list "
+              "unless the current user explicitly asked for it. "
+            + self._language_instruction(response_language)
+        )
         plan_section = (
             f"\n\nHierarchical task plan to continue:\n{task_plan_text}"
             if task_plan_text
