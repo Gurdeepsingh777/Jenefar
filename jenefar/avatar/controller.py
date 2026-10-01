@@ -17,6 +17,8 @@ class AvatarEvent:
     emotion: str = "neutral"
     intensity: float = 0.0
     timestamp: float = 0.0
+    audio_b64: str = ""
+    audio_mime: str = ""
 
     def payload(self) -> dict[str, object]:
         value = asdict(self)
@@ -40,6 +42,8 @@ class AvatarController:
         level: float = 0.0,
         *,
         task_id: str = "",
+        audio_b64: str = "",
+        audio_mime: str = "",
     ) -> None:
         bounded_level = max(0.0, min(1.0, float(level)))
         expression = self._expressions.classify(state, text)
@@ -51,6 +55,9 @@ class AvatarController:
             emotion=expression.name,
             intensity=expression.intensity,
             timestamp=time.time(),
+            audio_b64=str(audio_b64 or ""),
+            audio_mime=str(audio_mime or ""),
+
         ).payload()
         with self._lock:
             self._current = event
