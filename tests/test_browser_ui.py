@@ -427,3 +427,16 @@ def test_task_console_is_centered_and_vrm_canvas_is_transparent():
     assert "#task-screen{" in css
     assert "setClearColor(0x000000, 0)" in vrm
     assert "backGlow.visible = false" in vrm
+
+
+def test_holographic_window_mirror_integration():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    broker = (ROOT / "jenefar" / "tools" / "broker.py").read_text(encoding="utf-8")
+    assert 'id="desktop-mirror"' in html
+    assert '"/desktop/mirror.jpg' in app
+    assert "Phase 9: clear avatar + real live-window mirror" in css
+    assert 'path == "/desktop/mirror.jpg"' in server
+    assert 'name="desktop_mirror_start"' in broker
