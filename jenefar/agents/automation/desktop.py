@@ -12,6 +12,8 @@ For semantic clicks or typing, pass a verify postcondition whenever the user req
 Prefer vision-backed semantic element lookup over guessed coordinates. Treat desktop
 typing/clicking, semantic GUI actions and microphone song recognition as confirmation-gated.
 Browser playback and local media playback are low-risk user-requested actions.
+Use desktop_screenshot only when the user explicitly asks to take, save, or show a screenshot.
+Do not use desktop_screenshot as a workaround for screen inspection or GUI understanding.
 Prefer tool results and never claim an action succeeded unless the result confirms it."""
     keywords = (
         "desktop", "screen", "screenshot", "mouse", "keyboard",
