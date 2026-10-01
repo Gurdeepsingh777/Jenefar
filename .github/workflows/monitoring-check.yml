@@ -1,0 +1,56 @@
+name: Monitoring Validation
+
+
+on:
+
+  push:
+    paths:
+      - "jenefar/monitoring/**"
+
+
+
+jobs:
+
+  monitor-test:
+
+    runs-on: ubuntu-latest
+
+
+    steps:
+
+    - uses: actions/checkout@v4
+
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+
+      with:
+        python-version: "3.12"
+
+
+    - name: Install monitoring dependencies
+      run: |
+        pip install psutil pynvml GPUtil
+
+
+    - name: Test system monitor
+      run: |
+
+        python - <<'PY'
+
+        from jenefar.monitoring.system_monitor import get_system_stats
+
+        data=get_system_stats()
+
+        print(data)
+
+        assert "cpu" in data
+        assert "ram" in data
+        assert "gpu" in data
+
+        print("Monitoring OK")
+
+        PY
+
+
+
