@@ -276,8 +276,11 @@ function showApproval(event){
   const overlay=document.createElement("div");
   overlay.className="approval-overlay";
   overlay.innerHTML="<div class='approval-card'><div class='approval-title'>JENEFAR ACTION APPROVAL</div><div class='approval-tool'></div><pre></pre><div class='approval-actions'><button data-action='deny'>DENY</button><button data-action='approve'>APPROVE</button></div></div>";
-  overlay.querySelector(".approval-tool").textContent=String(event.text||"Approval required");
-  overlay.querySelector("pre").textContent="Pending ID: "+pendingId;
+  const rawMessage=String(event.text||"Approval required");
+  const cleanMessage=rawMessage.replace(/\s*\[[a-f0-9]{12,}\]\s*$/i,"").trim();
+  overlay.querySelector(".approval-title").textContent="JENEFAR • CONFIRMATION NEEDED";
+  overlay.querySelector(".approval-tool").textContent=cleanMessage || "Kya main ye critical action kar doon?";
+  overlay.querySelector("pre").style.display="none";
   document.body.appendChild(overlay);
   approvalDialogs.set(pendingId,overlay);
 
