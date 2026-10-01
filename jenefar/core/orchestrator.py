@@ -151,6 +151,14 @@ class JenefarOrchestrator:
         # Jenefar's user-facing runtime is intentionally Roman Hinglish-first.
         # Keep the language stable even when a caller omits the preference.
         response_language = response_language or "Hinglish"
+
+        pending_reply = self._handle_conversational_confirmation(
+            text,
+            response_language=response_language,
+        )
+        if pending_reply is not None:
+            self._avatar_state("speaking", pending_reply)
+            return pending_reply
         trace = ExecutionTrace(
             session_id=self.session.session_id,
             task=text,
@@ -221,7 +229,7 @@ class JenefarOrchestrator:
                 "runtime": runtime,
                 "capabilities": self.capabilities.list(),
                 "skills": [item for item in self.skills.list() if item.get("enabled")],
-                "history": self.session.recent(8),
+                "history": self.session.recent(24),
                 "retrieved_memory": [
                     {"source": hit.source, "title": hit.title, "content": hit.content, "layer": hit.layer, "score": hit.score}
                     for hit in recall.hits
@@ -233,14 +241,22 @@ class JenefarOrchestrator:
                 ],
             }
             self._avatar_activity("thinking", "")
-            result = self.self_healing.run(
-                "agent_dispatch",
-                lambda: self.router.dispatch(text, metadata=dispatch_metadata),
-                metadata={
-                    "approval_required": False,
-                    "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
-                },
+            self.tool_broker.set_task_context(
+                agent=plan.agent,
+                task=text,
             )
+            try:
+                result = self.self_healing.run(
+                    "agent_dispatch",
+                    lambda: self.router.dispatch(text, metadata=dispatch_metadata),
+
+                    metadata={
+                        "approval_required": False,
+                        "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
+                    },
+                )
+            finally:
+                self.tool_broker.clear_task_context()
             trace.metadata["self_healing"] = {
                 "retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
@@ -300,6 +316,64 @@ class JenefarOrchestrator:
             self.state = JenefarState.SLEEPING
             self._avatar_state("error", str(exc))
             return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
+
+    @staticmethod
+    def _confirmation_choice(text: str) -> str | None:
+        lowered = " ".join(str(text or "").lower().strip().split())
+        lowered = lowered.replace("?", "").replace("!", "").replace(".", "")
+        negative = (
+            "nahi", "nahin", "no", "cancel", "mat karo", "rehne do",
+            "chod do", "chhod do", "don't", "do not", "stop"
+        )
+        positive = (
+            "haan", "ha", "yes", "ok", "okay", "theek hai", "thik hai",
+            "kar do", "proceed", "bhej do", "send kar do", "allow", "approve"
+        )
+        if any(item == lowered or lowered.startswith(item + " ") for item in negative):
+            return "no"
+        if any(item == lowered or lowered.startswith(item + " ") for item in positive):
+            return "yes"
+        return None
+
+    def _handle_conversational_confirmation(
+        self,
+        text: str,
+        *,
+        response_language: str = "Hinglish",
+    ) -> str | None:
+        if not self.pending_approval_workflows:
+            return None
+        choice = self._confirmation_choice(text)
+        if choice is None:
+            return None
+
+        pending_id = next(reversed(self.pending_approval_workflows))
+        workflow = self.pending_approval_workflows.get(pending_id)
+        if workflow is None:
+            return None
+
+        if choice == "no":
+            raw = self._reject_pending_workflow(pending_id)
+            from jenefar.voice.speech import devanagari_to_roman
+            return devanagari_to_roman(raw)
+
+        raw = self._approve_pending(pending_id)
+        from jenefar.voice.speech import devanagari_to_roman
+        return devanagari_to_roman(raw)
+
+    def _reject_pending_workflow(self, pending_id: str) -> str:
+        workflow = self.pending_approval_workflows.get(pending_id)
+        result = self.tool_broker.reject(pending_id)
+        if workflow is not None:
+            for other_id in list(workflow.get("remaining") or set()):
+                if other_id == pending_id:
+                    continue
+                self.tool_broker.reject(str(other_id))
+                self.pending_approval_workflows.pop(str(other_id), None)
+            workflow["remaining"] = set()
+            self.pending_approval_workflows.pop(pending_id, None)
+        self.state = JenefarState.SLEEPING
+        return "Theek hai, ye action nahi karungi."
 
     @staticmethod
     def _is_local_time_query(text: str) -> bool:
