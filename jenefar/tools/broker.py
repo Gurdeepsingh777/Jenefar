@@ -1380,6 +1380,12 @@ class ToolBroker:
         if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
             self.pending[pending_id] = PendingToolCall(pending_id, name, arguments)
+            user_prompt = (
+                f"Kya main {name.replace('_', ' ')} kar doon? "
+                "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
+                if spec.critical
+                else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
+            )
             self.audit.record(
                 "tool_approval_requested",
                 pending_id=pending_id,
@@ -1388,7 +1394,7 @@ class ToolBroker:
             )
             self._activity(
                 "waiting_approval",
-                f"Approval required: {name} [{pending_id}]",
+                f"{user_prompt} [{pending_id}]",
             )
             return json.dumps({
                 "status": "approval_required",
@@ -1399,12 +1405,7 @@ class ToolBroker:
                     if spec.critical
                     else "This action needs your confirmation before I execute it."
                 ),
-                "user_prompt": (
-                    f"Kya main {name.replace('_', ' ')} kar doon? "
-                    "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
-                    if spec.critical
-                    else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
-                ),
+                "user_prompt": user_prompt,
                 "critical": bool(spec.critical),
             })
 
