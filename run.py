@@ -179,6 +179,31 @@ def doctor() -> int:
             "  local model                  "
             + (f"OK ({local_model.model})" if local_model else "NOT DETECTED")
         )
+        try:
+            from jenefar.vision.screen import ScreenVision
+            vision_base = os.getenv("JENEFAR_LOCAL_VISION_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+            vision_model = os.getenv("JENEFAR_LOCAL_VISION_MODEL", "qwen3-vl:4b").strip() or "qwen3-vl:4b"
+            import json
+            import urllib.request
+            request = urllib.request.Request(
+                f"{vision_base}/api/tags",
+                headers={"User-Agent": "Jenefar/LocalVision"},
+            )
+            with urllib.request.urlopen(request, timeout=2.0) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            installed = [
+                str(item.get("name") or item.get("model") or "")
+                for item in (payload.get("models") or [])
+                if isinstance(item, dict)
+            ]
+            markers = ("qwen3-vl", "qwen2.5vl", "llama3.2-vision", "llava", "minicpm-v", "moondream", "deepseek-ocr")
+            detected_vision = next((name for name in installed if any(marker in name.lower() for marker in markers)), "")
+            print(
+                "  local vision                 "
+                + (f"OK ({detected_vision})" if detected_vision else f"NOT READY (run: ollama pull {vision_model})")
+            )
+        except Exception as exc:
+            print(f"  local vision                 NOT READY ({type(exc).__name__}: {exc})")
 
         # Import the orchestrator to catch dependency/import integration errors.
         from jenefar.core.orchestrator import JenefarOrchestrator
