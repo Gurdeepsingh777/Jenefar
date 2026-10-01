@@ -572,3 +572,13 @@ def test_phase4_avatar_style_and_auto_frame():
     assert "Jenefar_Premium_v2.vrm" in run
     assert 'PREMIUM_WHITE = (0.035, 0.075, 0.13, 1.0)' in pipeline
     assert 'PREMIUM_CYAN = (0.04, 0.72, 0.95, 1.0)' in pipeline
+
+
+def test_phase5_vrm_motion_hooks_are_present():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "PHASE 5: natural avatar motion" in vrm
+    assert "targetGazeX" in vrm
+    assert "blinkTimer" in vrm
+    assert "speakingMotion" in vrm
+    assert "PHASE 5 — AVATAR POLISH + CENTER SCALE" in css
