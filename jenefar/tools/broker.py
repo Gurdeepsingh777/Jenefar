@@ -333,7 +333,7 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="workspace_validate_python",
-            description="Validate syntax of an authorized Python file with py_compile. Requires explicit confirmation.",
+            description="Validate syntax of an authorized Python file with py_compile. Safe verification for user-directed coding tasks.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -352,7 +352,7 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="workspace_run_pytest",
-            description="Run pytest against an authorized local file or directory. Requires explicit confirmation.",
+            description="Run pytest against an authorized local file or directory as verification for user-directed coding tasks.",
             parameters={
                 "type": "object",
                 "properties": {
