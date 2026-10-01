@@ -472,3 +472,25 @@ def test_supplied_hud_and_minimal_vrm_presentation():
     assert "JenefarPremiumEnvironment" not in vrm
     assert "PARTICLES:" in hud
     assert "window.updateAgentState" in hud
+
+
+def test_live_window_control_and_transfer_wiring():
+    window_control = (ROOT / "jenefar" / "automation" / "window_control.py").read_text(encoding="utf-8")
+    mirror = (ROOT / "jenefar" / "vision" / "mirror.py").read_text(encoding="utf-8")
+    broker = (ROOT / "jenefar" / "tools" / "broker.py").read_text(encoding="utf-8")
+    gui = (ROOT / "jenefar" / "agents" / "automation" / "gui.py").read_text(encoding="utf-8")
+    assert "class DesktopWindowControl" in window_control
+    assert "def transfer" in mirror
+    assert "def restore_native" in mirror
+    assert 'name="desktop_window_transfer"' in broker
+    assert 'name="desktop_window_restore"' in broker
+    assert "desktop_window_transfer" in gui
+    assert "Never hide the Jenefar Avatar host window itself" in gui
+
+
+def test_window_control_backend_is_safe_to_construct_without_x11():
+    from jenefar.automation.window_control import DesktopWindowControl
+    backend = DesktopWindowControl()
+    status = backend.status()
+    assert status["backend"] in {"wmctrl", "xdotool", "hyprland", "sway", "none"}
+    assert isinstance(status["control"], bool)
