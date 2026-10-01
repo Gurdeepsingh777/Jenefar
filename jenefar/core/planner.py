@@ -90,9 +90,13 @@ class Planner:
         if any(x in t for x in (
             "find on screen", "locate on screen", "click the", "click on",
             "press the button", "find the button", "search box", "address bar",
-            "what is on my screen", "semantic gui", "semantic click",
-            "screen par", "screen pe", "screen kya", "screen read",
+            "what is on my screen", "what's on my screen", "semantic gui", "semantic click",
+            "read my screen", "read screen", "screen par kya hai", "screen pe kya hai",
+            "screen par kya dikh", "screen pe kya dikh", "screen par mujhe kya",
+            "screen pe mujhe kya", "screen par dekho", "screen pe dekho",
+            "screen par read", "screen pe read", "screen read",
             "live screen", "my screen", "meri screen", "mere screen",
+            "meri screen par kya", "meri screen pe kya",
             "screen dekho", "screen dikh", "screen me kya",
         )):
             return self._make_plan(
@@ -100,7 +104,7 @@ class Planner:
                 "semantic_gui",
                 "gui_vision",
                 confidence=0.97,
-                reason="semantic GUI/vision keyword match",
+                reason="explicit screen/GUI request",
                 needs_tool=True,
             )
 
