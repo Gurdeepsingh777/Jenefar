@@ -976,3 +976,152 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
     resumeBrowserVoice();
   }
 });
+
+/* Phase 14: native HUD renderer */
+const mainHudCanvas=document.getElementById("hud-canvas");
+const mainHudCtx=mainHudCanvas?.getContext("2d");
+const mainHud={w:0,h:0,dpr:1,time:0,state:"idle",level:0,color:[72,225,255],target:[72,225,255]};
+
+function hudPalette(state){
+  if(state==="speaking"||state==="speaking_fallback") return [72,225,255];
+  if(state==="thinking"||state==="result"||state==="queued") return [142,112,255];
+  if(state==="listening") return [72,255,190];
+  if(state==="waiting_approval") return [255,185,85];
+  if(state==="error") return [255,82,105];
+  return [74,176,255];
+}
+
+function hudResize(){
+  if(!mainHudCanvas||!mainHudCtx) return;
+  const rect=mainHudCanvas.getBoundingClientRect();
+  mainHud.dpr=Math.min(window.devicePixelRatio||1,2);
+  mainHud.w=Math.max(1,rect.width);
+  mainHud.h=Math.max(1,rect.height);
+  mainHudCanvas.width=Math.round(mainHud.w*mainHud.dpr);
+  mainHudCanvas.height=Math.round(mainHud.h*mainHud.dpr);
+  mainHudCtx.setTransform(mainHud.dpr,0,0,mainHud.dpr,0,0);
+}
+
+function hudSetState(state,level){
+  mainHud.state=state||"idle";
+  mainHud.level=Math.max(0,Math.min(1,Number(level)||0));
+  mainHud.target=hudPalette(mainHud.state);
+}
+
+function drawNativeHud(ts){
+  if(!mainHudCtx||!mainHudCanvas){
+    requestAnimationFrame(drawNativeHud);
+    return;
+  }
+  if(!mainHud.w||!mainHud.h) hudResize();
+
+  const t=ts*0.001;
+  const ctx=mainHudCtx;
+  const w=mainHud.w;
+  const h=mainHud.h;
+  const cx=w*0.54;
+  const cy=h*0.50;
+
+  for(let i=0;i<3;i++){
+    mainHud.color[i]+=(mainHud.target[i]-mainHud.color[i])*0.045;
+  }
+
+  const r=Math.round(mainHud.color[0]);
+  const g=Math.round(mainHud.color[1]);
+  const b=Math.round(mainHud.color[2]);
+  const rgb=r+","+g+","+b;
+
+  ctx.clearRect(0,0,w,h);
+
+  const aura=ctx.createRadialGradient(cx,cy,8,cx,cy,Math.min(w,h)*0.34);
+  aura.addColorStop(0,"rgba("+rgb+","+(0.22+mainHud.level*0.14)+")");
+  aura.addColorStop(0.35,"rgba("+rgb+",0.08)");
+  aura.addColorStop(1,"rgba("+rgb+",0)");
+  ctx.fillStyle=aura;
+  ctx.beginPath();
+  ctx.arc(cx,cy,Math.min(w,h)*0.34,0,Math.PI*2);
+  ctx.fill();
+
+  const base=Math.min(w,h)*0.22;
+  for(let i=0;i<5;i++){
+    const rx=base*(0.70+i*0.13);
+    const ry=rx*(0.20+i*0.035);
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(t*(i%2?-0.16:0.12)+i*0.62);
+    ctx.beginPath();
+    ctx.ellipse(0,0,rx,ry,0,0,Math.PI*2);
+    ctx.strokeStyle="rgba("+rgb+","+(0.12-i*0.014)+")";
+    ctx.lineWidth=i===0?2:1;
+    ctx.shadowColor="rgb("+rgb+")";
+    ctx.shadowBlur=12;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const sphereR=Math.min(w,h)*(0.12+mainHud.level*0.03);
+  for(let i=0;i<280;i++){
+    const a=i*2.399963+t*0.32;
+    const yy=1-(i/279)*2;
+    const rr=Math.sqrt(Math.max(0,1-yy*yy));
+    const depth=(Math.sin(a*1.7)+1)/2;
+    const px=cx+Math.cos(a)*rr*sphereR*(0.86+depth*0.14);
+    const py=cy+yy*sphereR;
+    const alpha=0.10+0.52*(0.35+depth*0.65);
+    const size=0.45+1.35*(0.3+depth*0.7);
+    ctx.fillStyle="rgba("+rgb+","+alpha+")";
+    ctx.beginPath();
+    ctx.arc(px,py,size,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  const pulse=1+Math.sin(t*3.4)*0.06+mainHud.level*0.30;
+  const coreR=14*pulse;
+  const core=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR*5);
+  core.addColorStop(0,"rgba(255,255,255,.98)");
+  core.addColorStop(0.18,"rgba("+rgb+",.82)");
+  core.addColorStop(1,"rgba("+rgb+",0)");
+  ctx.fillStyle=core;
+  ctx.beginPath();
+  ctx.arc(cx,cy,coreR*5,0,Math.PI*2);
+  ctx.fill();
+
+  const bars=80;
+  const waveR=Math.min(w,h)*0.27;
+  for(let i=0;i<bars;i++){
+    const a=i/bars*Math.PI*2-t*0.18;
+    const wave=(3+((Math.sin(i*0.55+t*4.2)+1)/2)*9)*(0.45+mainHud.level*1.7);
+    const x1=cx+Math.cos(a)*waveR;
+    const y1=cy+Math.sin(a)*waveR*0.62;
+    const x2=cx+Math.cos(a)*(waveR+wave);
+    const y2=cy+Math.sin(a)*(waveR+wave)*0.62;
+    ctx.strokeStyle="rgba("+rgb+","+(0.16+mainHud.level*0.38)+")";
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x2,y2);
+    ctx.stroke();
+  }
+
+  const sweep=(t*0.55)%(Math.PI*2);
+  const scanR=base*1.25;
+  ctx.strokeStyle="rgba("+rgb+",.42)";
+  ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx,cy);
+  ctx.lineTo(cx+Math.cos(sweep)*scanR,cy+Math.sin(sweep)*scanR*0.72);
+  ctx.stroke();
+
+  requestAnimationFrame(drawNativeHud);
+}
+
+if(mainHudCanvas){
+  hudResize();
+  window.addEventListener("resize",hudResize);
+  window.addEventListener("jenefar-avatar-event",event=>{
+    const data=event.detail||{};
+    hudSetState(data.state||"idle",data.level||0);
+  });
+  hudSetState("idle",0);
+  requestAnimationFrame(drawNativeHud);
+}
