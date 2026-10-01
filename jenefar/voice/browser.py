@@ -33,6 +33,14 @@ class BrowserVoiceBridge:
         self._active_task = None
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._tts_lock = threading.Lock()
+        self._openai_tts_disabled_until = 0.0
+        try:
+            self._openai_tts_quota_cooldown = max(
+                60.0,
+                min(float(os.getenv("JENEFAR_OPENAI_TTS_QUOTA_COOLDOWN", "900")), 86400.0),
+            )
+        except ValueError:
+            self._openai_tts_quota_cooldown = 900.0
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -98,6 +106,15 @@ class BrowserVoiceBridge:
         if not key:
             return self._synthesize_edge_audio(text)
 
+        now = time.monotonic()
+        if now < self._openai_tts_disabled_until:
+            remaining = int(max(0, self._openai_tts_disabled_until - now))
+            print(
+                "[JENEFAR] OpenAI browser TTS is temporarily bypassed after a "
+                f"quota/rate-limit response ({remaining}s remaining). Using Edge TTS."
+            )
+            return self._synthesize_edge_audio(text)
+
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
         voice = os.getenv("JENEFAR_BROWSER_TTS_VOICE", "coral").strip() or "coral"
         instructions = os.getenv(
@@ -127,10 +144,23 @@ class BrowserVoiceBridge:
                 "audio/wav",
             )
         except Exception as exc:
-            print(
-                "[JENEFAR] Browser TTS generation failed; "
-                f"trying Edge TTS fallback: {type(exc).__name__}: {exc}"
+            error_text = str(exc).lower()
+            quota_failure = (
+                "insufficient_quota" in error_text
+                or "credit_balance_exhausted" in error_text
+                or ("rate limit" in error_text and "quota" in error_text)
             )
+            if quota_failure:
+                self._openai_tts_disabled_until = time.monotonic() + self._openai_tts_quota_cooldown
+                print(
+                    "[JENEFAR] OpenAI browser TTS quota/rate-limit detected; "
+                    f"bypassing OpenAI for {self._openai_tts_quota_cooldown:.0f}s."
+                )
+            else:
+                print(
+                    "[JENEFAR] Browser TTS generation failed; "
+                    f"trying Edge TTS fallback: {type(exc).__name__}: {exc}"
+                )
             return self._synthesize_edge_audio(text)
 
     def submit_text(self, text: str) -> dict[str, Any]:
