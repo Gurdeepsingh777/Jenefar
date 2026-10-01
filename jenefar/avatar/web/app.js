@@ -1,3 +1,31 @@
+const desktopMirror=document.getElementById("desktop-mirror");
+const desktopMirrorImage=document.getElementById("desktop-mirror-image");
+const desktopMirrorTitle=document.getElementById("desktop-mirror-title");
+const desktopMirrorStatus=document.getElementById("desktop-mirror-status");
+let desktopMirrorTimer=null;
+
+async function refreshDesktopMirror(){
+  try{
+    const response=await fetch("/desktop/mirror/status?ts="+Date.now(),{cache:"no-store"});
+    if(!response.ok) return;
+    const status=await response.json();
+    if(!status.active){
+      if(desktopMirror) desktopMirror.hidden=true;
+      if(desktopMirrorTimer) clearTimeout(desktopMirrorTimer);
+      desktopMirrorTimer=setTimeout(refreshDesktopMirror,1500);
+      return;
+    }
+    if(desktopMirror) desktopMirror.hidden=false;
+    if(desktopMirrorTitle) desktopMirrorTitle.textContent=(status.title||"LIVE WINDOW").toUpperCase();
+    if(desktopMirrorStatus) desktopMirrorStatus.textContent="LIVE";
+    if(desktopMirrorImage) desktopMirrorImage.src="/desktop/mirror.jpg?ts="+Date.now();
+  }catch(_){
+  }finally{
+    desktopMirrorTimer=setTimeout(refreshDesktopMirror,700);
+  }
+}
+refreshDesktopMirror();
+
 const stage=document.getElementById("stage");
 const canvas=document.getElementById("particles");
 const ctx=canvas.getContext("2d");
