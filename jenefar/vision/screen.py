@@ -227,90 +227,99 @@ class ScreenVision:
         import urllib.request
 
         base = os.getenv(
-            "JENEFAR_LOCAL_LLM_BASE_URL",
-            "http://127.0.0.1:11434/v1",
+            "JENEFAR_LOCAL_VISION_BASE_URL",
+            "http://127.0.0.1:11434",
         ).rstrip("/")
-        model = os.getenv(
+        requested_model = os.getenv(
             "JENEFAR_LOCAL_VISION_MODEL",
-            "",
-        ).strip() or os.getenv(
-            "JENEFAR_LOCAL_LLM_MODEL",
-            "",
+            "qwen3-vl:4b",
         ).strip()
 
-        if not model:
+        try:
             request = urllib.request.Request(
-                f"{base}/models",
-                headers={"User-Agent": "Jenefar/1.0"},
+                f"{base}/api/tags",
+                headers={"User-Agent": "Jenefar/LocalVision"},
             )
-            payload = json.loads(
-                urllib.request.urlopen(request, timeout=1.5)
-                .read()
-                .decode("utf-8")
-            )
-            models = payload.get("data") or []
-            model = str(models[0].get("id")) if models else ""
+            with urllib.request.urlopen(request, timeout=2.0) as response:
+                models_payload = json.loads(response.read().decode("utf-8"))
+            installed = [
+                str(item.get("name") or item.get("model") or "").strip()
+                for item in (models_payload.get("models") or [])
+                if isinstance(item, dict)
+            ]
+        except Exception as exc:
+            raise RuntimeError(
+                f"Local vision server is unavailable at {base}: {exc}"
+            ) from exc
 
+        vision_markers = (
+            "qwen3-vl",
+            "qwen2.5vl",
+            "llama3.2-vision",
+            "llava",
+            "minicpm-v",
+            "moondream",
+            "deepseek-ocr",
+        )
+        model = requested_model if requested_model in installed else next(
+            (item for item in installed if any(marker in item.lower() for marker in vision_markers)),
+            "",
+        )
         if not model:
             raise RuntimeError(
-                "No local multimodal model configured or detected."
+                "No local multimodal vision model is installed. "
+                f"Run ollama pull {requested_model} and try again. "
+                "The current llama3.2:latest model is text-only and must not be used for screen vision."
             )
 
         prompt = (
-            "Analyze this desktop screenshot for semantic UI control. "
-            "Return JSON only with an elements array. "
-            "For every visible actionable or task-relevant UI element include "
-            "label, role, confidence from 0 to 1, bbox [x1,y1,x2,y2] in "
-            "image pixels, and optional visible text. Do not invent elements. "
+            "You are Jenefar's local desktop vision engine. "
+            "Analyze the supplied desktop screenshot and return JSON only. "
+            "Schema: {summary: string, elements: ["
+            "{label: string, role: string, confidence: number, "
+            "bbox: [x1,y1,x2,y2], text: string}]}. "
+            "Use the supplied image pixel coordinates. "
+            "Only include visible, task-relevant UI elements. "
+            "For screen-reading requests, summary should describe the current screen clearly. "
+            "For GUI tasks, include actionable controls and their visible labels. "
+            "Never invent UI elements. "
             f"User task: {task}"
         )
-        messages = [
-            {
+        image_b64 = base64.b64encode(frame.png_bytes).decode("ascii")
+        payload = {
+            "model": model,
+            "messages": [{
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": frame.data_url},
-                    },
-                ],
-            }
-        ]
+                "content": prompt,
+                "images": [image_b64],
+            }],
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.0},
+        }
         request = urllib.request.Request(
-            f"{base}/chat/completions",
+            f"{base}/api/chat",
             method="POST",
-            data=json.dumps(
-                {
-                    "model": model,
-                    "messages": messages,
-                    "stream": False,
-                }
-            ).encode("utf-8"),
+            data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "Bearer sk-local",
+                "User-Agent": "Jenefar/LocalVision",
             },
         )
         try:
-            response = urllib.request.urlopen(request, timeout=120)
+            with urllib.request.urlopen(request, timeout=180) as response:
+                result = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError) as exc:
             raise RuntimeError(
-                f"Local vision request failed: {exc}"
+                f"Local VLM request failed at {base}: {exc}"
             ) from exc
 
-        payload = json.loads(
-            response.read().decode("utf-8")
-        )
-        content = (
-            ((payload.get("choices") or [{}])[0].get("message") or {})
-            .get("content")
-            or ""
-        )
-        return self._parse_elements(
-            self._extract_json(str(content)),
-            frame,
-        )
+        message = result.get("message") or {}
+        content = str(message.get("content") or result.get("response") or "").strip()
+        if not content:
+            raise RuntimeError("Local VLM returned an empty response.")
 
+        return self._extract_json(content)
     def analyze(self, task: str) -> dict[str, Any]:
         frame = self.capture(save=False)
 
