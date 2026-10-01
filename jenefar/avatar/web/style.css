@@ -1543,3 +1543,123 @@ body.vrm-loaded #photo-avatar{display:none!important}
     radial-gradient(circle at 52% 48%,rgba(24,142,255,.14),transparent 30%),
     radial-gradient(circle at 52% 48%,rgba(84,65,255,.09),transparent 52%);
 }
+
+/* Phase 16: coherent 1920 dashboard layout */
+:root{
+  --rail-left:190px;
+  --rail-right:350px;
+  --topbar:68px;
+  --bottom:92px;
+}
+#stage:after{display:none!important}
+
+.siri-topbar{
+  left:18px!important;right:18px!important;top:14px!important;height:48px!important;
+  z-index:200!important;
+}
+.side-nav{
+  left:14px!important;top:74px!important;bottom:104px!important;width:150px!important;
+  z-index:190!important;
+}
+.side-nav .nav-item{padding:10px 11px!important}
+
+.hero-copy{
+  left:calc(var(--rail-left) + 18px)!important;
+  top:88px!important;
+  width:340px!important;max-width:340px!important;
+  z-index:150!important;
+}
+.hero-copy h1{font-size:30px!important}
+.hero-copy p{font-size:11px!important}
+
+#hud-canvas{
+  left:var(--rail-left)!important;
+  right:var(--rail-right)!important;
+  top:var(--topbar)!important;
+  bottom:var(--bottom)!important;
+  width:auto!important;height:auto!important;
+  z-index:40!important;
+  opacity:1!important;
+}
+#vrm-canvas{
+  left:var(--rail-left)!important;
+  right:var(--rail-right)!important;
+  top:var(--topbar)!important;
+  bottom:var(--bottom)!important;
+  width:auto!important;height:auto!important;
+  z-index:45!important;
+  pointer-events:none!important;
+}
+.avatar-shell{
+  left:var(--rail-left)!important;
+  right:var(--rail-right)!important;
+  top:var(--topbar)!important;
+  bottom:var(--bottom)!important;
+  width:auto!important;height:auto!important;
+  inset:auto!important;
+  z-index:46!important;
+}
+.avatar-shell .avatar{display:none!important}
+.halo,.halo-a,.halo-b,.avatar-glow,.avatar-backlight,.holo-earth,.holo-particles,.chair-silhouette{display:none!important}
+#desktop-mirror,#task-screen{display:none!important}
+
+.chat-glass{
+  left:calc(var(--rail-left) + 18px)!important;
+  top:262px!important;
+  width:340px!important;height:300px!important;
+  z-index:150!important;
+}
+.quick-apps{
+  left:calc(var(--rail-left) + 18px)!important;
+  bottom:108px!important;
+  width:340px!important;height:125px!important;
+  z-index:150!important;
+}
+.media-card{left:14px!important;bottom:14px!important;width:150px!important;height:76px!important;z-index:190!important}
+
+.system-card{
+  right:16px!important;top:76px!important;width:318px!important;height:166px!important;
+  z-index:160!important;
+}
+.command-stack{
+  right:16px!important;top:254px!important;width:318px!important;
+  z-index:160!important;
+}
+#activity-panel{
+  right:16px!important;top:434px!important;width:318px!important;
+  height:calc(100vh - 528px)!important;min-height:250px!important;
+  max-height:none!important;z-index:160!important;
+}
+.activity-item{font-size:9px!important}
+.activity-text{font-size:9px!important}
+
+.bottom-dock{
+  left:50%!important;bottom:14px!important;transform:translateX(-50%)!important;
+  width:350px!important;z-index:200!important;
+}
+.realtime-controls{
+  right:16px!important;bottom:14px!important;left:auto!important;
+  width:318px!important;max-width:318px!important;z-index:201!important;
+}
+
+@media(max-width:1250px){
+  :root{--rail-left:168px;--rail-right:320px}
+  .system-card,.command-stack,#activity-panel,.activity-panel{width:292px!important}
+  .chat-glass,.quick-apps{width:310px!important}
+}
+@media(max-width:950px){
+  :root{--rail-left:0px;--rail-right:0px;--topbar:64px;--bottom:78px}
+  .side-nav{
+    left:8px!important;right:8px!important;top:auto!important;bottom:70px!important;
+    width:auto!important;height:48px!important;display:flex!important;flex-direction:row!important;overflow:auto!important;
+  }
+  .hero-copy{left:16px!important;top:76px!important;width:280px!important}
+  .hero-copy h1{font-size:24px!important}
+  .chat-glass{left:12px!important;bottom:138px!important;top:auto!important;width:310px!important;height:230px!important}
+  .quick-apps{left:12px!important;bottom:82px!important;width:310px!important;height:48px!important}
+  .system-card{right:12px!important;top:70px!important;width:286px!important;height:150px!important}
+  .command-stack{right:12px!important;top:232px!important;width:286px!important}
+  #activity-panel{right:12px!important;top:404px!important;width:286px!important;height:calc(100vh - 492px)!important}
+  .bottom-dock{display:none!important}
+  .realtime-controls{left:12px!important;right:12px!important;bottom:8px!important;width:auto!important;max-width:none!important}
+}
