@@ -1,15 +1,28 @@
+const hudHost=document.getElementById("hud-avatar");
 const hudFrame=document.getElementById("hud-avatar-frame");
+function setHudState(state){
+  if(hudHost) hudHost.dataset.state=state;
+  document.body.dataset.hudState=state;
+}
 function updateEmbeddedHud(state,text){
   try{
     const win=hudFrame?.contentWindow;
     if(win && typeof win.updateAgentState==="function"){
       const normalized=state==="queued"?"thinking":state;
       win.updateAgentState(normalized,text||"");
+      setHudState("ready");
+      return true;
     }
   }catch(_){}
+  return false;
 }
+setHudState("loading");
 if(hudFrame){
-  hudFrame.addEventListener("load",()=>updateEmbeddedHud("idle","Jenefar ready"));
+  hudFrame.addEventListener("load",()=>{
+    setHudState("ready");
+    updateEmbeddedHud("idle","Jenefar ready");
+  });
+  hudFrame.addEventListener("error",()=>setHudState("error"));
 }
 const desktopMirror=document.getElementById("desktop-mirror");
 const desktopMirrorImage=document.getElementById("desktop-mirror-image");
@@ -104,8 +117,17 @@ function palette(state){
 
 function draw(t){
   ctx.clearRect(0,0,width,height);
-  const workWidth=width*.66;
-  const centerX=workWidth/2,centerY=height*.46;
+  const compact=width<950;
+  const leftRail=compact?0:Math.min(174,Math.max(0,width*.10));
+  const rightRail=compact?0:Math.min(360,Math.max(0,width*.19));
+  const topRail=compact?68:76;
+  const bottomRail=compact?86:92;
+  const centerLeft=leftRail;
+  const centerRight=Math.max(centerLeft+240,width-rightRail);
+  const centerTop=topRail;
+  const centerBottom=Math.max(centerTop+240,height-bottomRail);
+  const centerX=(centerLeft+centerRight)/2;
+  const centerY=(centerTop+centerBottom)/2;
   const [r,g,b]=palette(currentState);
   const activity=currentState==="speaking"||currentState==="speaking_fallback"
     ? speechLevel
