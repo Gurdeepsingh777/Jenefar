@@ -769,3 +769,151 @@ body.vrm-loaded #photo-avatar{display:none}
   #activity-panel{right:14px!important;left:14px!important;top:auto!important;bottom:155px!important;width:auto!important;height:250px!important}
   .chat-glass{left:90px!important;width:calc(100vw - 420px)!important}
 }
+
+
+/* --- Phase 8: clean three-zone layout --- */
+#task-screen{
+  left:540px!important;
+  right:365px!important;
+  top:142px!important;
+  bottom:92px!important;
+  height:auto!important;
+  min-height:0!important;
+  z-index:9!important;
+  border-radius:24px!important;
+  background:
+    linear-gradient(180deg,rgba(7,43,70,.72),rgba(2,16,31,.78)),
+    radial-gradient(circle at 50% 35%,rgba(48,199,255,.20),transparent 58%)!important;
+}
+#task-screen .task-screen-header{padding:14px 18px 10px!important}
+.task-screen-header strong{font-size:15px!important;max-width:74%!important}
+.task-screen-log{left:18px!important;right:18px!important;top:80px!important;bottom:52px!important}
+.task-log-line{background:rgba(2,11,23,.40)!important}
+#task-screen-footer{left:18px!important;right:18px!important}
+
+#vrm-canvas{
+  left:540px!important;
+  right:365px!important;
+  width:calc(100% - 905px)!important;
+  height:75%!important;
+  top:13%!important;
+  z-index:16!important;
+}
+.avatar-shell{
+  inset:0 365px 0 540px!important;
+  z-index:20!important;
+  overflow:visible!important;
+}
+.avatar-shell .halo-a{width:38vw!important;height:38vw!important}
+.avatar-shell .halo-b{width:31vw!important;height:31vw!important}
+.holo-earth{
+  right:385px!important;
+  top:24%!important;
+  width:220px!important;
+  z-index:18!important;
+}
+
+.hero-copy{
+  left:205px!important;
+  top:88px!important;
+  width:310px!important;
+  max-width:310px!important;
+}
+.chat-glass{
+  left:205px!important;
+  top:250px!important;
+  width:320px!important;
+  height:355px!important;
+}
+.quick-apps{
+  left:18px!important;
+  bottom:112px!important;
+  width:175px!important;
+}
+.media-card{
+  left:18px!important;
+  bottom:18px!important;
+  width:335px!important;
+}
+.system-card{
+  right:18px!important;
+  top:76px!important;
+  width:345px!important;
+}
+.command-stack{
+  right:18px!important;
+  top:270px!important;
+  width:300px!important;
+}
+#activity-panel{
+  right:18px!important;
+  top:400px!important;
+  width:350px!important;
+  height:calc(100vh - 475px)!important;
+  max-height:none!important;
+}
+.side-nav{
+  left:18px!important;
+  top:82px!important;
+  bottom:152px!important;
+  width:170px!important;
+}
+.premium-controls{
+  right:18px!important;
+  bottom:74px!important;
+  z-index:90!important;
+}
+.bottom-dock{
+  left:50%!important;
+  right:auto!important;
+  transform:translateX(-50%)!important;
+  bottom:14px!important;
+  z-index:95!important;
+}
+
+.approval-overlay{
+  position:fixed!important;
+  inset:auto 22px 95px auto!important;
+  width:min(460px,calc(100vw - 44px))!important;
+  z-index:120!important;
+  display:block!important;
+  background:none!important;
+  backdrop-filter:none!important;
+  pointer-events:none!important;
+}
+.approval-card{
+  width:100%!important;
+  padding:16px 18px!important;
+  border-radius:18px!important;
+  background:rgba(7,16,29,.96)!important;
+  border:1px solid rgba(96,214,255,.28)!important;
+  box-shadow:0 20px 70px rgba(0,0,0,.50),0 0 30px rgba(41,180,255,.12)!important;
+  pointer-events:auto!important;
+}
+.approval-title{font-size:9px!important;color:#73ddff!important}
+.approval-tool{font-size:14px!important;line-height:1.35!important}
+.approval-card pre{
+  max-height:80px!important;
+  margin-top:8px!important;
+  padding:7px 9px!important;
+  font-size:8px!important;
+  color:#6f8ca7!important;
+}
+.approval-actions button:last-child{
+  background:linear-gradient(135deg,rgba(31,161,255,.42),rgba(110,73,255,.36))!important;
+}
+
+@media(max-width:1250px){
+  #task-screen{left:500px!important;right:315px!important}
+  #vrm-canvas{left:500px!important;right:315px!important;width:calc(100% - 815px)!important}
+  .avatar-shell{inset:0 315px 0 500px!important}
+  .system-card{width:300px!important}
+  #activity-panel{width:300px!important}
+  .chat-glass{width:290px!important}
+  .hero-copy{width:280px!important}
+}
+@media(max-width:1050px){
+  #task-screen{left:390px!important;right:285px!important}
+  #vrm-canvas{left:390px!important;right:285px!important;width:calc(100% - 675px)!important}
+  .avatar-shell{inset:0 285px 0 390px!important}
+}
