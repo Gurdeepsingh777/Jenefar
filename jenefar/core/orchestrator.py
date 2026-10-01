@@ -255,8 +255,8 @@ class JenefarOrchestrator:
                     approval_required=True,
                 )
             output = self.verifier.verify(text, result.content)
-            from jenefar.voice.speech import enforce_hinglish
-            output = enforce_hinglish(output, max_chars=12000)
+            from jenefar.voice.speech import devanagari_to_roman
+            output = devanagari_to_roman(output)
             verification = {
                 "passed": bool(output and output.strip()),
                 "verifier": self.verifier.__class__.__name__,
