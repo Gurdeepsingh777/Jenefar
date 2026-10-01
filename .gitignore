@@ -1,3 +1,23 @@
+# Local debug files
+doctor.txt
+*.zip
+
+# Screenshots
+screenshot*.png
+
+# Generated assets
+data/avatar/
+data/screenshots/
+
+# Local API
+tokan-api/
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
 __pycache__/
 *.py[cod]
 .venv/
