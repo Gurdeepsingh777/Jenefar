@@ -176,6 +176,21 @@ class JenefarOrchestrator:
         )
         self.graph.learn_text(text)
         try:
+            direct_window = self._direct_window_transfer(text)
+            if direct_window:
+                from jenefar.voice.speech import devanagari_to_roman
+                output = devanagari_to_roman(direct_window)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.5,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+                return output
+
             direct_screen = self._direct_screen_read(text)
             if direct_screen:
                 from jenefar.voice.speech import devanagari_to_roman
@@ -434,6 +449,52 @@ class JenefarOrchestrator:
         if labels:
             return "Screen par ye main items dikh rahe hain: " + ", ".join(labels[:6]) + "."
         return "Maine live screen capture kar li hai, lekin visible content ka reliable summary nahi mila."
+
+    @staticmethod
+    def _is_window_transfer_request(text: str) -> bool:
+        lowered = " ".join(str(text or "").lower().split())
+        markers = (
+            "blue screen par", "blue screen pe", "holographic screen",
+            "window transfer", "transfer window", "move window",
+            "shift window", "window ko shift", "terminal ko blue",
+            "firefox ko blue", "browser ko blue", "document folder ko blue",
+            "terminal ko screen", "firefox ko screen", "browser ko screen",
+        )
+        return any(marker in lowered for marker in markers)
+
+    def _direct_window_transfer(self, text: str) -> str | None:
+        if not self._is_window_transfer_request(text):
+            return None
+        lowered = text.lower()
+        candidates = (
+            ("firefox", "Firefox"),
+            ("chrome", "Chrome"),
+            ("chromium", "Chromium"),
+            ("terminal", "Terminal"),
+            ("documents", "Documents"),
+            ("file manager", "File Manager"),
+            ("nautilus", "Nautilus"),
+        )
+        target = next((label for token, label in candidates if token in lowered), "")
+        if not target:
+            return None
+        result = self.tool_broker.invoke(
+            "desktop_window_transfer",
+            {"query": target, "hide_native": True},
+        )
+        try:
+            payload = json.loads(result)
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("status") != "ok":
+            return None
+        data = payload.get("result") or {}
+        if data.get("native_hidden"):
+            return f"{target} ab Jenefar ke blue screen par live dikh raha hai."
+        return (
+            f"{target} ka live mirror blue screen par chala diya hai. "
+            "Native window ko hide karna current desktop backend me available nahi tha."
+        )
 
     @staticmethod
     def _is_local_time_query(text: str) -> bool:
