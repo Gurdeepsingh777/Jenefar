@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Jenefar - Voice-First Multi-Agent AI Assistant">
+    <title>Jenefar AI</title>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles/base.css">
+    <link rel="stylesheet" href="styles/theme.css">
+    <link rel="stylesheet" href="styles/layout.css">
+    <link rel="stylesheet" href="styles/panels.css">
+    <link rel="stylesheet" href="styles/avatar.css">
+    <link rel="stylesheet" href="styles/responsive.css">
+    
+    <!-- Meta for theme color -->
+    <meta name="theme-color" content="#07111f">
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Left Navigation Sidebar -->
+        <aside class="sidebar sidebar-left">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-text">J</span>
+                </div>
+                <h1 class="app-title">Jenefar</h1>
+            </div>
+            
+            <nav class="nav-main">
+                <button class="nav-item active" data-panel="chat" title="Chat">
+                    <span class="icon">💬</span>
+                    <span class="label">Chat</span>
+                </button>
+                <button class="nav-item" data-panel="memory" title="Memory">
+                    <span class="icon">🧠</span>
+                    <span class="label">Memory</span>
+                </button>
+                <button class="nav-item" data-panel="tools" title="Tools">
+                    <span class="icon">🔧</span>
+                    <span class="label">Tools</span>
+                </button>
+                <button class="nav-item" data-panel="research" title="Research">
+                    <span class="icon">🔬</span>
+                    <span class="label">Research</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button class="icon-btn" id="theme-toggle" title="Toggle Dark/Light Mode">
+                    🌙
+                </button>
+                <button class="icon-btn" id="settings-btn" title="Settings">
+                    ⚙️
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Center Workspace -->
+        <main class="workspace-center">
+            <!-- Avatar Stage -->
+            <div class="stage-container">
+                <div class="stage-background">
+                    <!-- VRM Avatar Canvas (rendered by Three.js) -->
+                    <canvas id="avatar-canvas" class="avatar-canvas"></canvas>
+                    
+                    <!-- Stage overlay elements -->
+                    <div class="stage-overlay">
+                        <div class="avatar-status">
+                            <div class="status-indicator" id="avatar-status-indicator">
+                                <span class="pulse"></span>
+                                <span class="status-text">Ready</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Center HUD (Blue HUD iframe placeholder) -->
+                <div class="hud-container" id="hud-container" style="display: none;">
+                    <!-- HUD content loaded here -->
+                </div>
+            </div>
+        </main>
+        
+        <!-- Right Control Panel -->
+        <aside class="sidebar sidebar-right">
+            <div class="panel-section">
+                <h3 class="panel-title">System Status</h3>
+                <div class="status-list">
+                    <div class="status-item">
+                        <span class="status-label">Voice</span>
+                        <span class="status-value" id="status-voice">Ready</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Avatar</span>
+                        <span class="status-value" id="status-avatar">Active</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Memory</span>
+                        <span class="status-value" id="status-memory">Connected</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <h3 class="panel-title">Quick Commands</h3>
+                <div class="quick-commands">
+                    <button class="cmd-btn" data-cmd="listen">
+                        🎤 Listen
+                    </button>
+                    <button class="cmd-btn" data-cmd="stop">
+                        ⏹️ Stop
+                    </button>
+                    <button class="cmd-btn" data-cmd="clear">
+                        🗑️ Clear
+                    </button>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <h3 class="panel-title">Live Workspace</h3>
+                <div class="workspace-feed" id="workspace-feed">
+                    <div class="feed-item">System initialized</div>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Bottom Control Bar -->
+        <footer class="control-bar">
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="text-input" 
+                    class="text-input" 
+                    placeholder="Type or speak (Say 'Hello Jenefar')..."
+                    autocomplete="off"
+                >
+                <button class="send-btn" id="send-btn" title="Send Message">
+                    ⏩
+                </button>
+            </div>
+            
+            <div class="control-indicators">
+                <div class="indicator" id="listening-indicator" title="Listening Status">
+                    🎙️ <span>Off</span>
+                </div>
+                <div class="indicator" id="processing-indicator" title="Processing">
+                    ⚡ <span>Idle</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="js/stateManager.js"></script>
+    <script src="js/avatarController.js"></script>
+    <script src="js/uiController.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
