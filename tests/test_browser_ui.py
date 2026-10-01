@@ -557,8 +557,7 @@ def test_phase3_vrm_avatar_isolated_on_center_stage():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "PHASE 3 — VRM AVATAR" in css
     assert "#vrm-canvas{" in css
-    assert "left:460px!important" in css
-    assert "right:560px!important" in css
+    assert "display:block!important" in css
     assert '"/avatar.vrm"' in vrm
     assert '<canvas id="vrm-canvas"' in html
     assert ".avatar-shell,#photo-avatar,#holo-earth,#task-screen" in css
