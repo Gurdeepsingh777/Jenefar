@@ -567,7 +567,7 @@ def test_phase4_avatar_style_and_auto_frame():
     vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
     pipeline = (ROOT / "tools" / "blender" / "premium_avatar.py").read_text(encoding="utf-8")
     run = (ROOT / "run.py").read_text(encoding="utf-8")
-    assert "Auto-frame the real model" in vrm
+    assert "Auto-frame the real model using its post-scale world bounds." in vrm
     assert "Jenefar_Premium.vrm" in run
     assert 'PREMIUM_WHITE = (0.035, 0.075, 0.13, 1.0)' in pipeline
     assert 'PREMIUM_CYAN = (0.04, 0.72, 0.95, 1.0)' in pipeline
@@ -589,3 +589,11 @@ def test_vrm_runtime_normalizes_model_scale():
     assert "targetHeight = 2.55" in vrm
     assert "normalizedScale = targetHeight / rawHeight" in vrm
     assert "PHASE 5C — center-stage avatar viewport" in css
+
+
+def test_vrm_render_path_forces_mesh_visibility_and_preserves_frame():
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    assert "node.frustumCulled = false" in vrm
+    assert "vrm.scene.visible = true" in vrm
+    assert "baseAvatarY = basePosition.y" in vrm
+    assert "camera.far = Math.max(50" in vrm
