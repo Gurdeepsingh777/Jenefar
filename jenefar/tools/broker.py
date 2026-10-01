@@ -1450,6 +1450,15 @@ class ToolBroker:
     def desktop_mirror_status(self) -> dict[str, object]:
         return self._get_desktop_mirror().status()
 
+    def _online_schema(self, spec):
+        schema = {
+            "name": spec.name,
+            "description": spec.description,
+            "parameters": spec.parameters or {"type": "object", "properties": {}},
+            "strict": False,
+        }
+        return {"type": "function", "function": schema}
+
     def schemas(
         self,
         *,
