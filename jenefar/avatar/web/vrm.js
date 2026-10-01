@@ -62,6 +62,22 @@ if (canvas) {
       // natural idle arm pose without editing the actual skeleton animation.
       vrm.scene.position.set(0, 0, 0);
 
+      // Phase 14: auto-frame the real VRM bounds.
+      {
+        const bounds=new THREE.Box3().setFromObject(vrm.scene);
+        const size=new THREE.Vector3();
+        bounds.getSize(size);
+        const desiredHeight=2.55;
+        const sourceHeight=Math.max(size.y,0.001);
+        const fitScale=desiredHeight/sourceHeight;
+        vrm.scene.scale.setScalar(fitScale);
+        vrm.scene.updateMatrixWorld(true);
+        const scaledBounds=new THREE.Box3().setFromObject(vrm.scene);
+        vrm.scene.position.y-=scaledBounds.min.y;
+        camera.position.set(0,1.28,3.05);
+        camera.lookAt(0,1.22,0);
+      }
+
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
       // These values relax the T-pose into a simple arms-down standing pose.
