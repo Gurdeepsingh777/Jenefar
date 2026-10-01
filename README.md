@@ -939,3 +939,11 @@ Ya Jenefar se directly:
 JENEFAR_VISION_ALLOW_ONLINE=false ka matlab screen vision ke liye hosted OpenAI credits ki dependency default path me nahi rahegi. Internet sirf model ko pehli baar download karne ke liye required ho sakta hai; inference local machine par hota hai.
 
 Agar hardware me zyada headroom ho to .env me JENEFAR_LOCAL_VISION_MODEL=qwen3-vl:8b use kiya ja sakta hai.
+
+
+## Live Window Transfer — Blue HUD
+
+Explicit commands such as "Firefox ko blue screen par shift karo", "terminal ko screen pe dikhao", or "Documents folder ko blue screen par kholo" use a native-window transfer path. On X11/XWayland, Jenefar can identify a window, capture it directly with an X11 window capture backend, mirror it live inside the browser HUD, and hide/restore the native window. The Jenefar host window is never hidden.
+
+On native Wayland, application-window capture is available through the XDG ScreenCast portal and PipeWire, but generic cross-application window movement/minimization is compositor-managed rather than a single universal client API. The portal explicitly supports application-window sources, while the Wayland xdg-shell protocol exposes move/resize operations as user-driven surface operations. citeturn144502search0turn144502search6 Jenefar therefore reports the actual backend capability instead of pretending a native transfer succeeded when it did not.
+
