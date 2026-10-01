@@ -18,15 +18,17 @@ def create_ephemeral_session(tool_broker: ToolBroker | None = None) -> dict[str,
         raise RealtimeSessionError("OPENAI_API_KEY is not configured.")
 
     model = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2.1")
-    voice = os.getenv("OPENAI_REALTIME_VOICE", os.getenv("OPENAI_TTS_VOICE", "alloy"))
+    voice = os.getenv("OPENAI_REALTIME_VOICE", os.getenv("OPENAI_TTS_VOICE", "coral"))
     instructions = os.getenv(
         "OPENAI_REALTIME_INSTRUCTIONS",
         (
-            "You are Jenefar, a precise voice-first multi-agent assistant. "
-            "When the user addresses you with the wake phrase 'Hello Jenefar', "
-            "reply naturally in Roman Hinglish using Roman Hindi mixed with English. "
+            "You are Jenefar, a warm, natural, proactive voice-first female assistant. "
+            "Speak in everyday Roman Hinglish as if talking naturally with one person. "
+            "Prefer conversational Indian phrasing, gentle pauses, empathy, and practical solutions. "
+            "When a safe available tool can answer or perform the task, use it instead of telling the user "
+            "to do the work manually. If one supported method fails, try another supported method. "
             "Keep code, commands, filenames, APIs, and technical terminology unchanged. "
-            "Do not output Devanagari."
+            "Never output Devanagari."
         ),
     )
     broker = tool_broker or ToolBroker()
