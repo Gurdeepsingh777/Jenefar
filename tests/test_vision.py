@@ -72,3 +72,52 @@ def test_planner_routes_natural_screen_read_phrasing():
         plan = Planner().plan(phrase)
         assert plan.agent == "gui_vision"
         assert plan.intent == "semantic_gui"
+
+
+def test_screen_vision_prefers_local_vlm_without_online_credits(monkeypatch):
+    from jenefar.vision.screen import ScreenFrame, ScreenVision
+
+    class FakeDesktop:
+        def capture_frame(self, *, max_dimension, save):
+            return ScreenFrame(
+                png_bytes=b"png",
+                width=1920,
+                height=1080,
+                encoded_width=1600,
+                encoded_height=900,
+                path=None,
+            )
+
+    vision = ScreenVision(FakeDesktop())
+    monkeypatch.delenv("JENEFAR_VISION_ALLOW_ONLINE", raising=False)
+    monkeypatch.setattr(
+        vision,
+        "_local_analyze",
+        lambda _frame, _task: {
+            "summary": "Local screen analysis",
+            "elements": [{
+                "label": "Browser",
+                "role": "window",
+                "confidence": 0.95,
+                "bbox": [0, 0, 100, 100],
+                "text": "Chrome",
+            }],
+        },
+    )
+
+    def fail_online(*_args, **_kwargs):
+        raise AssertionError("Online vision should not be called by default.")
+
+    monkeypatch.setattr(vision, "_online_analyze", fail_online)
+    result = vision.analyze("screen par kya dikh raha hai?")
+    assert result["provider"] == "local_ollama"
+    assert result["summary"] == "Local screen analysis"
+    assert result["elements"][0]["label"] == "Browser"
+
+
+def test_screen_vision_rejects_text_only_local_model_selection():
+    source = (ROOT / "jenefar" / "vision" / "screen.py").read_text(encoding="utf-8")
+    assert "qwen3-vl:4b" in source
+    assert "llama3.2:latest" in source
+    assert "must not be used for screen vision" in source
+    assert "JENEFAR_VISION_ALLOW_ONLINE" in source
