@@ -62,6 +62,19 @@ if (canvas) {
       // natural idle arm pose without editing the actual skeleton animation.
       vrm.scene.position.set(0, 0, 0);
 
+      // Auto-frame the real model instead of assuming a particular VRM unit scale.
+      // This prevents tiny/off-center avatars when the source VRM uses different units.
+      const bounds = new THREE.Box3().setFromObject(vrm.scene);
+      const center = bounds.getCenter(new THREE.Vector3());
+      const size = bounds.getSize(new THREE.Vector3());
+      const modelHeight = Math.max(size.y, 1.0);
+      const modelCenterY = center.y;
+      vrm.scene.position.y -= modelCenterY;
+      const vFov = THREE.MathUtils.degToRad(camera.fov);
+      const fitDistance = (modelHeight * 0.62) / Math.tan(vFov / 2);
+      camera.position.set(0, 0, Math.max(2.2, Math.min(8.0, fitDistance)));
+      camera.lookAt(0, 0, 0);
+
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
       // These values relax the T-pose into a simple arms-down standing pose.
@@ -100,12 +113,12 @@ if (canvas) {
               material.roughness = 0.5;
               material.metalness = 0.0;
             } else if (key.includes("cloth") || key.includes("dress") || key.includes("outfit") || key.includes("top") || key.includes("shirt") || key.includes("jacket")) {
-              material.color?.set(0xf0f5fb);
+              material.color?.set(0x101a2b);
               material.roughness = 0.34;
               material.metalness = 0.18;
-              material.emissive?.set(0x04111c);
+              material.emissive?.set(0x061c2a);
             } else if (key.includes("shoe") || key.includes("boot")) {
-              material.color?.set(0x101927);
+              material.color?.set(0x050b16);
               material.roughness = 0.26;
               material.metalness = 0.5;
             }
@@ -156,7 +169,7 @@ if (canvas) {
 
     // Keep the VRM visually clean. The uploaded HUD is now the main visual
     // environment; the avatar itself only gets two subtle cyan accents.
-    const trimMat = makePremiumMaterial(0x3cecff, 0.74, 0.20, 0x0a7ea0);
+    const trimMat = makePremiumMaterial(0x39e6ff, 0.78, 0.16, 0x087f9e);
 
     const humanoid = model?.humanoid;
     const neck = humanoid?.getNormalizedBoneNode("neck");
