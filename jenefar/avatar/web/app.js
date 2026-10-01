@@ -107,6 +107,76 @@ function updateTaskCounts(){
   if(errorCount) errorCount.textContent=String(errors);
 }
 
+const taskScreenLog=document.getElementById("task-screen-log");
+const taskScreenTitle=document.getElementById("task-screen-title");
+const taskScreenState=document.getElementById("task-screen-state");
+const taskScreenProgress=document.getElementById("task-screen-progress-bar");
+const taskScreenTaskId=document.getElementById("task-screen-task-id");
+const taskScreenSummary=document.getElementById("task-screen-summary");
+let taskScreenEntries=0;
+
+function updateTaskScreen(event){
+  if(!taskScreenLog) return;
+  const state=String(event?.state||"idle");
+  const text=String(event?.text||"").trim();
+  const taskId=String(event?.task_id||"");
+  const labelsMap={
+    listening:"LISTENING",
+    queued:"QUEUED",
+    thinking:"ANALYZING",
+    result:"RESULT",
+    speaking:"RESPONDING",
+    speaking_fallback:"VOICE FALLBACK",
+    waiting_approval:"WAITING FOR APPROVAL",
+    completed:"COMPLETED",
+    error:"ERROR",
+    idle:"READY"
+  };
+  const label=labelsMap[state]||state.toUpperCase();
+  if(taskScreenState) taskScreenState.textContent=label;
+  if(taskScreenTaskId) taskScreenTaskId.textContent=taskId ? "TASK #"+taskId : "TASK —";
+
+  const summary=text.replace(/\s+/g," ").trim();
+  if(taskScreenTitle && summary){
+    taskScreenTitle.textContent=summary.length>92 ? summary.slice(0,92)+"…" : summary;
+  }
+  if(taskScreenSummary){
+    taskScreenSummary.textContent=summary
+      ? (summary.length>170 ? summary.slice(0,170)+"…" : summary)
+      : (state==="idle" ? "No active task" : label);
+  }
+
+  const progressMap={
+    queued:.14,listening:.20,thinking:.48,result:.72,
+    speaking:.88,speaking_fallback:.88,waiting_approval:.62,
+    completed:1,error:1,idle:0
+  };
+  if(taskScreenProgress) taskScreenProgress.style.width=((progressMap[state]??.28)*100)+"%";
+
+  if(state==="idle" && !text) return;
+
+  const row=document.createElement("div");
+  row.className="task-log-line task-log-"+state;
+  const dot=document.createElement("span");
+  dot.className="task-log-dot";
+  const body=document.createElement("div");
+  body.className="task-log-body";
+  const meta=document.createElement("div");
+  meta.className="task-log-meta";
+  meta.textContent=(new Date()).toLocaleTimeString()+"  "+label+(taskId?"  #"+taskId:"");
+  const content=document.createElement("div");
+  content.className="task-log-content";
+  content.textContent=summary || label;
+  body.appendChild(meta);
+  body.appendChild(content);
+  row.appendChild(dot);
+  row.appendChild(body);
+  taskScreenLog.prepend(row);
+  taskScreenEntries++;
+  while(taskScreenLog.children.length>28) taskScreenLog.removeChild(taskScreenLog.lastChild);
+  if(taskScreenEntries>28) taskScreenEntries=28;
+}
+
 function activityBucket(state){
   if(state==="error") return "errors";
   if(state==="completed"||state==="result") return "results";
@@ -345,6 +415,7 @@ function apply(event){
   stage.dataset.emotion=emotion;
   window.dispatchEvent(new CustomEvent("jenefar-avatar-event",{detail:event}));
   addActivity(event);
+  updateTaskScreen(event);
   updateChatFromEvent(event);
 
   if(currentState==="waiting_approval") showApproval(event);
