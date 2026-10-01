@@ -61,22 +61,33 @@ if (canvas) {
       // authored with a T-pose; there is no safe generic way to infer a
       // natural idle arm pose without editing the actual skeleton animation.
       vrm.scene.position.set(0, 0, 0);
+      vrm.scene.scale.setScalar(1);
+      vrm.scene.updateMatrixWorld(true);
 
-      // Auto-frame the real model instead of assuming a particular VRM unit scale.
-      // This prevents tiny/off-center avatars when the source VRM uses different units.
+      // Normalize the source asset to a predictable on-screen height.
+      // Sample/authoring VRMs can have very different unit scales.
+      const rawBounds = new THREE.Box3().setFromObject(vrm.scene);
+      const rawSize = rawBounds.getSize(new THREE.Vector3());
+      const rawHeight = Math.max(rawSize.y, 0.001);
+      const targetHeight = 2.55;
+      const normalizedScale = targetHeight / rawHeight;
+      vrm.scene.scale.setScalar(normalizedScale);
+      vrm.scene.updateMatrixWorld(true);
+
       const bounds = new THREE.Box3().setFromObject(vrm.scene);
       const center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
-      const modelHeight = Math.max(size.y, 1.0);
-      const modelCenterY = center.y;
-      vrm.scene.position.y -= modelCenterY;
+      const modelHeight = Math.max(size.y, 0.001);
 
-      // Keep the full body visible, but make the avatar large enough to read
-      // against the HUD rather than rendering as a tiny distant figure.
+      // Center the avatar vertically and slightly raise the aim point toward the face.
+      vrm.scene.position.y -= center.y;
+      vrm.scene.position.x = 0;
+      vrm.scene.position.z = 0;
+
       const vFov = THREE.MathUtils.degToRad(camera.fov);
-      const fitDistance = (modelHeight * 0.44) / Math.tan(vFov / 2);
-      camera.position.set(0, modelHeight * 0.02, Math.max(1.7, Math.min(4.8, fitDistance)));
-      camera.lookAt(0, modelHeight * 0.03, 0);
+      const fitDistance = (modelHeight * 0.58) / Math.tan(vFov / 2);
+      camera.position.set(0, modelHeight * 0.06, Math.max(2.05, Math.min(3.8, fitDistance)));
+      camera.lookAt(0, modelHeight * 0.14, 0);
 
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
@@ -135,6 +146,11 @@ if (canvas) {
       scene.add(vrm.scene);
       document.body.classList.add("vrm-loaded");
       setVRMStatus("VRM AVATAR");
+      console.info("[JENEFAR] VRM loaded", {
+        normalizedScale,
+        modelHeight,
+        cameraZ: camera.position.z,
+      });
     } catch (error) {
       console.error("[JENEFAR] VRM load failed", error);
       setVRMStatus("VRM ERROR", true);
