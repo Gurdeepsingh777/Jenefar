@@ -525,3 +525,12 @@ def test_phase14_hides_redundant_center_console():
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert "#task-screen{display:none!important}" in css
     assert ".avatar-shell .status-card{display:none!important}" in css
+
+
+def test_phase15_hud_is_above_center_backdrop_and_avatar_is_hidden_when_vrm_loaded():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "#hud-canvas{" in css
+    assert "z-index:20!important" in css
+    assert "body.vrm-loaded .avatar{display:none!important}" in css
+    assert "window.__JENEFAR_HUD_NATIVE__=true" in app
