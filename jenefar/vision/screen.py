@@ -430,6 +430,83 @@ class ScreenVision:
             "errors": errors,
         }
 
+    def locate_window(self, query: str) -> dict[str, Any]:
+        frame = self.capture(save=False)
+        connected = False
+        errors: list[str] = []
+        payload: dict[str, Any] | None = None
+        provider = ""
+
+        prompt_task = (
+            "Find the outer window rectangle for the requested desktop application or window. "
+            "Return JSON only with summary and elements. The best matching element must represent "
+            "the complete visible application window, not a button inside it. "
+            "Use role=window when appropriate. Use exact screenshot pixel coordinates. "
+            "Do not include unrelated UI. Requested window: " + str(query)
+        )
+
+        try:
+            payload = self._local_analyze(frame, prompt_task)
+            provider = "local_ollama"
+        except Exception as exc:
+            errors.append(f"local vision: {type(exc).__name__}: {exc}")
+
+        if payload is None:
+            allow_online = os.getenv("JENEFAR_VISION_ALLOW_ONLINE", "0").strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+            if allow_online and internet_available() and os.getenv("OPENAI_API_KEY"):
+                try:
+                    elements = self._online_analyze(frame, prompt_task)
+                    payload = {"elements": [
+                        {
+                            "label": item.label,
+                            "role": item.role,
+                            "confidence": item.confidence,
+                            "bbox": list(item.bbox),
+                            "text": item.text,
+                        }
+                        for item in elements
+                    ]}
+                    provider = "openai"
+                    connected = True
+                except Exception as exc:
+                    errors.append(f"online vision: {type(exc).__name__}: {exc}")
+
+        if payload is None:
+            raise RuntimeError("Window detection failed: " + " ".join(errors))
+
+        elements = self._parse_elements(payload, frame)
+        if not elements:
+            raise LookupError("No visible window matched: " + str(query))
+
+        normalized = str(query).lower().strip()
+
+        def rank(item: dict[str, Any]) -> tuple[int, int, float, int]:
+            label = str(item["label"]).lower()
+            text = str(item.get("text", "")).lower()
+            role = str(item.get("role", "")).lower()
+            exact = 0 if normalized in label else 1
+            text_miss = 0 if normalized in text else 1
+            role_penalty = 0 if role in {"window", "application", "browser"} else 1
+            area = int(item["bbox"][2] - item["bbox"][0]) * int(
+                item["bbox"][3] - item["bbox"][1]
+            )
+            return exact, text_miss, role_penalty, -area
+
+        best = sorted(elements, key=rank)[0]
+        return {
+            "provider": provider,
+            "task": query,
+            "label": best["label"],
+            "role": best["role"],
+            "confidence": best["confidence"],
+            "bbox": best["bbox"],
+            "text": best.get("text", ""),
+            "screen": {"width": frame.width, "height": frame.height},
+            "errors": errors,
+        }
+
     def locate(self, query: str) -> dict[str, Any]:
         result = self.analyze(query)
         elements = result["elements"]
