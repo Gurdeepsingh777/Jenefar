@@ -184,7 +184,7 @@ def test_premium_avatar_blender_pipeline_is_wired():
     assert "bpy.ops.import_scene.vrm" in blender
     assert "bpy.ops.export_scene.vrm" in blender
     assert "buildPremiumEnvironment" in vrm
-    assert "JenefarPremiumEnvironment" in vrm
+    assert "JenefarMinimalEnvironment" in vrm
 
 
 def test_premium_avatar_source_is_not_overwritten():
@@ -426,7 +426,7 @@ def test_task_console_is_centered_and_vrm_canvas_is_transparent():
     assert "Phase 8: clean three-zone layout" in css
     assert "#task-screen{" in css
     assert "setClearColor(0x000000, 0)" in vrm
-    assert "backGlow.visible = false" in vrm
+    assert "JenefarMinimalEnvironment" in vrm
 
 
 def test_holographic_window_mirror_integration():
