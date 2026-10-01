@@ -122,3 +122,17 @@ def test_screen_vision_rejects_text_only_local_model_selection():
     assert "llama3.2:latest" in source
     assert "must not be used for screen vision" in source
     assert "JENEFAR_VISION_ALLOW_ONLINE" in source
+
+
+def test_screen_vision_summary_prompt_is_user_facing_and_concise():
+    source = (Path(__file__).resolve().parents[1] / "jenefar" / "vision" / "screen.py").read_text(encoding="utf-8")
+    assert "1-3 short natural sentences" in source
+    assert "Do not read out file paths" in source
+    assert "Do not speculate" in source
+
+
+def test_provider_defaults_do_not_depend_on_obsolete_gemini_model():
+    source = (Path(__file__).resolve().parents[1] / "jenefar" / "core" / "provider_pool.py").read_text(encoding="utf-8")
+    assert "gemini-3.5-flash-lite" in source
+    assert "gemini-2.5-flash-lite" in source
+    assert "openrouter/free" in source
