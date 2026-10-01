@@ -1680,6 +1680,9 @@ html,body,#stage{
   right:430px!important;
   top:132px!important;
   bottom:104px!important;
+  width:auto!important;
+  height:calc(100vh - 236px)!important;
+  min-height:0!important;
   z-index:40!important;
   pointer-events:none!important;
 }
