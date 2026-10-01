@@ -13,6 +13,7 @@ function setVRMStatus(text, failed=false) {
 if (canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
@@ -164,10 +165,11 @@ if (canvas) {
     addBox(group, [0.18, 1.00, 1.25], [1.05, 1.12, -0.22], chairMat);
 
     const backGlow = new THREE.Mesh(
-      new THREE.BoxGeometry(1.80, 1.80, 0.035),
-      trimMat
+      new THREE.BoxGeometry(2.35, 1.72, 0.02),
+      makePremiumMaterial(0x1c7ec4, 0.20, 0.62, 0x0c5f83, 0.05)
     );
-    backGlow.position.set(0, 1.65, -0.545);
+    backGlow.position.set(0, 1.63, -0.545);
+    backGlow.visible = false;
     group.add(backGlow);
 
     const base = new THREE.Mesh(
