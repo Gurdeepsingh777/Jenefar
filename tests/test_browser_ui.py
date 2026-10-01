@@ -365,3 +365,65 @@ def test_browser_tts_has_natural_edge_fallback():
     assert "def _synthesize_edge_audio" in voice
     assert "en-IN-NeerjaNeural" in voice
     assert 'return self._synthesize_edge_audio(text)' in voice
+
+
+def test_critical_only_approval_policy():
+    from jenefar.tools.broker import ToolBroker
+
+    broker = ToolBroker(require_confirmation=False)
+    assert broker.registry.get("workspace_edit_file").critical is False
+    assert broker.registry.get("workspace_validate_python").critical is False
+    assert broker.registry.get("desktop_click_element").critical is False
+    assert broker.registry.get("desktop_screenshot").critical is False
+    assert broker.registry.get("whatsapp_send_web").critical is True
+    assert broker.registry.get("terminal_execute").critical is True
+
+
+def test_critical_tool_returns_natural_yes_no_prompt():
+    from jenefar.tools.broker import ToolBroker
+
+    broker = ToolBroker(require_confirmation=False)
+    result = broker.invoke(
+        "terminal_execute",
+        {"command": "printf jenefar", "timeout": 5},
+    )
+    assert '"status": "approval_required"' in result
+    assert "Kya main terminal execute kar doon?" in result
+    assert '"critical": true' in result
+
+
+def test_routine_workspace_edit_does_not_request_approval_when_disabled():
+    from jenefar.tools.broker import ToolBroker
+
+    broker = ToolBroker(require_confirmation=False)
+    pending_before = len(broker.pending)
+    assert broker.registry.get("workspace_edit_file").critical is False
+    assert len(broker.pending) == pending_before
+
+
+def test_conversational_confirmation_hooks_and_deeper_history_are_wired():
+    orch = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    assert "_handle_conversational_confirmation" in orch
+    assert "_confirmation_choice" in orch
+    assert "self.session.recent(24)" in orch
+
+
+def test_screen_task_context_blocks_shell_screenshot_fallbacks():
+    from jenefar.tools.broker import ToolBroker
+
+    broker = ToolBroker(require_confirmation=False)
+    broker.set_task_context(agent="gui_vision", task="meri screen par kya dikh raha hai?")
+    blocked = broker.invoke("terminal_execute", {"command": "scrot screenshot.png", "timeout": 5})
+    assert "must not use terminal_execute" in blocked
+    blocked_shot = broker.invoke("desktop_screenshot", {"filename": "x.png"})
+    assert "only available when the user explicitly asks" in blocked_shot
+    broker.clear_task_context()
+
+
+def test_task_console_is_centered_and_vrm_canvas_is_transparent():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    assert "Phase 8: clean three-zone layout" in css
+    assert "#task-screen{" in css
+    assert "setClearColor(0x000000, 0)" in vrm
+    assert "backGlow.visible = false" in vrm
