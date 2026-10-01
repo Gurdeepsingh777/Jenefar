@@ -521,7 +521,7 @@ class ToolBroker:
                 "required": ["query", "save"],
                 "additionalProperties": False,
             },
-            handler=lambda args: self._desktop_observe(str(args["query"]), bool(args.get("save", False))),
+            handler=lambda args: self.screen_vision.read_screen(str(args["query"])),
             requires_confirmation=False,
             action=False,
         ))
