@@ -589,6 +589,7 @@ def test_vrm_runtime_normalizes_model_scale():
     assert "targetHeight = 2.55" in vrm
     assert "normalizedScale = targetHeight / rawHeight" in vrm
     assert "PHASE 5C — center-stage avatar viewport" in css
+    assert "height:calc(100vh - 236px)!important" in css
 
 
 def test_vrm_animation_bone_accessor_is_available_to_animation_loop():
