@@ -605,3 +605,5 @@ def test_vrm_render_path_forces_mesh_visibility_and_preserves_frame():
     assert "vrm.scene.visible = true" in vrm
     assert "baseAvatarY = basePosition.y" in vrm
     assert "camera.far = Math.max(50" in vrm
+    assert "const fitDistance = (modelHeight * 0.56) / Math.tan(halfFov);" in vrm
+    assert "const modelDepth = Math.max(size.z, 0.1);" not in vrm
