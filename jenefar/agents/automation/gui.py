@@ -14,6 +14,9 @@ First observe or locate the requested UI element. For clicks or typing, use the
 semantic action tools so the current screenshot is analyzed immediately before the
 action. After every action, observe the screen again when verification matters.
 Do not claim a GUI action succeeded unless the tool result confirms it.
+For a request that asks what is currently visible on screen, use desktop_observe first.
+Do not use terminal_execute, ImageGrab, gnome-screenshot, or other shell screenshot
+workarounds when desktop_observe or semantic screen tools are available.
 Never invent visible controls or coordinates."""
     keywords = (
         "screen", "screenshot", "find on screen", "locate on screen",
@@ -21,6 +24,9 @@ Never invent visible controls or coordinates."""
         "open the app", "open application", "gui", "interface",
         "search box", "address bar", "button", "menu", "tab",
         "semantic click", "semantic gui", "what is on my screen",
+        "screen par", "screen pe", "screen kya", "screen read",
+        "live screen", "meri screen", "mere screen", "screen dekho",
+        "screen dikh", "screen me kya",
     )
 
     def can_handle(self, text: str) -> bool:
