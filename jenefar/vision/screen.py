@@ -404,10 +404,9 @@ class ScreenVision:
 
         if payload is None:
             raise RuntimeError(
-                "No usable local vision backend is available. "
+                "Local screen vision unavailable. "
                 + " ".join(errors)
-                + " Install the configured Ollama vision model and keep JENEFAR_VISION_ALLOW_ONLINE=false "
-                  "for a fully local, credit-free vision path."
+                + " Ensure Ollama is running and the configured multimodal model is installed."
             )
 
         elements = self._parse_elements(payload, frame)
