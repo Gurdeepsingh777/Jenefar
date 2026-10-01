@@ -166,9 +166,24 @@ function updateTaskScreen(event){
   meta.textContent=(new Date()).toLocaleTimeString()+"  "+label+(taskId?"  #"+taskId:"");
   const content=document.createElement("div");
   content.className="task-log-content";
-  content.textContent=summary || label;
-  body.appendChild(meta);
-  body.appendChild(content);
+  if(summary.length>520){
+    content.textContent=summary.slice(0,520)+"…";
+    const details=document.createElement("details");
+    details.className="task-log-details";
+    const summaryNode=document.createElement("summary");
+    summaryNode.textContent="Pura output dekho";
+    const pre=document.createElement("pre");
+    pre.textContent=summary;
+    details.appendChild(summaryNode);
+    details.appendChild(pre);
+    body.appendChild(meta);
+    body.appendChild(content);
+    body.appendChild(details);
+  }else{
+    content.textContent=summary || label;
+    body.appendChild(meta);
+    body.appendChild(content);
+  }
   row.appendChild(dot);
   row.appendChild(body);
   taskScreenLog.prepend(row);
