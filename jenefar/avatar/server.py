@@ -118,6 +118,27 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     return
                 self._send(200, "model/gltf-binary", self.vrm_path.read_bytes())
                 return
+            if path == "/desktop/mirror/status":
+                mirror = self.tool_broker
+                payload = (
+                    mirror.desktop_mirror_status()
+                    if mirror and hasattr(mirror, "desktop_mirror_status")
+                    else {"active": False}
+                )
+                self._json(200, payload)
+                return
+            if path == "/desktop/mirror.jpg":
+                mirror = self.tool_broker
+                frame = (
+                    mirror.desktop_mirror_frame()
+                    if mirror and hasattr(mirror, "desktop_mirror_frame")
+                    else None
+                )
+                if not frame:
+                    self._send(204, "image/jpeg", b"")
+                    return
+                self._send(200, "image/jpeg", frame)
+                return
             if path == "/evaluation":
                 html = render_dashboard(Path("data/evaluation.jsonl"))
                 self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
