@@ -118,7 +118,7 @@ let taskScreenEntries=0;
 function updateTaskScreen(event){
   if(!taskScreenLog) return;
   const state=String(event?.state||"idle");
-  const text=String(event?.text||"").trim();
+  const text=String(event?.text||"").trim().replace(/\s*\[[a-f0-9]{12,}\]\s*$/i,"");
   const taskId=String(event?.task_id||"");
   const labelsMap={
     listening:"LISTENING",
@@ -186,7 +186,7 @@ function activityBucket(state){
 
 function addActivity(event){
   if(!activityList) return;
-  const text=String(event.text||"").trim();
+  const text=String(event.text||"").trim().replace(/\s*\[[a-f0-9]{12,}\]\s*$/i,"");
   const state=String(event.state||"idle");
   const taskId=String(event.task_id||"");
   if(taskId) taskState.set(taskId,state);
