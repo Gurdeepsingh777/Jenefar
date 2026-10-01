@@ -77,18 +77,37 @@ if (canvas) {
       vrm.scene.scale.setScalar(1);
       vrm.scene.updateMatrixWorld(true);
 
-      const rawBounds = new THREE.Box3().setFromObject(vrm.scene, true);
-      const rawSize = rawBounds.getSize(new THREE.Vector3());
+      // Build the framing bounds from the actual skinned avatar meshes.
+      // VRM files can also contain helper/collider geometry; including those
+      // nodes in Box3 can make the "model" bounds much larger than the visible
+      // character and causes an incorrectly tiny avatar.
+      const skinnedMeshes = [];
+      vrm.scene.traverse(node => {
+        if (node.isSkinnedMesh && node.geometry && node.visible) skinnedMeshes.push(node);
+      });
+
+      const visualBounds = new THREE.Box3();
+      if (skinnedMeshes.length) {
+        for (const mesh of skinnedMeshes) visualBounds.expandByObject(mesh, true);
+      } else {
+        visualBounds.setFromObject(vrm.scene, true);
+      }
+
+      const rawSize = visualBounds.getSize(new THREE.Vector3());
       const rawHeight = Number.isFinite(rawSize.y) && rawSize.y > 0.01 ? rawSize.y : 1.7;
       const targetHeight = 2.55;
       const normalizedScale = targetHeight / rawHeight;
       vrm.scene.scale.setScalar(normalizedScale);
       vrm.scene.updateMatrixWorld(true);
 
-      // Auto-frame the real model using its post-scale world bounds.
-      // Three.js recommends updating world matrices before Box3#setFromObject
-      // when transforms have changed.
-      const bounds = new THREE.Box3().setFromObject(vrm.scene, true);
+      // Recompute the bounds after normalization, using only the visible
+      // humanoid meshes so helper/collider nodes cannot affect framing.
+      const bounds = new THREE.Box3();
+      if (skinnedMeshes.length) {
+        for (const mesh of skinnedMeshes) bounds.expandByObject(mesh, true);
+      } else {
+        bounds.setFromObject(vrm.scene, true);
+      }
       const center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
       const modelHeight = Number.isFinite(size.y) && size.y > 0.01 ? size.y : targetHeight;
@@ -177,6 +196,7 @@ if (canvas) {
         cameraFar: camera.far,
         cameraTargetY: modelHeight * 0.08,
         renderables: vrm.scene.getObjectsByProperty("isMesh", true).length,
+        skinnedMeshes: skinnedMeshes.length,
         basePosition: basePosition.toArray(),
       });
     } catch (error) {
