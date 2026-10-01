@@ -920,3 +920,22 @@ JENEFAR_MODEL_RESEARCH=your_research_model_here
 Role-specific variables override `OPENAI_MODEL`. When `OPENAI_API_KEY` is unavailable or the online provider cannot be reached, Jenefar falls back to the detected local OpenAI-compatible model (for example Ollama).
 
 \n## Phase 7 — Conversational Engineering Runtime & Live Task Monitor\n\nPhase 7 me browser voice requests ko isolated input values ki jagah continuous engineering instructions ke roop me handle karne ke liye local-development agent ko stronger conversation context diya gaya hai. Recent conversation history deeper window ke saath agent ko milti hai, numbered options ko selected requirements ke roop me preserve kiya jata hai, aur feature/bug/UI tasks ke liye inspect -> research -> baseline -> diagnose -> implement -> retest -> report workflow use hota hai.\n\nAuthorized workspace me user-directed coding ke liye existing files update karna aur new files create karna directly supported hai. Python syntax validation aur repository tests automatic verification path ka hissa hain; arbitrary shell execution aur higher-impact actions existing approval boundaries me rehte hain.\n\nBrowser dashboard ke center me enlarged LIVE TASK CONSOLE current task state, task id, progress aur recent tool results ko avatar ke behind holographic monitor par mirror karta hai. Existing activity panel detailed stream ko retain karta hai.\n\nNatural screen-reading phrases semantic GUI/vision agent tak route hoti hain. Screen inspection aur screenshot saving alag capabilities hain: screen inspection screenshot ko save nahi karta, aur screenshot tool tabhi use kiya jana chahiye jab user explicitly screenshot maange.
+
+## Local Vision — No Hosted Vision Credits Required
+
+Jenefar ka default screen-vision path ab local-first hai. Hosted/OpenAI vision ko by default call nahi kiya jata. desktop_observe, semantic element location, click/type verification aur screen-reading local Ollama VLM ke through run karne ke liye JENEFAR_LOCAL_VISION_MODEL=qwen3-vl:4b configured hai.
+
+Qwen3-VL ke local Ollama variants 2B, 4B aur 8B builds ke saath available hain. qwen3-vl:4b image input support karta hai aur visual-agent, spatial understanding aur OCR-oriented capabilities deta hai.
+
+Setup:
+
+    ollama pull qwen3-vl:4b
+    python run.py --doctor
+
+Ya Jenefar se directly:
+
+    python run.py --setup-vision
+
+JENEFAR_VISION_ALLOW_ONLINE=false ka matlab screen vision ke liye hosted OpenAI credits ki dependency default path me nahi rahegi. Internet sirf model ko pehli baar download karne ke liye required ho sakta hai; inference local machine par hota hai.
+
+Agar hardware me zyada headroom ho to .env me JENEFAR_LOCAL_VISION_MODEL=qwen3-vl:8b use kiya ja sakta hai.
