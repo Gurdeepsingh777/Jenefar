@@ -549,3 +549,16 @@ def test_phase2_hud_occupies_center_column_and_is_enlarged():
     assert "SPHERE_RADIUS:  150" in hud
     assert "RING_RADII:     [235, 255, 280, 305]" in hud
     assert "left:50%; transform:translateX(-50%)" in hud
+
+
+def test_phase3_vrm_avatar_isolated_on_center_stage():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert "PHASE 3 — VRM AVATAR" in css
+    assert "#vrm-canvas{" in css
+    assert "left:460px!important" in css
+    assert "right:560px!important" in css
+    assert 'src="/avatar.vrm"' in vrm
+    assert '<canvas id="vrm-canvas"' in html
+    assert ".avatar-shell,#photo-avatar,#holo-earth,#task-screen" in css
