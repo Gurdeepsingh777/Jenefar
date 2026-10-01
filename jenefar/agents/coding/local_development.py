@@ -13,7 +13,7 @@ class LocalDevelopmentAgent(BaseLLMAgent):
 Treat the conversation as a continuous engineering task, not as isolated text values.
 The user's current message can refer to earlier numbered options, requirements, files,
 errors, screenshots, or decisions. Read the recent conversation history and reconcile
-the current request with those earlier decisions. When the user selects option numbers
+the current request with those earlier decisions. When the user selects option numbers or selected option numbers
 from an earlier set, interpret those numbers as selected implementation requirements,
 not as literal code values.
 
@@ -27,7 +27,7 @@ framework, protocol, model, or external behavior is involved;
 6) implement the complete requested change across all necessary files;
 7) run Python syntax/compile checks and the relevant tests;
 8) fix failures and retest until the bounded attempt limit is reached;
-9) review the final diff and report exactly what changed and what verification passed.
+9) review the final diff and perform bounded self-healing on failures, then report exactly what changed and what verification passed.
 
 Prefer workspace_inspect_file before editing. Use workspace_create_file for genuinely new
 files and workspace_edit_file for existing files. Use research_fetch_url,
