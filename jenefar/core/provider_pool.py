@@ -55,19 +55,10 @@ class ProviderPool:
     def order(self) -> list[str]:
         raw = os.getenv(
             "JENEFAR_PROVIDER_ORDER",
-            "openai,gemini,openrouter,groq",
+            "openai,openrouter,gemini,groq",
         )
         names = [item.strip().lower() for item in raw.split(",") if item.strip()]
         valid = [name for name in names if name in self.CONFIGS]
-        if (
-            "gemini" in valid
-            and "openrouter" in valid
-            and self.model("openrouter", "fast") == "openrouter/free"
-            and os.getenv("JENEFAR_PREFER_OPENROUTER", "0").strip().lower() not in {"1", "true", "yes", "on"}
-        ):
-            valid.remove("gemini")
-            insert_at = valid.index("openrouter") if "openrouter" in valid else len(valid)
-            valid.insert(insert_at, "gemini")
         return valid or ["openai"]
 
     def configured(self, name: str) -> bool:
