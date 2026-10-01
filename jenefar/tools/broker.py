@@ -15,6 +15,7 @@ from jenefar.research.sources import fetch_github_repository, fetch_url
 from jenefar.coding.repository import RepositoryAnalyzer
 from jenefar.tools.security import ScopedSecurityToolExecutor
 from jenefar.automation.desktop import DesktopAutomation
+from jenefar.automation.window_control import DesktopWindowControl
 from jenefar.robotics.serial_controller import SerialRobotController
 from jenefar.robotics.mqtt import MqttRobotController
 from jenefar.robotics.ros2 import Ros2RobotController
@@ -65,6 +66,7 @@ class ToolBroker:
             self.desktop = DesktopAutomation()
         self.screen_vision = None
         self._screen_vision_ready = False
+        self.window_control = DesktopWindowControl()
         self.desktop_mirror = None
         self.robotics = SerialRobotController()
         self.mqtt_robot = MqttRobotController()
@@ -160,6 +162,7 @@ class ToolBroker:
             self.desktop_mirror = DesktopMirror(
                 self.desktop,
                 self._get_screen_vision(),
+                self.window_control,
             )
         return self.desktop_mirror
 
@@ -619,6 +622,58 @@ class ToolBroker:
                 "additionalProperties": False,
             },
             handler=lambda args: self._get_desktop_mirror().start(str(args["query"])),
+            requires_confirmation=False,
+            action=False,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_window_transfer",
+            description="Show a requested desktop window live on Jenefar's blue holographic screen and, when direct native capture/control is available, hide the original native window. Use for explicit requests to move, transfer, shift, or show a desktop app/window on the blue screen.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": 300},
+                    "hide_native": {"type": "boolean"},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._get_desktop_mirror().transfer(
+                str(args["query"]),
+                hide_native=bool(args.get("hide_native", True)),
+            ),
+            requires_confirmation=False,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_window_restore",
+            description="Restore a previously hidden native desktop window and focus it.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "maxLength": 300}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._get_desktop_mirror().restore_native(str(args["query"])),
+            requires_confirmation=False,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_window_focus",
+            description="Focus a native desktop window by visible title.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "maxLength": 300}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self._get_desktop_mirror().focus_native(str(args["query"])),
+            requires_confirmation=False,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="desktop_window_control_status",
+            description="Return native window-control backend and direct-capture capabilities.",
+            handler=lambda _args: self.window_control.status(),
             requires_confirmation=False,
             action=False,
         ))
