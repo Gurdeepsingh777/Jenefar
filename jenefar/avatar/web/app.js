@@ -954,3 +954,12 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
     resumeBrowserVoice();
   }
 });
+
+
+// VRM canvas diagnostics: expose the real load state to the dashboard.
+(function(){
+  const canvas=document.getElementById("vrm-canvas");
+  if(!canvas) return;
+  canvas.dataset.runtime="present";
+  window.__JENEFAR_VRM_CANVAS__=canvas;
+})();
