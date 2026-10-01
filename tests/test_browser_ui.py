@@ -276,6 +276,25 @@ def test_browser_voice_display_transliterates_without_dropping_technical_text():
     assert "display_text" in browser
 
 
+from jenefar.tools.broker import ToolBroker
+
+def test_screenshot_tool_is_reserved_for_explicit_user_requests():
+    broker = ToolBroker(require_confirmation=True)
+    screenshot = broker.registry.get("desktop_screenshot")
+    assert screenshot.requires_confirmation is True
+    assert screenshot.action is True
+    assert "ONLY when the user explicitly asks" in screenshot.description
+    assert "never use it as a screen-inspection workaround" in screenshot.description
+
+
+def test_gui_agent_does_not_fall_back_to_shell_screenshots_or_capability_lists():
+    gui = (ROOT / "jenefar" / "agents" / "automation" / "gui.py").read_text(encoding="utf-8")
+    assert "do not fall back to terminal_execute" in gui
+    assert "desktop_screenshot" in gui
+    assert "unless the user explicitly asked to take, save, or show a screenshot" in gui
+    assert "capabilities." in gui
+
+
 def test_screen_reading_is_read_only_and_available_without_confirmation():
     from jenefar.tools.broker import ToolBroker
 
