@@ -1639,3 +1639,19 @@ html,body,#stage{
 @media (max-width:800px){
   #vrm-canvas{left:12px!important;right:12px!important;top:104px!important;bottom:108px!important}
 }
+
+/* PHASE 5 — AVATAR POLISH + CENTER SCALE */
+#vrm-canvas{
+  left:520px!important;
+  right:500px!important;
+  top:126px!important;
+  bottom:96px!important;
+  z-index:24!important;
+}
+#hud-avatar{z-index:18!important}
+@media (max-width:1100px){
+  #vrm-canvas{left:340px!important;right:260px!important;top:116px!important}
+}
+@media (max-width:800px){
+  #vrm-canvas{left:18px!important;right:18px!important;top:102px!important;bottom:108px!important}
+}
