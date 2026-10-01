@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Any
 
-from jenefar.voice.speech import enforce_hinglish, roman_hinglish_for_voice
+from jenefar.voice.speech import devanagari_to_roman, enforce_hinglish, roman_hinglish_for_voice
 
 
 class BrowserVoiceBridge:
@@ -58,7 +58,8 @@ class BrowserVoiceBridge:
 
     @staticmethod
     def _display_text(text: str) -> str:
-        return enforce_hinglish(str(text or "").strip(), max_chars=12000)
+        # Preserve markdown/code/technical tokens; only force Hindi script to Roman.
+        return devanagari_to_roman(str(text or "").strip())
 
     @staticmethod
     def _direct_openai_key() -> str:
