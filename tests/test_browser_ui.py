@@ -520,3 +520,12 @@ def test_phase1_desktop_layout_owns_fixed_spatial_regions():
     assert ".system-card{" in css
     assert "#activity-panel{" in css
     assert "#task-screen{" in css
+
+
+def test_phase1_center_is_clean_before_visual_phases():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert 'id="phase1-center"' in html
+    assert "PHASE 1 FINAL — clean GUI shell" in css
+    assert "#holo-earth,#hud-avatar,#hud-canvas,#vrm-canvas,#photo-avatar" in css
+    assert ".avatar-shell,#task-screen,.mode-pill" in css
