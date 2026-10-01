@@ -917,3 +917,11 @@ body.vrm-loaded #photo-avatar{display:none}
   #vrm-canvas{left:390px!important;right:285px!important;width:calc(100% - 675px)!important}
   .avatar-shell{inset:0 285px 0 390px!important}
 }
+
+.task-log-details{margin-top:5px}
+.task-log-details summary{cursor:pointer;color:#70dcff;font-size:8px;letter-spacing:.08em}
+.task-log-details pre{
+  white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;
+  margin:6px 0 0;padding:8px;border-radius:8px;background:rgba(1,8,17,.72);
+  color:#a8c9df;font-size:8px;line-height:1.35
+}
