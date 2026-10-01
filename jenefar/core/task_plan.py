@@ -88,16 +88,23 @@ class HierarchicalTaskPlanner:
                     TaskStep(
                         "inspect",
                         "Inspect the target",
-                        "Read the target file and relevant local context before editing.",
+                        "Read the recent conversation, selected options, target files, and relevant local context before editing.",
                         "local_development",
+                    ),
+                    TaskStep(
+                        "research",
+                        "Research the implementation",
+                        "Check current project evidence and relevant external documentation before committing to an implementation approach.",
+                        "local_development",
+                        ("inspect",),
                     ),
                     TaskStep(
                         "baseline",
                         "Run a baseline check",
-                        "Validate syntax and run the target or relevant tests to capture the current failure.",
+                        "Validate syntax and run the target or relevant tests to capture the current state before editing.",
                         "local_development",
-                        ("inspect",),
-                        True,
+                        ("research",),
+                        False,
                         True,
                     ),
                     TaskStep(
