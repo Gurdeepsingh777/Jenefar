@@ -292,6 +292,7 @@ def test_gui_agent_does_not_fall_back_to_shell_screenshots_or_capability_lists()
     assert "do not fall back to terminal_execute" in gui
     assert "desktop_screenshot" in gui
     assert "unless the user explicitly asked to take, save, or show a screenshot" in gui
+    assert "For an explicit screenshot request" in gui
     assert "capabilities." in gui
 
 
