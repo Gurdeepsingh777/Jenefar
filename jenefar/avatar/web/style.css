@@ -1174,3 +1174,249 @@ body.vrm-loaded #photo-avatar{display:none}
   #vrm-canvas{left:calc(50% - 78px)!important;width:156px!important;height:180px!important;bottom:62px!important}
   .avatar-shell{left:calc(50% - 60px)!important;width:120px!important;height:150px!important;bottom:58px!important}
 }
+
+
+/* Phase 13: deterministic dashboard composition + visible HUD */
+:root{
+  --ui-left:174px;
+  --ui-right:360px;
+  --ui-top:76px;
+  --ui-bottom:92px;
+  --ui-gap:16px;
+}
+
+html,body,#stage{min-width:0}
+#stage{overflow:hidden}
+
+/* Decorative layers never own layout space or input. */
+.sci-fi-bg,.room-lights,.backdrop,.holo-particles,.chair-silhouette,#particles{
+  pointer-events:none!important;
+}
+.backdrop{z-index:0!important}
+#particles{z-index:2!important}
+
+/* Fixed top bar. */
+.siri-topbar{
+  left:16px!important;
+  right:16px!important;
+  top:14px!important;
+  height:50px!important;
+  z-index:100!important;
+}
+
+/* Left navigation owns its rail. */
+.side-nav{
+  left:14px!important;
+  top:78px!important;
+  bottom:104px!important;
+  width:146px!important;
+  z-index:90!important;
+}
+
+/* Center visual stage: HUD + avatar share exactly the same rectangle. */
+.avatar-shell{
+  left:var(--ui-left)!important;
+  right:var(--ui-right)!important;
+  top:var(--ui-top)!important;
+  bottom:var(--ui-bottom)!important;
+  width:auto!important;
+  height:auto!important;
+  inset:auto!important;
+  z-index:7!important;
+  display:grid!important;
+  place-items:center!important;
+  overflow:hidden!important;
+  pointer-events:none!important;
+}
+#vrm-canvas{
+  left:var(--ui-left)!important;
+  right:var(--ui-right)!important;
+  top:var(--ui-top)!important;
+  bottom:var(--ui-bottom)!important;
+  width:auto!important;
+  height:auto!important;
+  inset:auto!important;
+  z-index:8!important;
+  pointer-events:none!important;
+}
+#hud-avatar{
+  position:absolute!important;
+  left:var(--ui-left)!important;
+  right:var(--ui-right)!important;
+  top:var(--ui-top)!important;
+  bottom:var(--ui-bottom)!important;
+  width:auto!important;
+  height:auto!important;
+  inset:auto!important;
+  display:block!important;
+  overflow:hidden!important;
+  z-index:5!important;
+  pointer-events:none!important;
+}
+#hud-avatar-frame{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  border:0!important;
+  display:block!important;
+  background:transparent!important;
+  pointer-events:none!important;
+  opacity:.94!important;
+}
+body[data-hud-state="error"] #hud-avatar-frame{opacity:.18!important}
+body[data-hud-state="ready"] #hud-avatar-frame{opacity:1!important}
+
+/* Center labels sit above the hologram but never across the right rail. */
+.hero-copy{
+  left:calc(var(--ui-left) + 18px)!important;
+  right:auto!important;
+  top:90px!important;
+  width:min(420px,calc(100vw - var(--ui-left) - var(--ui-right) - 420px))!important;
+  max-width:420px!important;
+  z-index:30!important;
+  pointer-events:none!important;
+}
+.hero-copy h1{font-size:clamp(26px,2.5vw,38px)!important}
+.hero-copy p{max-width:390px!important}
+
+/* Chat is a left-side utility card inside the center rail. */
+.chat-glass{
+  left:calc(var(--ui-left) + 18px)!important;
+  top:250px!important;
+  width:350px!important;
+  height:280px!important;
+  z-index:55!important;
+}
+
+/* Quick apps become a compact lower-left utility shelf. */
+.quick-apps{
+  left:calc(var(--ui-left) + 18px)!important;
+  right:auto!important;
+  bottom:108px!important;
+  width:350px!important;
+  height:148px!important;
+  z-index:45!important;
+}
+
+/* Now-playing stays in the left bottom corner, away from navigation. */
+.media-card{
+  left:14px!important;
+  right:auto!important;
+  bottom:14px!important;
+  width:146px!important;
+  height:78px!important;
+  z-index:95!important;
+}
+
+/* Right rail: one column, three non-overlapping cards. */
+.system-card{
+  right:16px!important;
+  left:auto!important;
+  top:78px!important;
+  width:334px!important;
+  height:170px!important;
+  z-index:70!important;
+}
+.command-stack{
+  right:16px!important;
+  left:auto!important;
+  top:262px!important;
+  width:334px!important;
+  z-index:70!important;
+}
+.activity-panel,#activity-panel{
+  right:16px!important;
+  left:auto!important;
+  top:466px!important;
+  width:334px!important;
+  height:calc(100vh - 570px)!important;
+  min-height:190px!important;
+  max-height:calc(100vh - 570px)!important;
+  z-index:70!important;
+}
+
+/* Task console becomes a slim center-bottom console rather than a large floating sheet. */
+#task-screen{
+  left:calc(var(--ui-left) + 390px)!important;
+  right:calc(var(--ui-right) + 16px)!important;
+  top:auto!important;
+  bottom:104px!important;
+  width:auto!important;
+  height:112px!important;
+  z-index:35!important;
+  overflow:hidden!important;
+}
+#task-screen-log{max-height:56px!important}
+
+/* Bottom controls form a single command band. */
+.bottom-dock{
+  left:50%!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:14px!important;
+  transform:translateX(-50%)!important;
+  width:min(360px,calc(100vw - var(--ui-left) - var(--ui-right) - 32px))!important;
+  z-index:110!important;
+}
+.realtime-controls{
+  right:16px!important;
+  left:auto!important;
+  bottom:14px!important;
+  max-width:334px!important;
+  z-index:111!important;
+}
+
+/* Live desktop mirror respects the same center rectangle. */
+#desktop-mirror{
+  left:calc(var(--ui-left) + 380px)!important;
+  right:calc(var(--ui-right) + 16px)!important;
+  top:110px!important;
+  bottom:110px!important;
+  width:auto!important;
+  height:auto!important;
+  z-index:60!important;
+}
+#desktop-mirror[hidden]{display:none!important}
+#desktop-mirror-image{
+  width:100%!important;
+  height:100%!important;
+  object-fit:contain!important;
+}
+
+/* Give the HUD a readable visual role instead of letting it disappear behind opaque cards. */
+.halo,.halo-b,.avatar-glow,.avatar-backlight{opacity:.58!important}
+body[data-hud-state="ready"] .halo,
+body[data-hud-state="ready"] .halo-b{opacity:.36!important}
+body[data-hud-state="error"] .halo,
+body[data-hud-state="error"] .halo-b{opacity:.14!important}
+
+/* Desktop widths below the ideal three-rail composition. */
+@media (max-width:1250px){
+  :root{--ui-right:320px;--ui-left:160px}
+  .side-nav{width:136px!important}
+  .system-card,.command-stack,#activity-panel,.activity-panel{width:294px!important}
+  .chat-glass,.quick-apps{width:320px!important}
+  .hero-copy{width:330px!important}
+  #task-screen{left:calc(var(--ui-left) + 330px)!important}
+}
+@media (max-width:950px){
+  :root{--ui-left:0px;--ui-right:0px;--ui-top:68px;--ui-bottom:86px}
+  .side-nav{
+    left:10px!important;right:10px!important;top:auto!important;bottom:78px!important;
+    width:auto!important;height:52px!important;flex-direction:row!important;overflow:auto!important;
+  }
+  .side-nav .nav-item{flex:0 0 auto;padding:8px 10px!important}
+  .hero-copy{left:18px!important;top:82px!important;width:330px!important}
+  .system-card{right:12px!important;top:72px!important;width:290px!important;height:154px!important}
+  .command-stack{right:12px!important;top:238px!important;width:290px!important}
+  #activity-panel,.activity-panel{right:12px!important;top:430px!important;width:290px!important;height:calc(100vh - 530px)!important;max-height:none!important}
+  .chat-glass{left:12px!important;top:auto!important;bottom:154px!important;width:330px!important;height:250px!important}
+  .quick-apps{left:12px!important;bottom:84px!important;width:330px!important;height:62px!important;overflow:hidden!important}
+  .quick-apps .app-grid{grid-template-columns:repeat(8,1fr)!important}
+  .quick-apps .app-grid button{padding:4px!important}
+  #task-screen{left:12px!important;right:12px!important;bottom:72px!important;height:96px!important}
+  .media-card{display:none!important}
+  .realtime-controls{left:12px!important;right:12px!important;bottom:8px!important;max-width:none!important;justify-content:center}
+  .bottom-dock{display:none!important}
+}
