@@ -511,7 +511,7 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="desktop_observe",
-            description="Capture the current screen and use a vision model to identify visible semantic UI elements relevant to a user query. Privacy-sensitive; requires explicit confirmation.",
+            description="Capture the current screen and use the configured vision model to identify visible semantic UI elements relevant to the user's explicit screen-reading request. Read-only.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -522,8 +522,8 @@ class ToolBroker:
                 "additionalProperties": False,
             },
             handler=lambda args: self._desktop_observe(str(args["query"]), bool(args.get("save", False))),
-            requires_confirmation=True,
-            action=True,
+            requires_confirmation=False,
+            action=False,
         ))
         self.registry.register(ToolSpec(
             name="desktop_find_element",
@@ -535,8 +535,8 @@ class ToolBroker:
                 "additionalProperties": False,
             },
             handler=lambda args: self.screen_vision.locate(str(args["query"])),
-            requires_confirmation=True,
-            action=True,
+            requires_confirmation=False,
+            action=False,
         ))
         self.registry.register(ToolSpec(
             name="desktop_click_element",
