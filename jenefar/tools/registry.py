@@ -43,6 +43,6 @@ class ToolRegistry:
                 "name": spec.name,
                 "description": spec.description,
                 "parameters": spec.parameters,
-                "strict": True,
+                "strict": False,
             })
         return tools
