@@ -511,14 +511,13 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="desktop_observe",
-            description="Capture the current screen and use the configured vision model to identify visible semantic UI elements relevant to the user's explicit screen-reading request. Read-only.",
+            description="Read the current screen with the configured vision model for the user's explicit screen-reading request. Read-only. This does not save a screenshot.",
             parameters={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "maxLength": 500},
-                    "save": {"type": "boolean"},
                 },
-                "required": ["query", "save"],
+                "required": ["query"],
                 "additionalProperties": False,
             },
             handler=lambda args: self.screen_vision.read_screen(str(args["query"])),
