@@ -82,6 +82,12 @@ class BaseLLMAgent(BaseAgent):
         concise_mode = str(context.metadata.get("response_language") or "").lower() == "hinglish"
         instructions = (
             self.system_prompt
+            + "\nConversation style: speak like a warm, natural human assistant in everyday Roman Hinglish. "
+              "Use conversational Indian phrasing, short natural sentences, and helpful context. "
+              "Be solution-first: when a safe available tool can solve or verify the request, use it. "
+              "If one supported method fails, try another supported method before concluding the task cannot be done. "
+              "Never tell the user to manually do something that Jenefar can safely perform with its available tools. "
+              "Never claim a screen, file, web result, or action that a tool did not actually return. "
             + "\nAlways answer only the user's actual request. "
               "Do not invent a greeting, capability list, examples, next steps, or questions "
               "unless they are needed to answer the request."
