@@ -18,8 +18,8 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
-  camera.position.set(0, 1.48, 3.05);
+  const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
+  camera.position.set(0, 1.42, 2.45);
   camera.lookAt(0, 1.32, 0);
 
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
@@ -70,10 +70,13 @@ if (canvas) {
       const modelHeight = Math.max(size.y, 1.0);
       const modelCenterY = center.y;
       vrm.scene.position.y -= modelCenterY;
+
+      // Keep the full body visible, but make the avatar large enough to read
+      // against the HUD rather than rendering as a tiny distant figure.
       const vFov = THREE.MathUtils.degToRad(camera.fov);
-      const fitDistance = (modelHeight * 0.62) / Math.tan(vFov / 2);
-      camera.position.set(0, 0, Math.max(2.2, Math.min(8.0, fitDistance)));
-      camera.lookAt(0, 0, 0);
+      const fitDistance = (modelHeight * 0.44) / Math.tan(vFov / 2);
+      camera.position.set(0, modelHeight * 0.02, Math.max(1.7, Math.min(4.8, fitDistance)));
+      camera.lookAt(0, modelHeight * 0.03, 0);
 
       // Natural idle pose for the bundled humanoid VRM.
       // VRM humanoid bones are rotated in local space around their current pose.
