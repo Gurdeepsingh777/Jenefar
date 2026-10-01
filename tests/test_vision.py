@@ -116,7 +116,8 @@ def test_screen_vision_prefers_local_vlm_without_online_credits(monkeypatch):
 
 
 def test_screen_vision_rejects_text_only_local_model_selection():
-    source = (ROOT / "jenefar" / "vision" / "screen.py").read_text(encoding="utf-8")
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "jenefar" / "vision" / "screen.py").read_text(encoding="utf-8")
     assert "qwen3-vl:4b" in source
     assert "llama3.2:latest" in source
     assert "must not be used for screen vision" in source
