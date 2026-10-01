@@ -18,9 +18,9 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(24, 1, 0.01, 100);
-  camera.position.set(0, 1.55, 4.55);
-  camera.lookAt(0, 1.38, 0);
+  const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 100);
+  camera.position.set(0, 1.48, 3.35);
+  camera.lookAt(0, 1.34, 0);
 
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.position.set(1.5, 2.2, 3.5);
