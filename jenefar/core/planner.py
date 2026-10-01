@@ -131,8 +131,9 @@ class Planner:
 
         if any(x in t for x in (
             ".py", "python file", "python script", "fix error", "edit file",
-            "modify file", "add a feature", "custom feature", "run this file",
-            "check this file",
+            "modify file", "add a feature", "feature add", "custom feature",
+            "implement", "implementation", "functionality", "behavior change",
+            "code update", "code me", "project me", "run this file", "check this file",
         )):
             return self._make_plan(text, "local_development", "local_development", confidence=0.96, reason="local code/file task keyword match", needs_tool=True)
 
