@@ -384,7 +384,7 @@ def main() -> int:
             print(
                 f"[JENEFAR] Browser STT: {stt['provider']}/{stt['model']} "
                 f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
-                "Browser TTS=Web SpeechSynthesis"
+                "Browser TTS=OpenAI/Edge generated audio -> Web SpeechSynthesis fallback"
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser SpeechRecognition remains the input path.")
@@ -393,7 +393,7 @@ def main() -> int:
             if browser_voice_enabled:
                 print("[JENEFAR] Browser microphone voice: ENABLED.")
                 print("[JENEFAR] Chrome/Chromium will ask for microphone permission in the avatar UI.")
-                print("[JENEFAR] Browser microphone + browser SpeechSynthesis are the only active voice path.")
+                print("[JENEFAR] Browser microphone + server-generated browser audio are the primary voice path; Web SpeechSynthesis is the final fallback.")
                 print("[JENEFAR] Python TTS is disabled in this browser runtime.")
                 threading.Event().wait()
             else:
