@@ -467,7 +467,7 @@ def test_supplied_hud_and_minimal_vrm_presentation():
     assert 'id="hud-avatar"' in html
     assert 'src="/hud_avatar.html"' in html
     assert "function updateEmbeddedHud" in app
-    assert "Phase 10: supplied HUD + compact avatar presentation" in css
+    assert "Phase 12: final clean display composition" in css
     assert "JenefarMinimalEnvironment" in vrm
     assert "JenefarPremiumEnvironment" not in vrm
     assert "PARTICLES:" in hud
@@ -508,5 +508,4 @@ def test_broker_online_schemas_are_non_strict_function_schemas():
     from jenefar.tools.broker import ToolBroker
     schemas = ToolBroker(require_confirmation=False).schemas()
     assert schemas
-    assert all(item["type"] == "function" for item in schemas)
-    assert all(item["function"]["strict"] is False for item in schemas)
+    assert all(item.get("strict") is False for item in schemas)
