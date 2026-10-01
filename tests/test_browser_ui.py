@@ -456,3 +456,19 @@ def test_workspace_list_directory_accepts_optional_max_items_for_openai_schema()
     assert "max_items" in tool.parameters["properties"]
 
 
+
+
+def test_supplied_hud_and_minimal_vrm_presentation():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    vrm = (WEB / "vrm.js").read_text(encoding="utf-8")
+    hud = (WEB / "hud_avatar.html").read_text(encoding="utf-8")
+    assert 'id="hud-avatar"' in html
+    assert 'src="/hud_avatar.html"' in html
+    assert "function updateEmbeddedHud" in app
+    assert "Phase 10: supplied HUD + compact avatar presentation" in css
+    assert "JenefarMinimalEnvironment" in vrm
+    assert "JenefarPremiumEnvironment" not in vrm
+    assert "PARTICLES:" in hud
+    assert "window.updateAgentState" in hud
