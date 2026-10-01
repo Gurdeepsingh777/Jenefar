@@ -83,7 +83,7 @@ def prepare_avatar_model() -> "Path | None":
                 f"{type(exc).__name__}: {exc}"
             )
 
-    premium_output = Path("data/avatar/Jenefar_Premium.vrm")
+    premium_output = Path("data/avatar/Jenefar_Premium_v2.vrm")
     premium_enabled = os.getenv(
         "JENEFAR_PREMIUM_AVATAR", "1"
     ).strip().lower() not in {"0", "false", "no"}
