@@ -486,11 +486,18 @@ class JenefarOrchestrator:
                 if key in signature.parameters
             }
         )
-        final_result = agent.continue_after_tools(
-            workflow["task"],
-            workflow["results"],
-            **filtered_kwargs,
+        self.tool_broker.set_task_context(
+            agent=str(workflow.get("agent") or ""),
+            task=str(workflow.get("task") or ""),
         )
+        try:
+            final_result = agent.continue_after_tools(
+                workflow["task"],
+                workflow["results"],
+                **filtered_kwargs,
+            )
+        finally:
+            self.tool_broker.clear_task_context()
         pending_tools = final_result.metadata.get("pending_tools", [])
         if pending_tools:
             workflow["remaining"] = {
