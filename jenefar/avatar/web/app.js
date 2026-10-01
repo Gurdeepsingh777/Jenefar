@@ -1,3 +1,16 @@
+const hudFrame=document.getElementById("hud-avatar-frame");
+function updateEmbeddedHud(state,text){
+  try{
+    const win=hudFrame?.contentWindow;
+    if(win && typeof win.updateAgentState==="function"){
+      const normalized=state==="queued"?"thinking":state;
+      win.updateAgentState(normalized,text||"");
+    }
+  }catch(_){}
+}
+if(hudFrame){
+  hudFrame.addEventListener("load",()=>updateEmbeddedHud("idle","Jenefar ready"));
+}
 const desktopMirror=document.getElementById("desktop-mirror");
 const desktopMirrorImage=document.getElementById("desktop-mirror-image");
 const desktopMirrorTitle=document.getElementById("desktop-mirror-title");
