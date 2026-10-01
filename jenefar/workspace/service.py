@@ -54,8 +54,22 @@ class WorkspaceService:
         shutil.copy2(candidate, backup)
         return str(backup)
 
+    def create_file(self, path: str, content: str) -> dict[str, object]:
+        candidate = self.policy.require_allowed(path)
+        if candidate.exists():
+            raise FileExistsError(candidate)
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_text(content, encoding="utf-8")
+        return {
+            "path": str(candidate),
+            "created": True,
+            "size": candidate.stat().st_size,
+        }
+
     def edit_file(self, path: str, new_content: str) -> dict[str, object]:
         candidate = self.policy.require_allowed(path)
+        if not candidate.exists():
+            return self.create_file(str(candidate), new_content)
         if not candidate.is_file():
             raise FileNotFoundError(candidate)
         before = candidate.read_text(encoding="utf-8", errors="replace")
