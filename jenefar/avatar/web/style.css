@@ -1420,3 +1420,7 @@ body[data-hud-state="error"] .halo-b{opacity:.14!important}
   .realtime-controls{left:12px!important;right:12px!important;bottom:8px!important;max-width:none!important;justify-content:center}
   .bottom-dock{display:none!important}
 }
+
+/* Phase 13b: remove legacy duplicate status layers from the clean composition. */
+.mode-pill{display:none!important}
+.avatar-shell .status-card{display:none!important}
