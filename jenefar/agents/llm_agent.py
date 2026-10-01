@@ -170,8 +170,7 @@ class BaseLLMAgent(BaseAgent):
         )
         instructions = (
             self.system_prompt
-            + "
-Never volunteer a capability list, screenshot suggestion, or alternate-method list "
+            + "\nNever volunteer a capability list, screenshot suggestion, or alternate-method list "
               "unless the current user explicitly asked for it. "
             + self._language_instruction(response_language)
         )
