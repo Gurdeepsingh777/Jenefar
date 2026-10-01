@@ -31,7 +31,7 @@ class ProviderPool:
             "GEMINI_API_KEY",
             "https://generativelanguage.googleapis.com/v1beta/openai/",
             "GEMINI_MODEL",
-            "gemini-2.5-flash-lite",
+            "gemini-3.5-flash-lite",
         ),
         "groq": ProviderConfig(
             "groq",
@@ -55,7 +55,7 @@ class ProviderPool:
     def order(self) -> list[str]:
         raw = os.getenv(
             "JENEFAR_PROVIDER_ORDER",
-            "openai,openrouter,gemini,groq",
+            "openai,gemini,openrouter,groq",
         )
         names = [item.strip().lower() for item in raw.split(",") if item.strip()]
         valid = [name for name in names if name in self.CONFIGS]
@@ -75,11 +75,14 @@ class ProviderPool:
     def model(self, name: str, role: str = "fast") -> str:
         config = self.CONFIGS[name]
         role_env = f"JENEFAR_{name.upper()}_MODEL_{(role or 'fast').strip().upper()}"
-        return (
+        selected = (
             os.getenv(role_env, "").strip()
             or os.getenv(config.model_env, "").strip()
             or config.default_model
         )
+        if name == "gemini" and selected in {"gemini-2.5-flash-lite", "models/gemini-2.5-flash-lite"}:
+            selected = "gemini-3.5-flash-lite"
+        return selected
 
     def available(self, name: str) -> bool:
         return self.configured(name) and time.monotonic() >= self.cooldowns.get(name, 0.0)
