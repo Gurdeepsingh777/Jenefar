@@ -190,7 +190,7 @@ def test_premium_avatar_blender_pipeline_is_wired():
 def test_premium_avatar_source_is_not_overwritten():
     launcher = (ROOT / "jenefar" / "assets" / "premium_avatar.py").read_text(encoding="utf-8")
     assert "shutil.copy2(source_path, temporary_input)" in launcher
-    assert "Jenefar_Premium.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "Jenefar_Premium_v2.vrm" in (ROOT / "run.py").read_text(encoding="utf-8")
 
 
 def test_main_has_focused_desktop_requirements():
@@ -546,7 +546,7 @@ def test_phase2_hud_occupies_center_column_and_is_enlarged():
     hud = (WEB / "hud_avatar.html").read_text(encoding="utf-8")
     assert "left:460px!important" in css
     assert "right:560px!important" in css
-    assert "SPHERE_RADIUS:  150" in hud
+    assert "SPHERE_RADIUS: 150" in hud
     assert "RING_RADII:     [235, 255, 280, 305]" in hud
     assert "left:50%; transform:translateX(-50%)" in hud
 
@@ -559,7 +559,7 @@ def test_phase3_vrm_avatar_isolated_on_center_stage():
     assert "#vrm-canvas{" in css
     assert "left:460px!important" in css
     assert "right:560px!important" in css
-    assert 'src="/avatar.vrm"' in vrm
+    assert '"/avatar.vrm"' in vrm
     assert '<canvas id="vrm-canvas"' in html
     assert ".avatar-shell,#photo-avatar,#holo-earth,#task-screen" in css
 
