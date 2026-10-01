@@ -610,3 +610,5 @@ def test_vrm_render_path_forces_mesh_visibility_and_preserves_frame():
     assert "const skinnedMeshes = [];" in vrm
     assert "visualBounds.expandByObject(mesh, true)" in vrm
     assert "skinnedMeshes: skinnedMeshes.length" in vrm
+    assert "mesh.getVertexPosition(i, localPosition)" in vrm
+    assert "const getVisualBounds = () =>" in vrm
