@@ -925,3 +925,62 @@ body.vrm-loaded #photo-avatar{display:none}
   margin:6px 0 0;padding:8px;border-radius:8px;background:rgba(1,8,17,.72);
   color:#a8c9df;font-size:8px;line-height:1.35
 }
+/* --- Local vision / readable HUD overlay --- */
+#task-screen{
+  left:510px!important;
+  right:390px!important;
+  top:150px!important;
+  bottom:110px!important;
+  height:auto!important;
+  min-height:0!important;
+  z-index:22!important;
+  background:transparent!important;
+  border-color:rgba(82,219,255,.38)!important;
+  box-shadow:0 0 65px rgba(26,185,255,.15),inset 0 0 55px rgba(28,153,224,.05)!important;
+  pointer-events:none!important;
+}
+#task-screen:before{
+  background:
+    linear-gradient(180deg,rgba(12,92,138,.34),rgba(3,23,43,.18)),
+    repeating-linear-gradient(180deg,rgba(110,228,255,.05) 0 1px,transparent 1px 5px)!important;
+  clip-path:polygon(0 0,31% 0,31% 100%,69% 100%,69% 0,100% 0,100% 100%,0 100%)!important;
+  opacity:1!important;
+}
+.task-screen-header{
+  width:68%!important;
+  margin:0 auto!important;
+  background:rgba(4,14,27,.72)!important;
+  border-radius:12px!important;
+}
+.task-screen-header strong{font-size:13px!important}
+.task-screen-log{
+  top:84px!important;
+  bottom:54px!important;
+  left:16px!important;
+  right:16px!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,31%) minmax(0,31%)!important;
+  justify-content:space-between!important;
+  align-content:start!important;
+  gap:6px 0!important;
+  overflow:auto!important;
+  mask-image:none!important;
+}
+.task-log-line{
+  width:100%!important;
+  min-height:38px!important;
+  padding:7px 8px!important;
+  background:rgba(2,12,25,.82)!important;
+  border-color:rgba(89,216,255,.16)!important;
+}
+.task-log-meta{font-size:6px!important}
+.task-log-content{font-size:8px!important;line-height:1.28!important}
+.task-screen-progress{width:68%!important;margin:0 auto!important}
+.task-screen-footer{
+  left:16%!important;
+  right:16%!important;
+  background:rgba(4,14,27,.64)!important;
+  border-radius:10px!important;
+  padding:7px 10px!important;
+}
+#task-screen-summary{font-size:7px!important}
