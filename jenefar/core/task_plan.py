@@ -92,19 +92,12 @@ class HierarchicalTaskPlanner:
                         "local_development",
                     ),
                     TaskStep(
-                        "research",
-                        "Research the implementation",
-                        "Check current project evidence and relevant external documentation before committing to an implementation approach.",
-                        "local_development",
-                        ("inspect",),
-                    ),
-                    TaskStep(
                         "baseline",
                         "Run a baseline check",
                         "Validate syntax and run the target or relevant tests to capture the current state before editing.",
                         "local_development",
-                        ("research",),
-                        False,
+                        ("inspect",),
+                        True,
                         True,
                     ),
                     TaskStep(
