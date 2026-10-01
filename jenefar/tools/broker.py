@@ -656,7 +656,7 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="desktop_screenshot",
-            description="Capture a desktop screenshot into Jenefar's local data/screenshots directory. Requires explicit confirmation.",
+            description="Capture and save a desktop screenshot into Jenefar's local data/screenshots directory. Use ONLY when the user explicitly asks to take, save, or show a screenshot; never use it as a screen-inspection workaround. Requires explicit confirmation.",
             parameters={
                 "type": "object",
                 "properties": {"filename": {"type": "string"}},
