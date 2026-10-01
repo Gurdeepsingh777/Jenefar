@@ -1339,7 +1339,7 @@ class ToolBroker:
             self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
             self.audit.record("tool_executed", tool=name, arguments=arguments, result=value)
-            self._activity("thinking", f"Tool result: {name} -> {str(value)[:500]}")
+            self._activity("thinking", f"Tool result: {name} -> {str(value)[:1800]}")
             return json.dumps({"status": "ok", "result": value}, ensure_ascii=False, default=str)
         except Exception as exc:
             self.audit.record(
