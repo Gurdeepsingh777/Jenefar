@@ -274,6 +274,45 @@ function selectPremiumVoice(){
       || null;
 }
 
+function playBrowserAudio(base64,mime,text){
+  if(!base64) return false;
+  try{
+    const bytes=Uint8Array.from(atob(base64),char=>char.charCodeAt(0));
+    const blob=new Blob([bytes],{type:mime||"audio/wav"});
+    const url=URL.createObjectURL(blob);
+    if(browserAudio){
+      try{browserAudio.pause();}catch(_){}
+      try{URL.revokeObjectURL(browserAudio.dataset?.url||"");}catch(_){}
+    }
+    browserAudio=new Audio(url);
+    browserAudio.dataset.url=url;
+    browserAudio.preload="auto";
+    browserAudio.onplay=()=>{browserSpeechActive=true;};
+    browserAudio.onended=()=>{
+      browserSpeechActive=false;
+      voiceLocked=false;
+      URL.revokeObjectURL(url);
+      resumeBrowserVoice();
+    };
+    browserAudio.onerror=()=>{
+      browserSpeechActive=false;
+      URL.revokeObjectURL(url);
+      voiceLocked=false;
+      if(text) browserSpeakFallback(text);
+      else resumeBrowserVoice();
+    };
+    browserAudio.play().catch(()=>{
+      browserSpeechActive=false;
+      URL.revokeObjectURL(url);
+      if(text) browserSpeakFallback(text);
+      else {voiceLocked=false;resumeBrowserVoice();}
+    });
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
 function browserSpeakFallback(text){
   if(!text||!browserSpeechReady) return;
   const clean=String(text).replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
@@ -311,9 +350,12 @@ function apply(event){
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"){
     pauseBrowserVoice();
-    if(event.text) browserSpeakFallback(event.text);
+    if(event.audio_b64){
+      playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+    }
   }else if(currentState==="speaking_fallback"){
     pauseBrowserVoice();
+    if(event.text) browserSpeakFallback(event.text);
   }else if(currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
@@ -380,6 +422,7 @@ let voiceLocked=false;
 let voiceSupported=false;
 let restartTimer=null;
 let browserSpeechActive=false;
+let browserAudio=null;
 
 function setVoiceInputStatus(text,active=false){
   if(voiceInputStatus){
@@ -645,10 +688,12 @@ document.getElementById("chat-form")?.addEventListener("submit",async event=>{
   const user=document.createElement("div");
   user.className="chat-row user";
   user.innerHTML='<div class="bubble user-bubble"></div>';
-  user.querySelector(".bubble").textContent=text;
+  const userBubble=user.querySelector(".bubble");
+  userBubble.textContent=text;
   log.appendChild(user);
   if(input) input.value="";
-  await dispatchDashboardCommand(text);
+  const result=await dispatchDashboardCommand(text);
+  if(result?.display_text) userBubble.textContent=result.display_text;
 });
 
 document.getElementById("dock-talk")?.addEventListener("click",()=>document.getElementById("mic-button")?.click());
@@ -763,6 +808,11 @@ setupBrowserVoice();
 
 
 document.getElementById("media-pause")?.addEventListener("click",()=>{
+  if(browserAudio){
+    try{browserAudio.pause();}catch(_){}
+    try{URL.revokeObjectURL(browserAudio.dataset?.url||"");}catch(_){}
+    browserAudio=null;
+  }
   if("speechSynthesis" in window){
     window.speechSynthesis.cancel();
     browserSpeechActive=false;
