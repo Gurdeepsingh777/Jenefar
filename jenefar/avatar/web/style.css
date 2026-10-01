@@ -774,7 +774,7 @@ body.vrm-loaded #photo-avatar{display:none}
 /* --- Phase 8: clean three-zone layout --- */
 #task-screen{
   left:540px!important;
-  right:365px!important;
+  right:385px!important;
   top:142px!important;
   bottom:92px!important;
   height:auto!important;
@@ -787,20 +787,20 @@ body.vrm-loaded #photo-avatar{display:none}
 }
 #task-screen .task-screen-header{padding:14px 18px 10px!important}
 .task-screen-header strong{font-size:15px!important;max-width:74%!important}
-.task-screen-log{left:18px!important;right:18px!important;top:80px!important;bottom:52px!important}
+.task-screen-log{left:18px!important;right:18px!important;top:80px!important;bottom:52px!important;overflow:auto!important;mask-image:none!important}
 .task-log-line{background:rgba(2,11,23,.40)!important}
 #task-screen-footer{left:18px!important;right:18px!important}
 
 #vrm-canvas{
   left:540px!important;
-  right:365px!important;
-  width:calc(100% - 905px)!important;
+  right:385px!important;
+  width:calc(100% - 925px)!important;
   height:75%!important;
   top:13%!important;
   z-index:16!important;
 }
 .avatar-shell{
-  inset:0 365px 0 540px!important;
+  inset:0 385px 0 540px!important;
   z-index:20!important;
   overflow:visible!important;
 }
