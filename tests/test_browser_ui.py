@@ -539,3 +539,13 @@ def test_phase2_blue_hud_isolated_to_center_workspace():
     assert "#hud-avatar-frame{" in css
     assert 'src="/hud_avatar.html"' in html
     assert "#holo-earth,#vrm-canvas,#photo-avatar,.avatar-shell,#task-screen" in css
+
+
+def test_phase2_hud_occupies_center_column_and_is_enlarged():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    hud = (WEB / "hud_avatar.html").read_text(encoding="utf-8")
+    assert "left:460px!important" in css
+    assert "right:560px!important" in css
+    assert "SPHERE_RADIUS:  150" in hud
+    assert "RING_RADII:     [235, 255, 280, 305]" in hud
+    assert "left:50%; transform:translateX(-50%)" in hud
