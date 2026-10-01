@@ -58,6 +58,11 @@ class ScreenVision:
             if confidence_threshold is not None
             else float(env_threshold or "0.65")
         )
+        timeout_env = os.getenv("JENEFAR_LOCAL_VISION_TIMEOUT", "").strip()
+        try:
+            self.local_vision_timeout = max(10.0, min(float(timeout_env or "90"), 300.0))
+        except ValueError:
+            self.local_vision_timeout = 90.0
 
     def capture(self, *, save: bool = False) -> ScreenFrame:
         return self.desktop.capture_frame(
@@ -310,11 +315,11 @@ class ScreenVision:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=180) as response:
+            with urllib.request.urlopen(request, timeout=self.local_vision_timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError) as exc:
             raise RuntimeError(
-                f"Local VLM request failed at {base}: {exc}"
+                f"Local VLM request failed at {base} after {self.local_vision_timeout:.0f}s: {exc}"
             ) from exc
 
         message = result.get("message") or {}
