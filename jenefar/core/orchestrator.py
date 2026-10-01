@@ -241,10 +241,11 @@ class JenefarOrchestrator:
                 ],
             }
             self._avatar_activity("thinking", "")
-            self.tool_broker.set_task_context(
-                agent=plan.agent,
-                task=text,
-            )
+            if hasattr(self.tool_broker, "set_task_context"):
+                self.tool_broker.set_task_context(
+                    agent=plan.agent,
+                    task=text,
+                )
             try:
                 result = self.self_healing.run(
                     "agent_dispatch",
@@ -256,7 +257,8 @@ class JenefarOrchestrator:
                     },
                 )
             finally:
-                self.tool_broker.clear_task_context()
+                if hasattr(self.tool_broker, "clear_task_context"):
+                    self.tool_broker.clear_task_context()
             trace.metadata["self_healing"] = {
                 "retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
@@ -486,10 +488,11 @@ class JenefarOrchestrator:
                 if key in signature.parameters
             }
         )
-        self.tool_broker.set_task_context(
-            agent=str(workflow.get("agent") or ""),
-            task=str(workflow.get("task") or ""),
-        )
+        if hasattr(self.tool_broker, "set_task_context"):
+            self.tool_broker.set_task_context(
+                agent=str(workflow.get("agent") or ""),
+                task=str(workflow.get("task") or ""),
+            )
         try:
             final_result = agent.continue_after_tools(
                 workflow["task"],
