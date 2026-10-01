@@ -416,6 +416,9 @@ class JenefarOrchestrator:
         except json.JSONDecodeError:
             payload = {}
         if payload.get("status") != "ok":
+            error = str(payload.get("error") or "").strip()
+            if error:
+                return "Meri local vision service abhi screen analysis nahi de pa rahi hai. " + error
             return None
         result = payload.get("result") or {}
         summary = str(result.get("summary") or "").strip()
