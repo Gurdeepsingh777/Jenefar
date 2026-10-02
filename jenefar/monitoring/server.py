@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -178,11 +179,39 @@ class MonitoringServer:
         self._server = None
 
 
+def monitoring_port_available(
+    host: str = HOST,
+    port: int = PORT,
+) -> bool:
+    """Return True when the telemetry port can be bound locally."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return sock.connect_ex((host, port)) != 0
+
+
+def monitoring_endpoint_healthy(
+    host: str = HOST,
+    port: int = PORT,
+    timeout: float = 0.25,
+) -> bool:
+    """Return True when something is already listening on the telemetry port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        return sock.connect_ex((host, port)) == 0
+
+
 def start_monitoring_server(
     host: str = HOST,
     port: int = PORT,
 ) -> MonitoringServer:
     """Start and return a managed monitoring server."""
+    if monitoring_endpoint_healthy(host, port):
+        print(
+            f"[JENEFAR] Monitoring endpoint already active: "
+            f"ws://{host}:{port}"
+        )
+        return MonitoringServer(host=host, port=port)
+
     server = MonitoringServer(host=host, port=port)
     server.start()
     return server
@@ -190,6 +219,17 @@ def start_monitoring_server(
 
 async def main() -> None:
     """Standalone monitoring-server entrypoint."""
+    if monitoring_endpoint_healthy(HOST, PORT):
+        print(
+            f"[JENEFAR] Monitoring endpoint already active: "
+            f"ws://{HOST}:{PORT}"
+        )
+        print(
+            "[JENEFAR] Stop the existing monitoring process first "
+            "if you want to replace it."
+        )
+        return
+
     async with serve(handler, HOST, PORT):
         print(
             f"[JENEFAR] Monitoring websocket running "

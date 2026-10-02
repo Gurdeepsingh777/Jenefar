@@ -433,8 +433,10 @@ def main() -> int:
         avatar_server.start()
 
         monitoring_server = None
+        monitoring_server_owned = False
         try:
             monitoring_server = start_monitoring_server()
+            monitoring_server_owned = monitoring_server.running
         except Exception as exc:
             print(
                 "[JENEFAR] Monitoring server unavailable: "
@@ -487,7 +489,7 @@ def main() -> int:
                 threading.Event().wait()
         finally:
             browser_voice.shutdown()
-            if monitoring_server is not None:
+            if monitoring_server is not None and monitoring_server_owned:
                 monitoring_server.stop()
             avatar_server.stop()
         return 0
@@ -708,8 +710,10 @@ def main() -> int:
         avatar_server.start()
 
         monitoring_server = None
+        monitoring_server_owned = False
         try:
             monitoring_server = start_monitoring_server()
+            monitoring_server_owned = monitoring_server.running
             print(
                 f"[JENEFAR] System monitoring: "
                 f"{monitoring_server.url}"
@@ -777,7 +781,7 @@ def main() -> int:
     finally:
         if browser_voice is not None:
             browser_voice.shutdown()
-        if monitoring_server is not None:
+        if monitoring_server is not None and monitoring_server_owned:
             monitoring_server.stop()
         if avatar_server is not None:
             avatar_server.stop()
