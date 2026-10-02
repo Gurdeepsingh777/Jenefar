@@ -310,7 +310,21 @@ class ScreenVision:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=180) as response:
+            with urllib.request.urlopen(
+                request,
+                timeout=min(
+                    max(
+                        float(
+                            os.getenv(
+                                "JENEFAR_LOCAL_VISION_TIMEOUT_SECONDS",
+                                "180",
+                            )
+                        ),
+                        5.0,
+                    ),
+                    600.0,
+                ),
+            ) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError) as exc:
             raise RuntimeError(
