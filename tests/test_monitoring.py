@@ -60,10 +60,20 @@ def test_intel_gpu_json_parser_reads_render_usage(monkeypatch):
             stderr="",
         )
 
-    monkeypatch.setattr(system_monitor, "INTEL_GPU_TOP", "/usr/bin/intel_gpu_top")
-    monkeypatch.setattr(system_monitor.subprocess, "run", fake_run)
+    from jenefar.monitoring import gpu_sampler
 
-    result = system_monitor._get_intel_gpu()
+    monkeypatch.setattr(
+        gpu_sampler,
+        "INTEL_GPU_TOP",
+        "/usr/bin/intel_gpu_top",
+    )
+    monkeypatch.setattr(
+        gpu_sampler.subprocess,
+        "run",
+        fake_run,
+    )
+
+    result = gpu_sampler.GPUSampler._intel()
 
     assert result is not None
     assert result["available"] is True
