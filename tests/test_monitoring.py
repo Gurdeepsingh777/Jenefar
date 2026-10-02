@@ -83,6 +83,17 @@ def test_intel_gpu_json_parser_reads_render_usage(monkeypatch):
     assert result["power_w"] == 0.42
 
 
+def test_monitoring_server_uses_managed_runtime_api():
+    from pathlib import Path
+
+    source = Path("jenefar/monitoring/server.py").read_text(encoding="utf-8")
+
+    assert "class MonitoringServer" in source
+    assert "start_monitoring_server" in source
+    assert "def stop(self)" in source
+    assert "threading.Thread" in source
+
+
 def test_monitoring_server_uses_modern_websocket_api():
     from pathlib import Path
 

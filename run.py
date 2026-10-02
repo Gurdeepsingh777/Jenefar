@@ -411,6 +411,7 @@ def main() -> int:
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.monitoring.server import start_monitoring_server
 
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
@@ -430,6 +431,15 @@ def main() -> int:
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
         )
         avatar_server.start()
+
+        monitoring_server = None
+        try:
+            monitoring_server = start_monitoring_server()
+        except Exception as exc:
+            print(
+                "[JENEFAR] Monitoring server unavailable: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         runtime_url = avatar_server.url
         print(f"[JENEFAR] Avatar UI: {runtime_url}")
@@ -477,6 +487,8 @@ def main() -> int:
                 threading.Event().wait()
         finally:
             browser_voice.shutdown()
+            if monitoring_server is not None:
+                monitoring_server.stop()
             avatar_server.stop()
         return 0
 
@@ -674,6 +686,7 @@ def main() -> int:
         import webbrowser
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.monitoring.server import start_monitoring_server
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
@@ -693,6 +706,20 @@ def main() -> int:
             voice_handler=browser_voice.handle_text if browser_voice else None,
         )
         avatar_server.start()
+
+        monitoring_server = None
+        try:
+            monitoring_server = start_monitoring_server()
+            print(
+                f"[JENEFAR] System monitoring: "
+                f"{monitoring_server.url}"
+            )
+        except Exception as exc:
+            print(
+                "[JENEFAR] System monitoring unavailable: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
         print(
             "[JENEFAR] VRM source: "
@@ -750,6 +777,8 @@ def main() -> int:
     finally:
         if browser_voice is not None:
             browser_voice.shutdown()
+        if monitoring_server is not None:
+            monitoring_server.stop()
         if avatar_server is not None:
             avatar_server.stop()
 

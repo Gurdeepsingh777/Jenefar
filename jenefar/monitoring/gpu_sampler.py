@@ -36,6 +36,17 @@ class GPUSampler:
     def get(self) -> dict[str, Any] | None:
         self.start()
 
+        # Give the sampler a short window to obtain its first real
+        # hardware reading so the initial dashboard payload does not
+        # incorrectly report "GPU unavailable".
+        deadline = time.monotonic() + min(self.interval, 0.75)
+
+        while time.monotonic() < deadline:
+            with self._lock:
+                if self._latest is not None:
+                    return dict(self._latest)
+            time.sleep(0.02)
+
         with self._lock:
             if self._latest is None:
                 return None
