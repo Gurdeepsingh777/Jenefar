@@ -1022,6 +1022,10 @@ function updateSystemTelemetry(data) {
     telemetryState.textContent = "LIVE • SYSTEM TELEMETRY";
     telemetryState.dataset.state = "online";
   }
+
+  window.dispatchEvent(new CustomEvent("jenefar:telemetry", {
+    detail: data
+  }));
 }
 
 function setTelemetryOffline() {
@@ -1104,3 +1108,37 @@ function connectSystemMonitoring() {
 }
 
 connectSystemMonitoring();
+
+/* Enhanced live telemetry meter rendering */
+(function enhanceTelemetryMeters() {
+  const meters = {
+    cpu: document.getElementById("cpu-value"),
+    ram: document.getElementById("ram-value"),
+    gpu: document.getElementById("gpu-value"),
+  };
+
+  function setMeter(id, value) {
+    const element = meters[id];
+    if (!element) return;
+
+    const numeric = Number(value);
+    const safe = Number.isFinite(numeric)
+      ? Math.max(0, Math.min(100, numeric))
+      : 0;
+
+    element.style.setProperty("--meter-value", safe.toFixed(1));
+    element.setAttribute("aria-valuenow", safe.toFixed(1));
+    element.setAttribute("aria-valuemin", "0");
+    element.setAttribute("aria-valuemax", "100");
+  }
+
+  window.addEventListener("jenefar:telemetry", (event) => {
+    const data = event.detail || {};
+
+    setMeter("cpu", data.cpu);
+    setMeter("ram", data.ram?.percent);
+    setMeter("gpu", data.gpu?.usage);
+  });
+
+  window.jenefarSetTelemetryMeters = setMeter;
+})();

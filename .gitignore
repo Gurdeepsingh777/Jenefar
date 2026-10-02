@@ -59,3 +59,4 @@ data/capabilities.json
 
 data/skills.json
 data/connectors.json
+*.egg-info/
