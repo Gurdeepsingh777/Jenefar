@@ -7,7 +7,14 @@ name = "jenefar"
 version = "0.1.0"
 description = "Modular multi-agent AI assistant named Jenefar"
 requires-python = ">=3.10"
+dependencies = [
+    "psutil>=7.0",
+    "websockets>=15,<18",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["jenefar*"]

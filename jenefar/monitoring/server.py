@@ -2,74 +2,66 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
-import websockets
+from websockets.asyncio.server import serve
 
 from .system_monitor import get_system_stats
 
 
-CLIENTS=set()
+HOST = "127.0.0.1"
+PORT = 8765
+UPDATE_INTERVAL = 1.0
+
+CLIENTS: set = set()
 
 
-async def send_stats():
-
+async def send_stats() -> None:
+    """Collect and broadcast real system telemetry once per second."""
     while True:
+        started = time.monotonic()
 
-        data=get_system_stats()
+        try:
+            data = get_system_stats()
+            payload = json.dumps(data)
 
-        payload=json.dumps(data)
+            disconnected = []
 
+            for client in tuple(CLIENTS):
+                try:
+                    await client.send(payload)
+                except Exception:
+                    disconnected.append(client)
 
-        dead=[]
+            for client in disconnected:
+                CLIENTS.discard(client)
 
-        for client in CLIENTS:
+        except Exception as exc:
+            print(f"[JENEFAR] Monitoring error: {exc}")
 
-            try:
-                await client.send(payload)
-
-            except:
-                dead.append(client)
-
-
-        for client in dead:
-            CLIENTS.remove(client)
-
-
-        await asyncio.sleep(1)
-
+        elapsed = time.monotonic() - started
+        await asyncio.sleep(max(0.0, UPDATE_INTERVAL - elapsed))
 
 
-async def handler(websocket):
-
+async def handler(websocket) -> None:
     CLIENTS.add(websocket)
+    print(f"[JENEFAR] Monitoring client connected ({len(CLIENTS)})")
 
     try:
-
-        while True:
-
-            await websocket.wait()
-
+        await websocket.wait_closed()
     finally:
-
-        CLIENTS.remove(websocket)
-
-
-
-async def start_monitor_server():
-
-    server=await websockets.serve(
-        handler,
-        "127.0.0.1",
-        8765
-    )
+        CLIENTS.discard(websocket)
+        print(f"[JENEFAR] Monitoring client disconnected ({len(CLIENTS)})")
 
 
-    print(
-        "[JENEFAR] Monitoring websocket :8765"
-    )
+async def main() -> None:
+    async with serve(handler, HOST, PORT) as server:
+        print(f"[JENEFAR] Monitoring websocket running ws://{HOST}:{PORT}")
+        await send_stats()
 
 
-    await asyncio.gather(
-        server.wait_closed(),
-        send_stats()
-    )
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[JENEFAR] Monitoring server stopped")

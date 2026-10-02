@@ -963,3 +963,144 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
   canvas.dataset.runtime="present";
   window.__JENEFAR_VRM_CANVAS__=canvas;
 })();
+
+
+/* =========================================================
+   JENEFAR LIVE SYSTEM TELEMETRY
+   Real CPU / RAM / GPU values from monitoring websocket.
+   ========================================================= */
+
+const cpuValue = document.getElementById("cpu-value");
+const ramValue = document.getElementById("ram-value");
+const gpuValue = document.getElementById("gpu-value");
+const telemetryState = document.getElementById("system-telemetry-state");
+const gpuDetail = document.getElementById("gpu-detail");
+
+let monitoringSocket = null;
+let monitoringRetryTimer = null;
+let monitoringRetryDelay = 1000;
+
+function setTelemetryRing(element, value) {
+  if (!element) return;
+
+  const safeValue = Number.isFinite(Number(value))
+    ? Math.max(0, Math.min(100, Number(value)))
+    : 0;
+
+  element.textContent = `${safeValue.toFixed(0)}%`;
+  element.style.setProperty("--meter-value", `${safeValue}%`);
+}
+
+function updateSystemTelemetry(data) {
+  if (!data) return;
+
+  setTelemetryRing(cpuValue, data.cpu);
+
+  if (data.ram) {
+    setTelemetryRing(ramValue, data.ram.percent);
+  }
+
+  if (data.gpu) {
+    setTelemetryRing(gpuValue, data.gpu.usage);
+
+    const vendor = data.gpu.vendor || "GPU";
+    const name = data.gpu.name || "Unknown";
+
+    let detail = `${vendor} • ${name}`;
+
+    if (data.gpu.power_w !== null && data.gpu.power_w !== undefined) {
+      detail += ` • ${Number(data.gpu.power_w).toFixed(2)}W`;
+    }
+
+    if (gpuDetail) {
+      gpuDetail.textContent = detail;
+      gpuDetail.title = detail;
+    }
+  }
+
+  if (telemetryState) {
+    telemetryState.textContent = "LIVE • SYSTEM TELEMETRY";
+    telemetryState.dataset.state = "online";
+  }
+}
+
+function setTelemetryOffline() {
+  if (telemetryState) {
+    telemetryState.textContent = "MONITOR OFFLINE";
+    telemetryState.dataset.state = "offline";
+  }
+}
+
+function monitoringWebSocketUrl() {
+  const host = (
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1" ||
+    location.hostname === "::1"
+  )
+    ? location.hostname
+    : "127.0.0.1";
+
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${host}:8765`;
+}
+
+function scheduleMonitoringReconnect() {
+  if (monitoringRetryTimer) return;
+
+  monitoringRetryTimer = setTimeout(() => {
+    monitoringRetryTimer = null;
+    connectSystemMonitoring();
+  }, monitoringRetryDelay);
+
+  monitoringRetryDelay = Math.min(monitoringRetryDelay * 2, 10000);
+}
+
+function connectSystemMonitoring() {
+  if (
+    monitoringSocket &&
+    (
+      monitoringSocket.readyState === WebSocket.OPEN ||
+      monitoringSocket.readyState === WebSocket.CONNECTING
+    )
+  ) {
+    return;
+  }
+
+  setTelemetryOffline();
+
+  try {
+    monitoringSocket = new WebSocket(monitoringWebSocketUrl());
+  } catch (_) {
+    scheduleMonitoringReconnect();
+    return;
+  }
+
+  monitoringSocket.addEventListener("open", () => {
+    monitoringRetryDelay = 1000;
+
+    if (telemetryState) {
+      telemetryState.textContent = "LIVE • SYSTEM TELEMETRY";
+      telemetryState.dataset.state = "online";
+    }
+  });
+
+  monitoringSocket.addEventListener("message", event => {
+    try {
+      updateSystemTelemetry(JSON.parse(event.data));
+    } catch (error) {
+      console.error("[JENEFAR] Invalid monitoring payload", error);
+    }
+  });
+
+  monitoringSocket.addEventListener("error", () => {
+    setTelemetryOffline();
+  });
+
+  monitoringSocket.addEventListener("close", () => {
+    monitoringSocket = null;
+    setTelemetryOffline();
+    scheduleMonitoringReconnect();
+  });
+}
+
+connectSystemMonitoring();

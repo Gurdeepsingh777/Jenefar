@@ -49,9 +49,22 @@
     <aside class="system-card">
       <div class="card-title">SYSTEM STATUS</div>
       <div class="status-grid">
-        <div><span class="ring-meter cpu">32%</span><small>CPU</small></div>
-        <div><span class="ring-meter ram">46%</span><small>RAM</small></div>
-        <div><span class="ring-meter gpu">28%</span><small>GPU</small></div>
+        <div>
+          <span id="cpu-value" class="ring-meter cpu">--%</span>
+          <small>CPU</small>
+        </div>
+        <div>
+          <span id="ram-value" class="ring-meter ram">--%</span>
+          <small>RAM</small>
+        </div>
+        <div>
+          <span id="gpu-value" class="ring-meter gpu">--%</span>
+          <small>GPU</small>
+        </div>
+      </div>
+      <div class="system-telemetry">
+        <span id="system-telemetry-state">MONITOR OFFLINE</span>
+        <span id="gpu-detail">GPU —</span>
       </div>
       <div class="service-list">
         <div><span class="service-light"></span>Online <b id="service-online">●</b></div>

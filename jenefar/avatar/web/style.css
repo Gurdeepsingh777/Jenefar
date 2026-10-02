@@ -1693,3 +1693,54 @@ html,body,#stage{
 @media (max-width:900px){
   #vrm-canvas{left:30px!important;right:30px!important;top:100px!important}
 }
+
+
+/* =========================================================
+   LIVE SYSTEM TELEMETRY
+   ========================================================= */
+
+.system-telemetry{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-top:10px;
+  padding-top:9px;
+  border-top:1px solid rgba(255,255,255,.07);
+  color:#71809f;
+  font-size:7px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  white-space:nowrap;
+  overflow:hidden;
+}
+
+#system-telemetry-state{
+  color:#66738f;
+  transition:color .25s ease;
+}
+
+#system-telemetry-state[data-state="online"]{
+  color:#66ffd8;
+}
+
+#system-telemetry-state[data-state="offline"]{
+  color:#ff697c;
+}
+
+#gpu-detail{
+  max-width:58%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:#8e9abb;
+}
+
+.ring-meter{
+  transition:
+    transform .2s ease,
+    filter .2s ease;
+}
+
+.system-card:hover .ring-meter{
+  transform:translateY(-1px);
+}
