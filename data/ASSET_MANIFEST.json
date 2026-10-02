@@ -1,0 +1,18 @@
+{
+  "resources": [
+    {
+      "attribution": "AvatarSample_A \u00a9 pixiv VRoid Project",
+      "bytes": 18569800,
+      "license": "VRM Platform License 1.0; source fixture documents redistribution permission",
+      "max_bytes": 52428800,
+      "name": "vrm-sample-avatar",
+      "path": "avatar/AvatarSample_A_1.0.vrm.glb",
+      "recorded_at_utc": "2026-09-30T12:19:33Z",
+      "resolved_path": "/home/jenefar/Documents/jenefar-AI/Jenefar/data/avatar/AvatarSample_A_1.0.vrm.glb",
+      "sha256": null,
+      "sha256_actual": "3a1956bf4e5aebae1013334af5bc16875154e3b8cd3bed1ff77e963d74f4b1ef",
+      "status": "downloaded",
+      "url": "https://github.com/arkavo-org/VRMMetalKit/raw/39d52551c3b5c19507d9399df65c85cab2be9c83/AvatarSample_A_1.0.vrm.glb"
+    }
+  ]
+}
