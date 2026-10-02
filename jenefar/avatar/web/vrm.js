@@ -54,6 +54,38 @@ if (canvas) {
       const gltf = await loader.loadAsync("/avatar.vrm");
       vrm = gltf.userData.vrm;
       VRMUtils.rotateVRM0(vrm);
+      // Auto-frame the real model using its post-scale world bounds.
+      const skinnedMeshes = [];
+
+      vrm.scene.traverse((node) => {
+        node.frustumCulled = false;
+
+        if (node.isSkinnedMesh || node.isMesh) {
+          skinnedMeshes.push(node);
+        }
+      });
+
+      vrm.scene.visible = true;
+
+      const visualBounds = new THREE.Box3();
+
+      skinnedMeshes.forEach((mesh) => {
+        visualBounds.expandByObject(mesh, true);
+      });
+
+      const size = new THREE.Vector3();
+      visualBounds.getSize(size);
+
+      const modelHeight = Math.max(size.y, 0.1);
+
+      const halfFov = THREE.MathUtils.degToRad(camera.fov * 0.5);
+      const fitDistance = (modelHeight * 0.56) / Math.tan(halfFov);
+
+      camera.position.z = fitDistance;
+      camera.far = Math.max(50, fitDistance * 10);
+
+      const basePosition = vrm.scene.position.clone();
+      const baseAvatarY = basePosition.y;
       // The bundled VRM sample already faces the standard camera direction.
       // The previous extra PI rotation showed its back to the user.
       vrm.scene.rotation.y = 0;
