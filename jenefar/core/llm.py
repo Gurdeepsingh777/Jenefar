@@ -11,6 +11,7 @@ from jenefar.core.model_router import ModelRouter
 from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
 from jenefar.offline.connectivity import internet_available
 from jenefar.offline.local_llm import LocalLLMClient
+from jenefar.core.cancellation import CancellationToken
 
 
 @dataclass
@@ -122,6 +123,11 @@ class LLMClient:
         )
 
     @staticmethod
+    def _check_cancel(token: CancellationToken | None) -> None:
+        if token is not None:
+            token.raise_if_cancelled()
+
+    @staticmethod
     def _remaining_timeout(deadline: float | None) -> float | None:
         if deadline is None:
             return None
@@ -143,6 +149,7 @@ class LLMClient:
         model: str,
         model_role: str,
         deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         tools: list[dict[str, Any]] = []
@@ -155,6 +162,7 @@ class LLMClient:
         last_response = None
         tool_counts: Counter[str] = Counter()
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            self._check_cancel(cancel_token)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "instructions": instructions,
@@ -207,6 +215,7 @@ class LLMClient:
                         model_role,
                     )
                 self._remaining_timeout(deadline)
+                self._check_cancel(cancel_token)
                 output = tool_broker.invoke(tool_name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -261,6 +270,7 @@ class LLMClient:
         model: str,
         model_role: str,
         deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         messages: list[dict[str, Any]] = [
@@ -271,6 +281,7 @@ class LLMClient:
         tool_counts: Counter[str] = Counter()
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            self._check_cancel(cancel_token)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
@@ -339,6 +350,7 @@ class LLMClient:
                         model_role,
                     )
                 self._remaining_timeout(deadline)
+                self._check_cancel(cancel_token)
                 output = tool_broker.invoke(name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -397,6 +409,7 @@ class LLMClient:
                 max_tool_rounds=max_tool_rounds, model=model,
                 model_role=model_role,
                 deadline=deadline,
+                cancel_token=cancel_token,
             )
         return self._complete_chat(
             provider, prompt, instructions=instructions,
@@ -415,6 +428,7 @@ class LLMClient:
         max_tool_rounds: int,
         model_role: str,
         deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         tools = (
             tool_broker.schemas(
@@ -427,6 +441,8 @@ class LLMClient:
             prompt=prompt, instructions=instructions, tools=tools,
             tool_broker=tool_broker, max_tool_rounds=max_tool_rounds,
             model_role=model_role,
+            deadline=deadline,
+            cancel_token=cancel_token,
         )
         if pending:
             return LLMResponse(
@@ -449,6 +465,7 @@ class LLMClient:
         model_role: str | None = None,
         deadline: float | None = None,
     ) -> LLMResponse:
+        self._check_cancel(cancel_token)
         online = internet_available()
         _, selected_role = self.selected_model(model_role)
         if deadline is not None and deadline <= time.monotonic():
@@ -468,6 +485,7 @@ class LLMClient:
                         allow_action_tools=allow_action_tools,
                         max_tool_rounds=max_tool_rounds, model=model,
                         model_role=selected_role, deadline=deadline,
+                        cancel_token=cancel_token,
                     )
                     self.providers.record_latency(provider, time.perf_counter() - started, success=True)
                     self.providers.reset(provider)
@@ -495,6 +513,8 @@ class LLMClient:
                 "Local fallback is disabled for this run.",
                 "online_unavailable",
                 model_role=selected_role,
+                deadline=deadline,
+                cancel_token=cancel_token,
             )
 
         try:
