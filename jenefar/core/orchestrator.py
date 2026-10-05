@@ -4,6 +4,7 @@ import inspect
 import os
 import time
 import json
+from typing import Any
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
@@ -35,6 +36,7 @@ from jenefar.voice.wakeword import WakeWord
 from jenefar.capabilities.store import CapabilityStore
 from jenefar.offline.connectivity import internet_available
 from jenefar.skills.manager import SkillManager
+from jenefar.evaluation.runtime_status import build_runtime_snapshot
 
 class JenefarOrchestrator:
     def __init__(self, avatar=None):
@@ -81,6 +83,7 @@ class JenefarOrchestrator:
         self.wakeword = WakeWord(self.config.wake_phrases)
         self.pending_approval_workflows: dict[str, dict] = {}
         self.offline_notice_open = False
+        self.runtime_context: dict[str, Any] = {"state": "idle"}
 
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
@@ -94,6 +97,16 @@ class JenefarOrchestrator:
         except (TypeError, ValueError):
             value = 60.0
         return min(max(value, 10.0), 300.0)
+
+    def runtime_status(self) -> dict[str, Any]:
+        """Return a live, credential-safe runtime snapshot for the UI."""
+        from jenefar.core.provider_pool import ProviderPool
+        return build_runtime_snapshot(
+            runtime_context=self.runtime_context,
+            self_healing=self.self_healing,
+            trace_store=self.trace_store,
+            provider_pool=ProviderPool(),
+        )
 
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
@@ -261,6 +274,19 @@ class JenefarOrchestrator:
             }
             budget_seconds = self._execution_budget_seconds(trace.model_role, plan.agent)
             deadline = time.monotonic() + budget_seconds
+            self.runtime_context = {
+                "state": "thinking",
+                "task_id": trace.trace_id[:12],
+                "task": text,
+                "agent": plan.agent,
+                "provider": "",
+                "model_role": trace.model_role,
+                "started_at": trace.started_at,
+                "budget_seconds": budget_seconds,
+                "deadline_monotonic": deadline,
+                "last_event": "dispatch_started",
+            }
+
             dispatch_metadata = {
                 "session_id": self.session.session_id,
                 "trace_id": trace.trace_id,
@@ -313,6 +339,12 @@ class JenefarOrchestrator:
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
             trace.actual_agent = result.agent
+            self.runtime_context.update({
+                "state": "result",
+                "agent": result.agent,
+                "provider": str(result.metadata.get("provider", "")),
+                "last_event": "agent_result",
+            })
             self._avatar_activity("thinking", "")
             trace.provider = str(result.metadata.get("provider", ""))
             for pending in result.metadata.get("pending_tools", []) or []:
@@ -352,14 +384,17 @@ class JenefarOrchestrator:
             )
             self.trace_store.append(trace)
             if awaiting:
+                self.runtime_context.update({"state": "waiting_approval", "last_event": "approval_required"})
                 self._register_pending_workflow(text, result, response_language=response_language)
                 self.state = JenefarState.WAITING_APPROVAL
                 self._avatar_state("waiting_approval", output)
             else:
+                self.runtime_context.update({"state": "speaking", "last_event": "response_ready"})
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
             return output
         except Exception as exc:
+            self.runtime_context.update({"state": "error", "last_event": f"{type(exc).__name__}: {exc}"})
             trace.add_error(f"{type(exc).__name__}: {exc}")
             trace.finish(status="error", provider="error", verification={"passed": False})
             self.trace_store.append(trace)
