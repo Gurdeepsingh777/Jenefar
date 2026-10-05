@@ -164,6 +164,7 @@ class LocalLLMClient:
                 except json.JSONDecodeError:
                     arguments = {}
 
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(name, arguments)
                 parsed: dict[str, Any]
                 try:
