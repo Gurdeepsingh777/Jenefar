@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,7 +55,8 @@ class LLMClient:
         config = self.providers.CONFIGS[provider]
         from openai import OpenAI
 
-        kwargs = {"api_key": self.providers.api_key(provider)}
+        timeout = min(max(float(os.getenv("JENEFAR_PROVIDER_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
+        kwargs = {"api_key": self.providers.api_key(provider), "timeout": timeout}
         if config.base_url:
             kwargs["base_url"] = config.base_url
         self._clients[provider] = OpenAI(**kwargs)
@@ -428,7 +430,8 @@ class LLMClient:
         failures: list[str] = []
 
         if online:
-            for provider in self.providers.order():
+            for provider in self.providers.order_for_role(selected_role):
+                started = time.perf_counter()
                 if not self.providers.available(provider):
                     continue
                 model = self.explicit_model or self.providers.model(provider, selected_role)
@@ -440,9 +443,11 @@ class LLMClient:
                         max_tool_rounds=max_tool_rounds, model=model,
                         model_role=selected_role,
                     )
+                    self.providers.record_latency(provider, time.perf_counter() - started, success=True)
                     self.providers.reset(provider)
                     return result
                 except Exception as exc:
+                    self.providers.record_latency(provider, time.perf_counter() - started, success=False)
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
                     if is_retryable_provider_error(exc):
