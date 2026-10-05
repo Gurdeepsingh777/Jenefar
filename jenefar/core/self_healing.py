@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import time
-from typing import Callable, TypeVar
+from typing import Any, Callable, TypeVar
+
+from jenefar.evaluation.trace import redact_sensitive
 
 T = TypeVar("T")
 
@@ -31,6 +33,14 @@ class FailureState:
     last_failure_at: float | None = None
     cooldown_until: float = 0.0
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "failures": self.failures,
+            "last_error": redact_sensitive(self.last_error),
+            "last_failure_at": self.last_failure_at,
+            "cooldown_until": self.cooldown_until,
+        }
+
 @dataclass
 class RuntimeHealth:
     calls: int = 0
@@ -54,6 +64,26 @@ class RuntimeHealth:
     def circuit_open(self) -> bool:
         return time.time() < self.circuit_open_until
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "calls": self.calls,
+            "successes": self.successes,
+            "failures": self.failures,
+            "success_rate": self.success_rate,
+            "retries": self.retries,
+            "transient_failures": self.transient_failures,
+            "non_retryable_failures": self.non_retryable_failures,
+            "consecutive_failures": self.consecutive_failures,
+            "last_error": redact_sensitive(self.last_error),
+            "last_failure_at": self.last_failure_at,
+            "last_success_at": self.last_success_at,
+            "circuit_open": self.circuit_open,
+            "circuit_open_until": self.circuit_open_until,
+            "failure_state": {
+                name: state.as_dict() for name, state in self.failure_state.items()
+            },
+        }
+
 class SelfHealingRuntime:
     """Bounded recovery for transient failures; never retries privileged actions."""
 
@@ -64,6 +94,16 @@ class SelfHealingRuntime:
         self.circuit_threshold = max(1, int(circuit_threshold))
         self.circuit_cooldown_seconds = max(1.0, float(circuit_cooldown_seconds))
         self.health = RuntimeHealth()
+
+    def health_snapshot(self) -> dict[str, Any]:
+        """Return credential-safe runtime health for diagnostics and dashboards."""
+        return self.health.as_dict()
+
+    def reset_circuit(self) -> None:
+        """Close the circuit without changing accumulated health counters."""
+        self.health.circuit_open_until = 0.0
+        for state in self.health.failure_state.values():
+            state.cooldown_until = 0.0
 
     @staticmethod
     def is_transient_error(exc: BaseException) -> bool:
