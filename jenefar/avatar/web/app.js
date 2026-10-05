@@ -1204,6 +1204,7 @@ telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
   const health=document.getElementById("runtime-health");
   const event=document.getElementById("runtime-event");
   const fill=document.getElementById("runtime-budget-fill");
+  const cancel=document.getElementById("runtime-cancel");
   if(!task||!state) return;
 
   const stateLabel={
@@ -1224,6 +1225,7 @@ telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
     task.textContent=current.task ? String(current.task).replace(/\s+/g," ").slice(0,72) : "SYSTEM READY";
     state.textContent=stateLabel[status]||status.toUpperCase();
     state.dataset.state=status;
+    if(cancel) cancel.disabled=!["thinking","result","speaking","waiting_approval","cancelling"].includes(status);
     agent.textContent=current.agent||"—";
     provider.textContent=current.provider||"—";
     elapsed.textContent=current.elapsed_ms!=null ? fmtSeconds(Number(current.elapsed_ms)/1000) : "—";
@@ -1255,6 +1257,22 @@ telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
     }
   }
 
+
+  if(cancel){
+    cancel.addEventListener("click",async()=>{
+      cancel.disabled=true;
+      cancel.textContent="STOPPING";
+      try{
+        await fetch("/runtime/cancel",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({reason:"cancelled from runtime dashboard"})
+        });
+      }catch(_){}
+      setTimeout(()=>{cancel.textContent="STOP";},700);
+      poll();
+    });
+  }
   poll();
   setInterval(poll,1000);
 
