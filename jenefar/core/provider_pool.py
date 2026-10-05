@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 
 
@@ -51,6 +52,8 @@ class ProviderPool:
 
     def __init__(self) -> None:
         self.cooldowns: dict[str, float] = {}
+        self.latency_samples: dict[str, list[float]] = defaultdict(list)
+        self.failure_samples: dict[str, int] = defaultdict(int)
 
     def order(self) -> list[str]:
         raw = os.getenv(
@@ -60,6 +63,54 @@ class ProviderPool:
         names = [item.strip().lower() for item in raw.split(",") if item.strip()]
         valid = [name for name in names if name in self.CONFIGS]
         return valid or ["openai"]
+
+    def order_for_role(self, role: str = "fast") -> list[str]:
+        names = self.order()
+        enabled = os.getenv("JENEFAR_ADAPTIVE_ROUTING", "1").strip().lower() not in {
+            "0", "false", "no", "off"
+        }
+        if not enabled:
+            return names
+        warmup = max(1, int(os.getenv("JENEFAR_ROUTING_WARMUP_SAMPLES", "2")))
+        known = {
+            name: samples for name, samples in self.latency_samples.items()
+            if len(samples) >= warmup and self.available(name)
+        }
+        if not known:
+            return names
+        position = {name: index for index, name in enumerate(names)}
+        def score(name: str) -> tuple[float, int]:
+            samples = known.get(name)
+            if not samples:
+                return (float("inf"), position[name])
+            avg = sum(samples[-8:]) / min(len(samples), 8)
+            failures = self.failure_samples.get(name, 0)
+            return (
+                avg * (1.0 + min(2.0, failures / max(1, len(samples)))),
+                position[name],
+            )
+        return sorted(names, key=score)
+
+    def record_latency(self, name: str, elapsed_seconds: float, *, success: bool) -> None:
+        if name not in self.CONFIGS:
+            return
+        samples = self.latency_samples[name]
+        samples.append(max(0.0, float(elapsed_seconds)))
+        del samples[:-8]
+        if not success:
+            self.failure_samples[name] += 1
+
+    def latency_status(self) -> dict[str, dict]:
+        result = {}
+        for name in self.CONFIGS:
+            samples = self.latency_samples.get(name, [])
+            result[name] = {
+                "samples": len(samples),
+                "average_ms": round(sum(samples) / len(samples) * 1000, 1) if samples else None,
+                "last_ms": round(samples[-1] * 1000, 1) if samples else None,
+                "failures": self.failure_samples.get(name, 0),
+            }
+        return result
 
     def configured(self, name: str) -> bool:
         config = self.CONFIGS[name]
@@ -118,6 +169,7 @@ class ProviderPool:
                 "model": self.model(name, role),
                 "base_url": config.base_url or "https://api.openai.com/v1",
                 "cooldown_seconds": max(0, round(until - now, 1)),
+                "latency": self.latency_status()[name],
             }
         return result
 
