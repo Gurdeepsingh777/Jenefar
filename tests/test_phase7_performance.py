@@ -37,10 +37,11 @@ def test_provider_status_exposes_latency(monkeypatch):
 
 
 def test_latency_summary_reports_percentiles(tmp_path):
-    from jenefar.evaluation.trace import TraceStore
+    from jenefar.evaluation.trace import ExecutionTrace, TraceStore
     store = TraceStore(tmp_path / "traces.jsonl")
     for value in (100, 200, 300, 1000):
-        store.append({"trace_id": str(value), "status": "success", "elapsed_ms": value})
+        trace = ExecutionTrace(status="success", started_at=0.0, finished_at=value / 1000.0)
+        store.append(trace)
     summary = store.summary()
     assert summary["p50_elapsed_ms"] == 200
     assert summary["p95_elapsed_ms"] == 1000
