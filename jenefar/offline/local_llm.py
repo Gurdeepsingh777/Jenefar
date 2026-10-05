@@ -9,6 +9,7 @@ from typing import Any
 import time
 
 from jenefar.core.model_router import ModelRouter
+from jenefar.core.cancellation import CancellationToken
 
 
 @dataclass
@@ -94,6 +95,7 @@ class LocalLLMClient:
         max_tool_rounds: int = 4,
         model_role: str | None = None,
         deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> tuple[str, list[dict[str, str]]]:
         info = self.detect(model_role=model_role)
         if info is None:
@@ -108,6 +110,8 @@ class LocalLLMClient:
         local_tools = self._convert_tools(tools)
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            if cancel_token is not None:
+                cancel_token.raise_if_cancelled()
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -164,7 +168,10 @@ class LocalLLMClient:
                 except json.JSONDecodeError:
                     arguments = {}
 
-                self._remaining_timeout(deadline)
+                if deadline is not None and deadline <= time.monotonic():
+                    raise TimeoutError("Jenefar execution budget exhausted")
+                if cancel_token is not None:
+                    cancel_token.raise_if_cancelled()
                 output = tool_broker.invoke(name, arguments)
                 parsed: dict[str, Any]
                 try:
