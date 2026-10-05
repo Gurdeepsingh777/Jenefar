@@ -457,6 +457,7 @@ def main() -> int:
             vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
+            runtime_status=orchestrator.runtime_status,
         )
         avatar_server.start()
 
@@ -734,6 +735,7 @@ def main() -> int:
             vrm_path=avatar_model,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice else None,
+            runtime_status=orchestrator.runtime_status,
         )
         avatar_server.start()
 
