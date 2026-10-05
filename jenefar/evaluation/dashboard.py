@@ -62,6 +62,7 @@ section{{margin-top:28px}}
 <div class="card"><b>Average score</b><div>{avg:.2f}</div></div>
 <div class="card"><b>Traces</b><div>{summary["traces"]}</div></div>
 <div class="card"><b>Trace success</b><div>{summary["success_rate"] * 100:.1f}%</div></div>
+<div class="card"><b>Trace failure</b><div>{summary["failure_rate"] * 100:.1f}%</div></div>
 </div>
 
 <section>
@@ -69,6 +70,7 @@ section{{margin-top:28px}}
 <p>Average latency: {summary["average_elapsed_ms"]:.0f} ms · Approval traces: {summary["approval_traces"]}</p>
 <p>Providers: {html.escape(", ".join(summary["providers"]) or "n/a")}</p>
 <p>Agents: {html.escape(", ".join(summary["agents"]) or "n/a")}</p>
+<p>Last trace: {html.escape(summary.get("last_status") or "n/a")} · Statuses: {html.escape(", ".join(f"{key}={value}" for key, value in summary.get("statuses", {}).items()) or "n/a")}</p>
 </section>
 
 <section><h2>Quality evaluations</h2>
