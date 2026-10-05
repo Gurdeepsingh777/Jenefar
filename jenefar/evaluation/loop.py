@@ -5,7 +5,10 @@ import json
 import re
 import time
 from pathlib import Path
+import threading
 from typing import Any
+
+from jenefar.evaluation.trace import redact_sensitive
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,8 @@ class EvaluationResult:
 
 class EvaluationLoop:
     """Runtime quality evaluation and structured learning-signal collection."""
+
+    _append_lock = threading.Lock()
 
     def __init__(self, path: str | Path = "data/evaluations.jsonl"):
         self.path = Path(path)
@@ -66,7 +71,7 @@ class EvaluationLoop:
 
         record = {
             "timestamp": time.time(),
-            "task": task,
+            "task": redact_sensitive(task),
             "provider": provider,
             "score": evaluation.score,
             "passed": evaluation.passed,
@@ -79,7 +84,7 @@ class EvaluationLoop:
             record["agent"] = trace.get("actual_agent") or trace.get("planned_agent")
             record["status"] = trace.get("status")
             record["elapsed_ms"] = trace.get("elapsed_ms")
-            record["verification"] = trace.get("verification", {})
+            record["verification"] = redact_sensitive(trace.get("verification", {}))
             record["tool_count"] = len(trace.get("tool_calls", []))
 
         with self.path.open("a", encoding="utf-8") as fh:
