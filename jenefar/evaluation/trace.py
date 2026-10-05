@@ -176,6 +176,21 @@ class TraceStore:
         for item in records:
             status = str(item.get("status") or "unknown")
             statuses[status] = statuses.get(status, 0) + 1
+        durations_sorted = sorted(durations)
+        def percentile(percent: float) -> float:
+            if not durations_sorted:
+                return 0.0
+            index = min(
+                len(durations_sorted) - 1,
+                int(round((percent / 100) * (len(durations_sorted) - 1))),
+            )
+            return durations_sorted[index]
+        import os
+        slow_threshold = float(os.getenv("JENEFAR_SLOW_TRACE_MS", "10000"))
+        slow_trace_count = sum(
+            1 for item in records
+            if float(item.get("elapsed_ms") or 0) >= slow_threshold
+        )
         return {
             "traces": total,
             "success_rate": (passed / total) if total else 0.0,
@@ -184,6 +199,11 @@ class TraceStore:
             "average_elapsed_ms": (
                 sum(durations) / len(durations) if durations else 0.0
             ),
+            "p50_elapsed_ms": percentile(50),
+            "p95_elapsed_ms": percentile(95),
+            "max_elapsed_ms": max(durations) if durations else 0.0,
+            "slow_trace_count": slow_trace_count,
+            "slow_trace_threshold_ms": slow_threshold,
             "providers": sorted(
                 {
                     str(item.get("provider", ""))
