@@ -67,7 +67,8 @@ section{{margin-top:28px}}
 
 <section>
 <h2>Runtime health</h2>
-<p>Average latency: {summary["average_elapsed_ms"]:.0f} ms · Approval traces: {summary["approval_traces"]}</p>
+<p>Average latency: {summary["average_elapsed_ms"]:.0f} ms · P50: {summary["p50_elapsed_ms"]:.0f} ms · P95: {summary["p95_elapsed_ms"]:.0f} ms · Max: {summary["max_elapsed_ms"]:.0f} ms</p>
+<p>Slow traces: {summary["slow_trace_count"]} at ≥ {summary["slow_trace_threshold_ms"]:.0f} ms · Approval traces: {summary["approval_traces"]}</p>
 <p>Providers: {html.escape(", ".join(summary["providers"]) or "n/a")}</p>
 <p>Agents: {html.escape(", ".join(summary["agents"]) or "n/a")}</p>
 <p>Last trace: {html.escape(summary.get("last_status") or "n/a")} · Statuses: {html.escape(", ".join(f"{key}={value}" for key, value in summary.get("statuses", {}).items()) or "n/a")}</p>
