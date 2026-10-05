@@ -26,6 +26,7 @@ class LocalLLMClient:
         ).rstrip("/")
         self.model_role = (model_role or "fast").strip().lower()
         role_env = ModelRouter().local_model_env(self.model_role)
+        self.timeout_seconds = min(max(float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
         self.model = (
             os.getenv(role_env, "").strip()
             or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
@@ -125,7 +126,7 @@ class LocalLLMClient:
                 },
             )
             try:
-                with urllib.request.urlopen(request, timeout=120) as response:
+                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                     result = json.loads(response.read().decode("utf-8"))
             except (urllib.error.URLError, TimeoutError) as exc:
                 raise RuntimeError(f"Local LLM request failed: {exc}") from exc
