@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-health", action="store_true", help="show compact runtime health summary")
     parser.add_argument("--self-healing-policy", action="store_true", help="show bounded self-healing policy and safeguards")
     parser.add_argument("--provider-status", action="store_true", help="show configured online/local model provider routing without making an LLM request")
+    parser.add_argument("--performance-report", action="store_true", help="show provider latency routing and runtime latency health")
     parser.add_argument("--online-only", action="store_true", help="disable local LLM fallback for this process")
     parser.add_argument("--voice-auto", action="store_true", help="run voice mode using the configured online provider stack; falls back to OpenAI STT/TTS only when configured")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
@@ -368,6 +369,31 @@ def main() -> int:
     if args.setup_vision:
         return setup_vision()
 
+    if args.performance_report:
+        import os
+        from jenefar.core.provider_pool import ProviderPool
+        from jenefar.evaluation.trace import TraceStore
+        pool = ProviderPool()
+        summary = TraceStore().summary(1000)
+        provider_timeout = min(max(float(os.getenv("JENEFAR_PROVIDER_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
+        local_timeout = min(max(float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
+        print({
+            "adaptive_routing": os.getenv("JENEFAR_ADAPTIVE_ROUTING", "1"),
+            "provider_order": pool.order_for_role("fast"),
+            "provider_latency": pool.latency_status(),
+            "provider_timeout_seconds": provider_timeout,
+            "local_llm_timeout_seconds": local_timeout,
+            "runtime_latency": {
+                "average_ms": summary["average_elapsed_ms"],
+                "p50_ms": summary["p50_elapsed_ms"],
+                "p95_ms": summary["p95_elapsed_ms"],
+                "max_ms": summary["max_elapsed_ms"],
+                "slow_trace_count": summary["slow_trace_count"],
+                "slow_trace_threshold_ms": summary["slow_trace_threshold_ms"],
+            },
+        })
+        return 0
+
     if args.provider_status:
         import os
         from jenefar.core.llm import LLMClient
@@ -390,7 +416,7 @@ def main() -> int:
     if not args.text and not any(
         getattr(args, name)
         for name in (
-            "doctor", "setup_vision", "provider_status", "online_only", "voice", "voice_continuous",
+            "doctor", "setup_vision", "provider_status", "performance_report", "online_only", "voice", "voice_continuous",
             "voice_auto", "avatar", "realtime", "desktop", "discover_tools",
             "index_file", "index_dir", "index_document", "index_url", "index_github",
             "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
