@@ -150,6 +150,7 @@ class BaseLLMAgent(BaseAgent):
             allow_action_tools=self.allow_action_tools,
             max_tool_rounds=self.max_tool_rounds,
             model_role=role,
+            deadline=context.metadata.get("deadline_monotonic"),
         )
         return AgentResult(
             agent=self.name,
