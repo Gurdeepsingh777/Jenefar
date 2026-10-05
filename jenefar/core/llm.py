@@ -56,7 +56,7 @@ class LLMClient:
         from openai import OpenAI
 
         timeout = min(max(float(os.getenv("JENEFAR_PROVIDER_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
-        kwargs = {"api_key": self.providers.api_key(provider), "timeout": timeout}
+        kwargs = {"api_key": self.providers.api_key(provider), "timeout": timeout, "max_retries": 0}
         if config.base_url:
             kwargs["base_url"] = config.base_url
         self._clients[provider] = OpenAI(**kwargs)
@@ -121,6 +121,15 @@ class LLMClient:
             model_role=model_role,
         )
 
+    @staticmethod
+    def _remaining_timeout(deadline: float | None) -> float | None:
+        if deadline is None:
+            return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Jenefar execution budget exhausted")
+        return max(0.5, remaining)
+
     def _complete_openai_responses(
         self,
         provider: str,
@@ -133,6 +142,7 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         tools: list[dict[str, Any]] = []
@@ -153,6 +163,9 @@ class LLMClient:
             }
             if tools:
                 kwargs["tools"] = tools
+            timeout = self._remaining_timeout(deadline)
+            if timeout is not None:
+                kwargs["timeout"] = timeout
             response = client.responses.create(**kwargs)
             last_response = response
             calls = [
@@ -263,6 +276,9 @@ class LLMClient:
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
+            timeout = self._remaining_timeout(deadline)
+            if timeout is not None:
+                kwargs["timeout"] = timeout
             response = client.chat.completions.create(**kwargs)
             choice = response.choices[0]
             message = choice.message
@@ -368,6 +384,7 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
     ) -> LLMResponse:
         if provider == "openai":
             return self._complete_openai_responses(
@@ -376,11 +393,13 @@ class LLMClient:
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds, model=model,
                 model_role=model_role,
+                deadline=deadline,
             )
         return self._complete_chat(
             provider, prompt, instructions=instructions,
             tool_broker=tool_broker, allow_action_tools=allow_action_tools,
             max_tool_rounds=max_tool_rounds, model=model, model_role=model_role,
+            deadline=deadline,
         )
 
     def _complete_local(
@@ -424,9 +443,12 @@ class LLMClient:
         allow_action_tools: bool = False,
         max_tool_rounds: int = 4,
         model_role: str | None = None,
+        deadline: float | None = None,
     ) -> LLMResponse:
         online = internet_available()
         _, selected_role = self.selected_model(model_role)
+        if deadline is not None and deadline <= time.monotonic():
+            raise TimeoutError("Jenefar execution budget exhausted")
         failures: list[str] = []
 
         if online:
@@ -441,7 +463,7 @@ class LLMClient:
                         use_web_search=use_web_search, tool_broker=tool_broker,
                         allow_action_tools=allow_action_tools,
                         max_tool_rounds=max_tool_rounds, model=model,
-                        model_role=selected_role,
+                        model_role=selected_role, deadline=deadline,
                     )
                     self.providers.record_latency(provider, time.perf_counter() - started, success=True)
                     self.providers.reset(provider)
@@ -485,6 +507,7 @@ class LLMClient:
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds,
                 model_role=selected_role,
+                deadline=deadline,
             )
         except Exception as exc:
             return LLMResponse(
