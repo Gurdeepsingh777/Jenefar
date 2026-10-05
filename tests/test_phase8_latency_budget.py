@@ -38,7 +38,8 @@ def test_llm_agent_propagates_deadline():
     captured = {}
 
     class FakeLLM:
-        def complete(self, **kwargs):
+        def complete(self, prompt, **kwargs):
+            captured["prompt"] = prompt
             captured.update(kwargs)
             return LLMResponse("ok", provider="test")
 
