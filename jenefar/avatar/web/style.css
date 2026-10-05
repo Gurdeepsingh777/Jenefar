@@ -1786,3 +1786,79 @@ html,body,#stage{
 .system-card:hover .ring-meter {
   filter: brightness(1.12);
 }
+
+
+/* =========================================================
+   PHASE 4 — TELEMETRY HUD
+   ========================================================= */
+
+.telemetry-details{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:7px;
+  margin-top:9px;
+}
+
+.telemetry-details > div{
+  min-width:0;
+  padding:7px 8px;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:9px;
+  background:rgba(255,255,255,.025);
+}
+
+.telemetry-details span{
+  display:block;
+  color:#68738f;
+  font-size:7px;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+}
+
+.telemetry-details b{
+  display:block;
+  margin-top:3px;
+  overflow:hidden;
+  color:#dbe7ff;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.03em;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+#system-telemetry-state[data-state="online"]{
+  color:#7ef7d1;
+  text-shadow:0 0 14px rgba(126,247,209,.22);
+}
+
+#system-telemetry-state[data-state="stale"]{
+  color:#ffd27a;
+}
+
+#system-telemetry-state[data-state="offline"]{
+  color:#ff91a8;
+}
+
+.system-telemetry{
+  min-height:18px;
+}
+
+@media (max-width:900px){
+  .telemetry-details{
+    grid-template-columns:1fr 1fr;
+  }
+}
+
+@media (max-width:600px){
+  .telemetry-details{
+    grid-template-columns:1fr;
+  }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .telemetry-details,
+  .system-telemetry{
+    transition:none !important;
+  }
+}

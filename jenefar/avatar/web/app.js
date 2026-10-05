@@ -975,8 +975,13 @@ const ramValue = document.getElementById("ram-value");
 const gpuValue = document.getElementById("gpu-value");
 const telemetryState = document.getElementById("system-telemetry-state");
 const gpuDetail = document.getElementById("gpu-detail");
+const ramDetail = document.getElementById("ram-detail");
+const gpuLoadDetail = document.getElementById("gpu-load-detail");
+const telemetryUpdated = document.getElementById("telemetry-updated");
 
 let monitoringSocket = null;
+let telemetryLastUpdate = 0;
+let telemetryFreshnessTimer = null;
 let monitoringRetryTimer = null;
 let monitoringRetryDelay = 1000;
 
@@ -996,8 +1001,21 @@ function updateSystemTelemetry(data) {
 
   setTelemetryRing(cpuValue, data.cpu);
 
+  telemetryLastUpdate = Date.now();
+
   if (data.ram) {
     setTelemetryRing(ramValue, data.ram.percent);
+
+    if (ramDetail) {
+      const used = Number(data.ram.used_gb);
+      const total = Number(data.ram.total_gb);
+
+      if (Number.isFinite(used) && Number.isFinite(total)) {
+        ramDetail.textContent = `${used.toFixed(1)} / ${total.toFixed(1)} GB`;
+      } else {
+        ramDetail.textContent = `${Number(data.ram.percent || 0).toFixed(0)}%`;
+      }
+    }
   }
 
   if (data.gpu) {
@@ -1005,6 +1023,7 @@ function updateSystemTelemetry(data) {
 
     const vendor = data.gpu.vendor || "GPU";
     const name = data.gpu.name || "Unknown";
+    const usage = Number(data.gpu.usage);
 
     let detail = `${vendor} • ${name}`;
 
@@ -1016,6 +1035,17 @@ function updateSystemTelemetry(data) {
       gpuDetail.textContent = detail;
       gpuDetail.title = detail;
     }
+
+    if (gpuLoadDetail) {
+      gpuLoadDetail.textContent = Number.isFinite(usage)
+        ? `${usage.toFixed(1)}%`
+        : "—";
+    }
+  }
+
+  if (telemetryUpdated) {
+    telemetryUpdated.textContent = new Date(telemetryLastUpdate)
+      .toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
   }
 
   if (telemetryState) {
@@ -1032,6 +1062,10 @@ function setTelemetryOffline() {
   if (telemetryState) {
     telemetryState.textContent = "MONITOR OFFLINE";
     telemetryState.dataset.state = "offline";
+  }
+
+  if (telemetryUpdated) {
+    telemetryUpdated.textContent = "—";
   }
 }
 
@@ -1108,6 +1142,22 @@ function connectSystemMonitoring() {
 }
 
 connectSystemMonitoring();
+
+function updateTelemetryFreshness() {
+  if (!telemetryState || !telemetryLastUpdate) return;
+
+  const age = Date.now() - telemetryLastUpdate;
+
+  if (age > 5000 && age <= 15000) {
+    telemetryState.textContent = "STALE • TELEMETRY DELAYED";
+    telemetryState.dataset.state = "stale";
+  } else if (age > 15000) {
+    telemetryState.textContent = "MONITOR OFFLINE";
+    telemetryState.dataset.state = "offline";
+  }
+}
+
+telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
 
 /* Enhanced live telemetry meter rendering */
 (function enhanceTelemetryMeters() {

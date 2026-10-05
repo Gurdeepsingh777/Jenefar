@@ -1,56 +1,69 @@
 name: Monitoring Validation
 
-
 on:
-
   push:
+    branches:
+      - main
+      - "phase*"
     paths:
       - "jenefar/monitoring/**"
-
-
+      - "jenefar/monitoring/**/*.py"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/monitoring-check.yml"
+  pull_request:
+    branches:
+      - main
+      - "phase*"
+    paths:
+      - "jenefar/monitoring/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/monitoring-check.yml"
 
 jobs:
-
   monitor-test:
-
     runs-on: ubuntu-latest
 
-
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
+      - name: Compile monitoring package
+        run: |
+          python -m compileall jenefar/monitoring
 
-      with:
-        python-version: "3.12"
+      - name: Test monitoring
+        run: |
+          pytest -q tests/test_monitoring.py tests/test_monitoring_server.py tests/test_gpu_sampler.py
 
+      - name: Live system monitor smoke test
+        run: |
+          python - <<'PY'
+          from jenefar.monitoring.system_monitor import get_system_stats
 
-    - name: Install monitoring dependencies
-      run: |
-        pip install psutil pynvml GPUtil
+          data = get_system_stats()
 
+          print(data)
 
-    - name: Test system monitor
-      run: |
+          assert "timestamp" in data
+          assert "cpu" in data
+          assert "ram" in data
+          assert "gpu" in data
+          assert isinstance(data["cpu"], (int, float))
+          assert isinstance(data["ram"], dict)
+          assert isinstance(data["gpu"], dict)
 
-        python - <<'PY'
-
-        from jenefar.monitoring.system_monitor import get_system_stats
-
-        data=get_system_stats()
-
-        print(data)
-
-        assert "cpu" in data
-        assert "ram" in data
-        assert "gpu" in data
-
-        print("Monitoring OK")
-
-        PY
-
-
-
+          print("Monitoring smoke test: OK")
+          PY

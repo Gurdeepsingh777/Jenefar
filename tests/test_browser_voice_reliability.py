@@ -1,7 +1,9 @@
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
+from types import SimpleNamespace
 
 from jenefar.voice.browser import BrowserVoiceBridge
 
