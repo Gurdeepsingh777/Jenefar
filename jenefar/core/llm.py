@@ -206,6 +206,7 @@ class LLMClient:
                         model,
                         model_role,
                     )
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(tool_name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -259,6 +260,7 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         messages: list[dict[str, Any]] = [
@@ -336,6 +338,7 @@ class LLMClient:
                         model,
                         model_role,
                     )
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -411,6 +414,7 @@ class LLMClient:
         allow_action_tools: bool,
         max_tool_rounds: int,
         model_role: str,
+        deadline: float | None = None,
     ) -> LLMResponse:
         tools = (
             tool_broker.schemas(
