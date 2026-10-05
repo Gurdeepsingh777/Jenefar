@@ -377,12 +377,14 @@ def main() -> int:
         summary = TraceStore().summary(1000)
         provider_timeout = min(max(float(os.getenv("JENEFAR_PROVIDER_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
         local_timeout = min(max(float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "45")), 5.0), 300.0)
+        from jenefar.core.orchestrator import JenefarOrchestrator
         print({
             "adaptive_routing": os.getenv("JENEFAR_ADAPTIVE_ROUTING", "1"),
             "provider_order": pool.order_for_role("fast"),
             "provider_latency": pool.latency_status(),
             "provider_timeout_seconds": provider_timeout,
             "local_llm_timeout_seconds": local_timeout,
+            "agent_timeout_seconds": JenefarOrchestrator._execution_budget_seconds("fast", "fast"),
             "runtime_latency": {
                 "average_ms": summary["average_elapsed_ms"],
                 "p50_ms": summary["p50_elapsed_ms"],
