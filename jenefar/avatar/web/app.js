@@ -1192,3 +1192,77 @@ telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
 
   window.jenefarSetTelemetryMeters = setMeter;
 })();
+
+/* PHASE 9 — LIVE RUNTIME INTELLIGENCE */
+(function setupRuntimeIntelligence(){
+  const task=document.getElementById("runtime-task");
+  const state=document.getElementById("runtime-state");
+  const agent=document.getElementById("runtime-agent");
+  const provider=document.getElementById("runtime-provider");
+  const elapsed=document.getElementById("runtime-elapsed");
+  const deadline=document.getElementById("runtime-deadline");
+  const health=document.getElementById("runtime-health");
+  const event=document.getElementById("runtime-event");
+  const fill=document.getElementById("runtime-budget-fill");
+  if(!task||!state) return;
+
+  const stateLabel={
+    idle:"IDLE",thinking:"WORKING",result:"RESULT",
+    speaking:"RESPONDING",waiting_approval:"APPROVAL",
+    error:"ERROR",completed:"DONE"
+  };
+
+  function fmtSeconds(value){
+    const n=Number(value);
+    if(!Number.isFinite(n)) return "—";
+    return n<10 ? n.toFixed(1)+"s" : Math.round(n)+"s";
+  }
+
+  function render(snapshot){
+    const current=snapshot?.current||{};
+    const status=String(current.state||"idle");
+    task.textContent=current.task ? String(current.task).replace(/\s+/g," ").slice(0,72) : "SYSTEM READY";
+    state.textContent=stateLabel[status]||status.toUpperCase();
+    state.dataset.state=status;
+    agent.textContent=current.agent||"—";
+    provider.textContent=current.provider||"—";
+    elapsed.textContent=current.elapsed_ms!=null ? fmtSeconds(Number(current.elapsed_ms)/1000) : "—";
+    deadline.textContent=current.remaining_seconds!=null ? fmtSeconds(current.remaining_seconds) : "—";
+    event.textContent=current.last_event||"Waiting for activity";
+
+    const budget=Number(current.budget_seconds);
+    const remaining=Number(current.remaining_seconds);
+    const ratio=Number.isFinite(budget)&&budget>0&&Number.isFinite(remaining)
+      ? Math.max(0,Math.min(1,remaining/budget)) : 0;
+    fill.style.width=(ratio*100)+"%";
+    fill.dataset.urgent=String(Number.isFinite(remaining)&&remaining<10);
+
+    const h=snapshot?.health||{};
+    const calls=Number(h.calls||0), failures=Number(h.failures||0);
+    health.textContent="HEALTH "+(calls ? (Number(h.success_rate||0)*100).toFixed(0)+"%" : "READY")
+      +" • "+failures+" FAIL • "+Number(h.retries||0)+" RETRY";
+    health.dataset.state=h.circuit_open?"degraded":(failures?"warning":"healthy");
+  }
+
+  async function poll(){
+    try{
+      const response=await fetch("/runtime/status?ts="+Date.now(),{cache:"no-store"});
+      if(!response.ok) throw new Error("runtime status "+response.status);
+      render(await response.json());
+    }catch(_){
+      health.textContent="HEALTH OFFLINE";
+      health.dataset.state="degraded";
+    }
+  }
+
+  poll();
+  setInterval(poll,1000);
+
+  window.addEventListener("jenefar-avatar-event",event=>{
+    const item=event.detail||{};
+    if(item.state){
+      state.textContent=stateLabel[item.state]||String(item.state).toUpperCase();
+      state.dataset.state=item.state;
+    }
+  });
+})();
