@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+import time
 
 from jenefar.core.model_router import ModelRouter
 
@@ -92,6 +93,7 @@ class LocalLLMClient:
         tool_broker=None,
         max_tool_rounds: int = 4,
         model_role: str | None = None,
+        deadline: float | None = None,
     ) -> tuple[str, list[dict[str, str]]]:
         info = self.detect(model_role=model_role)
         if info is None:
@@ -106,6 +108,12 @@ class LocalLLMClient:
         local_tools = self._convert_tools(tools)
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Jenefar execution budget exhausted")
+            else:
+                remaining = None
             payload: dict[str, Any] = {
                 "model": info.model,
                 "messages": messages,
@@ -126,7 +134,8 @@ class LocalLLMClient:
                 },
             )
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                request_timeout = self.timeout_seconds if remaining is None else min(self.timeout_seconds, max(0.5, remaining))
+                with urllib.request.urlopen(request, timeout=request_timeout) as response:
                     result = json.loads(response.read().decode("utf-8"))
             except (urllib.error.URLError, TimeoutError) as exc:
                 raise RuntimeError(f"Local LLM request failed: {exc}") from exc
