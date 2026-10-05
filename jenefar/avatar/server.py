@@ -25,6 +25,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     tool_broker = None
     voice_handler = None
     runtime_status = None
+    cancel_active_task = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -170,6 +171,15 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 self._json(200, result if isinstance(result, dict) else {"result": result})
                 return
 
+            if path == "/runtime/cancel":
+                handler = self.cancel_active_task
+                if handler is None:
+                    self._json(503, {"error": "runtime cancellation unavailable"})
+                    return
+                reason = str(body.get("reason") or "cancelled from dashboard")
+                result = handler(reason)
+                self._json(200, result)
+                return
             if path == "/settings":
                 settings = UISettings(Path("data/ui_settings.json"))
                 self._json(200, {"settings": settings.update(body)})
@@ -226,6 +236,7 @@ class AvatarServer:
         tool_broker=None,
         voice_handler=None,
         runtime_status=None,
+        cancel_active_task=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -234,6 +245,7 @@ class AvatarServer:
         self.tool_broker = tool_broker
         self.voice_handler = voice_handler
         self.runtime_status = runtime_status
+        self.cancel_active_task = cancel_active_task
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -248,6 +260,7 @@ class AvatarServer:
         tool_broker = self.tool_broker
         voice_handler = self.voice_handler
         runtime_status = self.runtime_status
+        cancel_active_task = self.cancel_active_task
 
         class Handler(_AvatarHandler):
             pass
@@ -259,6 +272,7 @@ class AvatarServer:
         # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
         Handler.runtime_status = staticmethod(runtime_status) if runtime_status is not None else None
+        Handler.cancel_active_task = staticmethod(cancel_active_task) if cancel_active_task is not None else None
         return Handler
 
     def _create_server(self) -> None:
