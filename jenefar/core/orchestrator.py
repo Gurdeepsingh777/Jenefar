@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+import os
+import time
 import json
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
@@ -79,6 +81,19 @@ class JenefarOrchestrator:
         self.wakeword = WakeWord(self.config.wake_phrases)
         self.pending_approval_workflows: dict[str, dict] = {}
         self.offline_notice_open = False
+
+    @staticmethod
+    def _execution_budget_seconds(model_role: str, agent: str) -> float:
+        role = str(model_role or "fast").strip().lower()
+        agent_name = str(agent or "agent").strip().lower().replace("-", "_")
+        agent_key = f"JENEFAR_AGENT_TIMEOUT_{agent_name.upper()}"
+        role_key = f"JENEFAR_AGENT_TIMEOUT_{role.upper()}"
+        raw = os.getenv(agent_key, os.getenv(role_key, os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "60")))
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 60.0
+        return min(max(value, 10.0), 300.0)
 
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
@@ -244,6 +259,8 @@ class JenefarOrchestrator:
                     "live GitHub retrieval",
                 ] if not connected else [],
             }
+            budget_seconds = self._execution_budget_seconds(trace.model_role, plan.agent)
+            deadline = time.monotonic() + budget_seconds
             dispatch_metadata = {
                 "session_id": self.session.session_id,
                 "trace_id": trace.trace_id,
@@ -257,6 +274,8 @@ class JenefarOrchestrator:
                 "source": source,
                 "event_id": event_id,
                 "runtime": runtime,
+                "execution_budget_seconds": budget_seconds,
+                "deadline_monotonic": deadline,
                 "capabilities": self.capabilities.list(),
                 "skills": [item for item in self.skills.list() if item.get("enabled")],
                 "history": self.session.recent(24),
