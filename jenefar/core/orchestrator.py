@@ -27,6 +27,7 @@ from jenefar.events.engine import EventEngine
 from jenefar.evaluation.loop import EvaluationLoop
 from jenefar.evaluation.trace import ExecutionTrace, TraceStore
 from jenefar.core.self_healing import SelfHealingRuntime
+from jenefar.core.cancellation import CancellationToken
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -84,6 +85,7 @@ class JenefarOrchestrator:
         self.pending_approval_workflows: dict[str, dict] = {}
         self.offline_notice_open = False
         self.runtime_context: dict[str, Any] = {"state": "idle"}
+        self._active_cancel_token: CancellationToken | None = None
 
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
@@ -98,6 +100,13 @@ class JenefarOrchestrator:
             value = 60.0
         return min(max(value, 10.0), 300.0)
 
+    def cancel_active_task(self, reason: str = "cancelled by user") -> dict[str, Any]:
+        token = self._active_cancel_token
+        if token is None or token.cancelled:
+            return {"cancelled": False, "active": False, "reason": "no active task"}
+        changed = token.cancel(reason)
+        self.runtime_context.update({"state": "cancelling", "last_event": token.reason})
+        return {"cancelled": changed, "active": True, "reason": token.reason}
     def runtime_status(self) -> dict[str, Any]:
         """Return a live, credential-safe runtime snapshot for the UI."""
         from jenefar.core.provider_pool import ProviderPool
@@ -274,6 +283,7 @@ class JenefarOrchestrator:
             }
             budget_seconds = self._execution_budget_seconds(trace.model_role, plan.agent)
             deadline = time.monotonic() + budget_seconds
+            self._active_cancel_token = CancellationToken()
             self.runtime_context = {
                 "state": "thinking",
                 "task_id": trace.trace_id[:12],
@@ -285,6 +295,7 @@ class JenefarOrchestrator:
                 "budget_seconds": budget_seconds,
                 "deadline_monotonic": deadline,
                 "last_event": "dispatch_started",
+                "cancel_token": self._active_cancel_token,
             }
 
             dispatch_metadata = {
@@ -301,6 +312,7 @@ class JenefarOrchestrator:
                 "event_id": event_id,
                 "runtime": runtime,
                 "execution_budget_seconds": budget_seconds,
+                "cancel_token": self._active_cancel_token,
                 "deadline_monotonic": deadline,
                 "capabilities": self.capabilities.list(),
                 "skills": [item for item in self.skills.list() if item.get("enabled")],
@@ -392,15 +404,20 @@ class JenefarOrchestrator:
                 self.runtime_context.update({"state": "speaking", "last_event": "response_ready"})
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+            self._active_cancel_token = None
             return output
         except Exception as exc:
-            self.runtime_context.update({"state": "error", "last_event": f"{type(exc).__name__}: {exc}"})
+            cancelled = bool(self._active_cancel_token and self._active_cancel_token.cancelled)
+            self.runtime_context.update({"state": "cancelled" if cancelled else "error", "last_event": str(exc)})
             trace.add_error(f"{type(exc).__name__}: {exc}")
-            trace.finish(status="error", provider="error", verification={"passed": False})
+            trace.finish(status="cancelled" if cancelled else "error", provider="cancelled" if cancelled else "error", verification={"passed": False})
             self.trace_store.append(trace)
             self.evaluator.evaluate(text, str(exc), provider="error", trace=trace.as_dict())
             self.state = JenefarState.SLEEPING
-            self._avatar_state("error", str(exc))
+            self._avatar_state("cancelled" if cancelled else "error", str(exc))
+            self._active_cancel_token = None
+            if cancelled:
+                return "Task cancel kar diya gaya hai."
             return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
 
     @staticmethod
@@ -606,6 +623,8 @@ class JenefarOrchestrator:
             ).prompt_text(),
             "remaining": {str(item["pending_id"]) for item in pending_tools},
             "results": [],
+            "deadline_monotonic": self.runtime_context.get("deadline_monotonic"),
+            "cancel_token": self._active_cancel_token,
         }
         for item in pending_tools:
             self.pending_approval_workflows[str(item["pending_id"])] = workflow
@@ -644,6 +663,8 @@ class JenefarOrchestrator:
         continue_kwargs = {
             "continue_tools": bool(getattr(agent, "use_tools", False)),
             "task_plan_text": str(workflow.get("task_plan_text") or ""),
+            "deadline": workflow.get("deadline_monotonic"),
+            "cancel_token": workflow.get("cancel_token"),
         }
         if workflow.get("response_language"):
             continue_kwargs["response_language"] = workflow["response_language"]
