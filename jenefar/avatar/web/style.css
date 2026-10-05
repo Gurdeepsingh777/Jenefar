@@ -1904,3 +1904,10 @@ html,body,#stage{
   .runtime-intel{height:98px!important}
   .runtime-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* PHASE 10 — COOPERATIVE STOP CONTROL */
+.runtime-actions{display:flex;align-items:center;gap:7px}
+#runtime-cancel{padding:4px 7px;border:1px solid rgba(255,107,127,.28);border-radius:999px;background:rgba(255,107,127,.06);color:#ff91a2;font:inherit;font-size:6px;letter-spacing:.12em;cursor:pointer}
+#runtime-cancel:disabled{opacity:.3;cursor:not-allowed}
+#runtime-cancel:not(:disabled):hover{background:rgba(255,107,127,.14)}
+#runtime-state[data-state="cancelling"]{color:#ff91a2;border-color:rgba(255,107,127,.3)}
