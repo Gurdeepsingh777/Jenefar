@@ -458,6 +458,7 @@ def main() -> int:
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
             runtime_status=orchestrator.runtime_status,
+            cancel_active_task=orchestrator.cancel_active_task,
         )
         avatar_server.start()
 
