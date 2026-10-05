@@ -129,3 +129,18 @@ def test_evaluation_record_redacts_sensitive_task(tmp_path):
     raw = (tmp_path / "eval.jsonl").read_text(encoding="utf-8")
     assert "sk-test_12345678901234567890" not in raw
     assert "[REDACTED" in raw or "[REDACTED]" in raw
+
+
+def test_evaluation_dashboard_exposes_failure_health(tmp_path):
+    from jenefar.evaluation.dashboard import render_dashboard
+
+    trace_path = tmp_path / "traces.jsonl"
+    trace_store = TraceStore(trace_path)
+    trace = ExecutionTrace(session_id="s", task="x", actual_agent="python")
+    trace.finish(status="error", provider="local", verification={"passed": False})
+    trace_store.append(trace)
+
+    html = render_dashboard(tmp_path / "eval.jsonl", trace_path)
+    assert "Trace failure" in html
+    assert "Last trace:" in html
+    assert "error=1" in html
