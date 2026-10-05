@@ -24,6 +24,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     vrm_path: Path | None
     tool_broker = None
     voice_handler = None
+    runtime_status = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -139,6 +140,11 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     return
                 self._send(200, "image/jpeg", frame)
                 return
+            if path == "/runtime/status":
+                provider = self.runtime_status
+                payload = provider() if callable(provider) else {"error": "runtime status unavailable"}
+                self._json(200, payload if isinstance(payload, dict) else {"runtime": payload})
+                return
             if path == "/evaluation":
                 html = render_dashboard(Path("data/evaluation.jsonl"))
                 self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
@@ -219,6 +225,7 @@ class AvatarServer:
         vrm_path: Path | None = None,
         tool_broker=None,
         voice_handler=None,
+        runtime_status=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -226,6 +233,7 @@ class AvatarServer:
         self.vrm_path = Path(vrm_path).expanduser().resolve() if vrm_path else None
         self.tool_broker = tool_broker
         self.voice_handler = voice_handler
+        self.runtime_status = runtime_status
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -239,6 +247,7 @@ class AvatarServer:
         vrm_path = self.vrm_path
         tool_broker = self.tool_broker
         voice_handler = self.voice_handler
+        runtime_status = self.runtime_status
 
         class Handler(_AvatarHandler):
             pass
@@ -249,6 +258,7 @@ class AvatarServer:
         # Functions stored on a handler class become bound methods. Keep the
         # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
+        Handler.runtime_status = staticmethod(runtime_status) if runtime_status is not None else None
         return Handler
 
     def _create_server(self) -> None:
