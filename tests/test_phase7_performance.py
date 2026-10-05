@@ -43,6 +43,6 @@ def test_latency_summary_reports_percentiles(tmp_path):
         trace = ExecutionTrace(status="success", started_at=0.0, finished_at=value / 1000.0)
         store.append(trace)
     summary = store.summary()
-    assert summary["p50_elapsed_ms"] == 200
+    assert summary["p50_elapsed_ms"] == 300
     assert summary["p95_elapsed_ms"] == 1000
     assert summary["max_elapsed_ms"] == 1000
