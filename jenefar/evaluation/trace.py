@@ -27,7 +27,7 @@ def redact_sensitive(value: Any) -> Any:
     if isinstance(value, str):
         result = value
         for pattern, replacement in _SENSITIVE_PATTERNS:
-            result = pattern.sub(replacement, result)
+            result = pattern.sub(lambda match: replacement, result)
         if len(result) > _MAX_STRING_LENGTH:
             result = result[:_MAX_STRING_LENGTH] + "…[TRUNCATED]"
         return result
