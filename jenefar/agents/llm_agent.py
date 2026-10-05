@@ -5,6 +5,7 @@ import os
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
 from jenefar.core.llm import LLMClient
 from jenefar.core.model_router import ModelRouter
+from jenefar.core.cancellation import CancellationToken
 
 
 class BaseLLMAgent(BaseAgent):
@@ -151,6 +152,7 @@ class BaseLLMAgent(BaseAgent):
             max_tool_rounds=self.max_tool_rounds,
             model_role=role,
             deadline=context.metadata.get("deadline_monotonic"),
+            cancel_token=context.metadata.get("cancel_token"),
         )
         return AgentResult(
             agent=self.name,
@@ -172,6 +174,8 @@ class BaseLLMAgent(BaseAgent):
         *,
         continue_tools: bool = False,
         task_plan_text: str = "",
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> AgentResult:
         result_text = "\n\n".join(
             f"Tool: {item.get('tool', 'unknown')}\nResult: {item.get('result', '')}"
@@ -206,6 +210,8 @@ class BaseLLMAgent(BaseAgent):
             allow_action_tools=self.allow_action_tools if continue_tools else False,
             max_tool_rounds=self.max_tool_rounds,
             model_role=self.model_role,
+            deadline=deadline,
+            cancel_token=cancel_token,
         )
         return AgentResult(
             agent=self.name,
