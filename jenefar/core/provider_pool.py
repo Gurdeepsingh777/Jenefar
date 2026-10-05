@@ -74,7 +74,7 @@ class ProviderPool:
         warmup = max(1, int(os.getenv("JENEFAR_ROUTING_WARMUP_SAMPLES", "2")))
         known = {
             name: samples for name, samples in self.latency_samples.items()
-            if len(samples) >= warmup and self.available(name)
+            if name in names and len(samples) >= warmup
         }
         if not known:
             return names
