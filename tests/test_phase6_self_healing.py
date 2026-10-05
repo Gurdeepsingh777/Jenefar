@@ -63,3 +63,27 @@ def test_circuit_opens_after_repeated_failures():
 
     with pytest.raises(RuntimeError, match="runtime circuit open"):
         runtime.run("research_fetch", lambda: "should not execute")
+
+
+def test_health_snapshot_redacts_errors_and_exposes_circuit_state():
+    runtime = SelfHealingRuntime(
+        policy=RetryPolicy(max_attempts=1, base_delay_seconds=0, max_delay_seconds=0),
+        circuit_threshold=1,
+        circuit_cooldown_seconds=60,
+    )
+
+    with pytest.raises(ConnectionError):
+        runtime.run(
+            "research_fetch",
+            lambda: (_ for _ in ()).throw(ConnectionError("token=sk-secret-value")),
+        )
+
+    snapshot = runtime.health_snapshot()
+    assert snapshot["failures"] == 1
+    assert snapshot["circuit_open"] is True
+    assert "sk-secret-value" not in str(snapshot)
+    assert "[REDACTED" in snapshot["last_error"]
+
+    runtime.reset_circuit()
+    assert runtime.health.circuit_open is False
+    assert runtime.health.failures == 1
