@@ -28,6 +28,7 @@ from jenefar.evaluation.loop import EvaluationLoop
 from jenefar.evaluation.trace import ExecutionTrace, TraceStore
 from jenefar.core.self_healing import SelfHealingRuntime
 from jenefar.core.cancellation import CancellationToken
+from jenefar.core.task_lifecycle import TaskLifecycle
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -86,6 +87,7 @@ class JenefarOrchestrator:
         self.offline_notice_open = False
         self.runtime_context: dict[str, Any] = {"state": "idle"}
         self._active_cancel_token: CancellationToken | None = None
+        self.task_lifecycle = TaskLifecycle()
 
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
@@ -102,20 +104,24 @@ class JenefarOrchestrator:
 
     def cancel_active_task(self, reason: str = "cancelled by user") -> dict[str, Any]:
         token = self._active_cancel_token
-        if token is None or token.cancelled:
+        active = self.task_lifecycle.active()
+        if token is None or token.cancelled or active is None:
             return {"cancelled": False, "active": False, "reason": "no active task"}
         changed = token.cancel(reason)
+        self.task_lifecycle.transition(active["task_id"], "cancelling", reason=token.reason)
         self.runtime_context.update({"state": "cancelling", "last_event": token.reason})
-        return {"cancelled": changed, "active": True, "reason": token.reason}
+        return {"cancelled": changed, "active": True, "task_id": active["task_id"], "reason": token.reason}
     def runtime_status(self) -> dict[str, Any]:
         """Return a live, credential-safe runtime snapshot for the UI."""
         from jenefar.core.provider_pool import ProviderPool
-        return build_runtime_snapshot(
+        snapshot = build_runtime_snapshot(
             runtime_context=self.runtime_context,
             self_healing=self.self_healing,
             trace_store=self.trace_store,
             provider_pool=ProviderPool(),
         )
+        snapshot["tasks"] = self.task_lifecycle.snapshot()
+        return snapshot
 
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
@@ -202,6 +208,9 @@ class JenefarOrchestrator:
             source=source,
             event_id=event_id,
         )
+        if self.task_lifecycle.admit(trace.trace_id, text) is None:
+            return "Jenefar abhi ek task execute kar rahi hai. Pehle current task complete ya cancel hone dein."
+        self.task_lifecycle.transition(trace.trace_id, "running")
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "")
         self.session.add("user", text)
@@ -351,6 +360,11 @@ class JenefarOrchestrator:
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
             trace.actual_agent = result.agent
+            self.task_lifecycle.transition(
+                trace.trace_id,
+                "running",
+                provider=str(result.metadata.get("provider", "")),
+            )
             self.runtime_context.update({
                 "state": "result",
                 "agent": result.agent,
@@ -396,21 +410,30 @@ class JenefarOrchestrator:
             )
             self.trace_store.append(trace)
             if awaiting:
+                self.task_lifecycle.transition(trace.trace_id, "waiting_approval", reason="approval_required", provider=trace.provider)
                 self.runtime_context.update({"state": "waiting_approval", "last_event": "approval_required"})
                 self._register_pending_workflow(text, result, response_language=response_language)
                 self.state = JenefarState.WAITING_APPROVAL
                 self._avatar_state("waiting_approval", output)
             else:
+                self.task_lifecycle.transition(trace.trace_id, "completed", provider=trace.provider)
                 self.runtime_context.update({"state": "speaking", "last_event": "response_ready"})
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
-            self._active_cancel_token = None
+            if not awaiting:
+                self._active_cancel_token = None
             return output
         except Exception as exc:
             cancelled = bool(self._active_cancel_token and self._active_cancel_token.cancelled)
             self.runtime_context.update({"state": "cancelled" if cancelled else "error", "last_event": str(exc)})
             trace.add_error(f"{type(exc).__name__}: {exc}")
             trace.finish(status="cancelled" if cancelled else "error", provider="cancelled" if cancelled else "error", verification={"passed": False})
+            self.task_lifecycle.transition(
+                trace.trace_id,
+                "cancelled" if cancelled else "failed",
+                reason=str(exc),
+                provider="cancelled" if cancelled else "error",
+            )
             self.trace_store.append(trace)
             self.evaluator.evaluate(text, str(exc), provider="error", trace=trace.as_dict())
             self.state = JenefarState.SLEEPING
