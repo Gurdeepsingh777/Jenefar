@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from jenefar.execution.audit import AuditLogger
+from jenefar.security.policy import validate_url
 from jenefar.execution.scope import ScopePolicy
 from jenefar.tools.discovery import discover_tools
 from jenefar.tools.registry import ToolRegistry, ToolSpec
@@ -1399,7 +1400,8 @@ class ToolBroker:
         return {"path": path, "content": content[:120000]}
 
     def _research_fetch_url(self, args: dict[str, Any]) -> dict[str, Any]:
-        document = fetch_url(str(args["url"]), max_bytes=int(args["max_bytes"]))
+        url = validate_url(str(args["url"]))
+        document = fetch_url(url, max_bytes=int(args["max_bytes"]))
         self.audit.record("research_fetch_url", source=document.source)
         return {
             "source": document.source,
