@@ -1,0 +1,13 @@
+title = "Jenefar Gitleaks policy"
+
+[allowlist]
+description = "Explicit non-secret fixtures and documentation placeholders"
+regexes = [
+  '''test-secret''',
+  '''secret token=abc''',
+  '''replace-with-a-random-32-byte-secret''',
+]
+paths = [
+  '''^\.env\.example$''',
+  '''^tests/test_phases_13_24\.py$''',
+]
