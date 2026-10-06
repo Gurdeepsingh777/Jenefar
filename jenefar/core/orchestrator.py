@@ -449,8 +449,6 @@ class JenefarOrchestrator:
                 self._active_cancel_token = None
                 self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
                 self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or result.agent, provider=trace.provider)
-            else:
-                self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or result.agent, provider=trace.provider)
             return output
         except Exception as exc:
             cancelled = bool(self._active_cancel_token and self._active_cancel_token.cancelled)
@@ -531,6 +529,7 @@ class JenefarOrchestrator:
         task_id = str(workflow.get("task_id") or "")
         if task_id:
             self.task_lifecycle.transition(task_id, "completed", reason="approval_rejected")
+            self.production.task_finished(task_id, state="completed", agent=str(workflow.get("agent") or ""), provider="approval", error="approval rejected")
         self.runtime_context.update({"state": "speaking", "last_event": "approval_rejected"})
         self._active_cancel_token = None
         self.state = JenefarState.SLEEPING
@@ -719,6 +718,7 @@ class JenefarOrchestrator:
             task_id = str(workflow.get("task_id") or "")
             if task_id:
                 self.task_lifecycle.transition(task_id, "completed", reason="approval_action_completed")
+                self.production.task_finished(task_id, state="completed", agent=str(workflow.get("agent") or ""), provider="approval")
             self.runtime_context.update({"state": "speaking", "last_event": "approval_action_completed"})
             self._active_cancel_token = None
             self.state = JenefarState.SLEEPING
@@ -780,7 +780,9 @@ class JenefarOrchestrator:
         output = self.verifier.verify(workflow["task"], final_result.content)
         task_id = str(workflow.get("task_id") or "")
         if task_id:
-            self.task_lifecycle.transition(task_id, "completed", provider=str(final_result.metadata.get("provider", "")))
+            provider = str(final_result.metadata.get("provider", ""))
+            self.task_lifecycle.transition(task_id, "completed", provider=provider)
+            self.production.task_finished(task_id, state="completed", agent=str(workflow.get("agent") or ""), provider=provider)
         self.runtime_context.update({"state": "speaking", "last_event": "approval_continuation_complete"})
         self._active_cancel_token = None
         self.session.add("assistant", output)
