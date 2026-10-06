@@ -43,6 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--online-only", action="store_true", help="disable local LLM fallback for this process")
     parser.add_argument("--voice-auto", action="store_true", help="run voice mode using the configured online provider stack; falls back to OpenAI STT/TTS only when configured")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
+    parser.add_argument("--production-readiness", action="store_true", help="show production readiness diagnostics")
+    parser.add_argument("--integration-smoke", action="store_true", help="run local Phase 13-24 integration smoke checks")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
     parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
     parser.add_argument("--wakeword-prepare", metavar="PHRASE", help="generate an openWakeWord training config for PHRASE")
@@ -365,6 +367,36 @@ def main() -> int:
 
     if args.doctor:
         return doctor()
+
+    if args.production_readiness:
+        from jenefar.production.readiness import check
+        result = check()
+        print(result)
+        return 0 if result.get("ready") else 1
+
+    if args.integration_smoke:
+        import tempfile
+        import time
+        from jenefar.core.production_runtime import ProductionRuntime
+        from jenefar.execution.task_graph import TaskNode
+        runtime = ProductionRuntime()
+        runtime.task_started("smoke", "integration smoke", agent="utility")
+        runtime.remember("integration smoke memory", importance=0.8, provenance="smoke")
+        graph = runtime.build_task_graph()
+        graph.add(TaskNode("fast", lambda _: "ok", timeout=2))
+        graph.add(TaskNode("dependent", lambda _: "ok", deps={"fast"}, timeout=2))
+        result = graph.run()
+        runtime.task_finished("smoke", state="completed", agent="utility", provider="smoke")
+        snapshot = runtime.snapshot()
+        checks = {
+            "task_graph": all(item.state == "completed" for item in result.values()),
+            "memory": snapshot["memory"]["count"] >= 1,
+            "metrics": snapshot["metrics"]["counters"].get("tasks_completed", 0) >= 1,
+            "readiness_shape": "ready" in snapshot["readiness"],
+            "audit": True,
+        }
+        print({"checks": checks, "snapshot": snapshot})
+        return 0 if all(checks.values()) else 1
 
     if args.setup_vision:
         return setup_vision()
