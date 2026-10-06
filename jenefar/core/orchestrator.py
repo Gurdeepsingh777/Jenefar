@@ -498,6 +498,11 @@ class JenefarOrchestrator:
                 self.pending_approval_workflows.pop(str(other_id), None)
             workflow["remaining"] = set()
             self.pending_approval_workflows.pop(pending_id, None)
+        task_id = str(workflow.get("task_id") or "")
+        if task_id:
+            self.task_lifecycle.transition(task_id, "completed", reason="approval_rejected")
+        self.runtime_context.update({"state": "speaking", "last_event": "approval_rejected"})
+        self._active_cancel_token = None
         self.state = JenefarState.SLEEPING
         return "Theek hai, ye action nahi karungi."
 
@@ -681,6 +686,11 @@ class JenefarOrchestrator:
 
         agent = self.router.agent_by_name(workflow["agent"])
         if agent is None or not hasattr(agent, "continue_after_tools"):
+            task_id = str(workflow.get("task_id") or "")
+            if task_id:
+                self.task_lifecycle.transition(task_id, "completed", reason="approval_action_completed")
+            self.runtime_context.update({"state": "speaking", "last_event": "approval_action_completed"})
+            self._active_cancel_token = None
             self.state = JenefarState.SLEEPING
             return raw_result
 
