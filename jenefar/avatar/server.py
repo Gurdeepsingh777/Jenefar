@@ -4,7 +4,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from jenefar.avatar.controller import AvatarController
 from jenefar.avatar.settings import UISettings
@@ -26,6 +26,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     voice_handler = None
     runtime_status = None
     cancel_active_task = None
+  runtime_tasks = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -146,6 +147,28 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 payload = provider() if callable(provider) else {"error": "runtime status unavailable"}
                 self._json(200, payload if isinstance(payload, dict) else {"runtime": payload})
                 return
+            if path == "/runtime/tasks":
+                provider = self.runtime_tasks
+                if not callable(provider):
+                    self._json(503, {"error": "runtime task history unavailable"})
+                    return
+                query = parse_qs(urlparse(self.path).query)
+                def first(name: str) -> str:
+                    values = query.get(name, [""])
+                    return str(values[0] or "")
+                try:
+                    limit = max(1, min(int(first("limit") or "20"), 1000))
+                except ValueError:
+                    limit = 20
+                payload = provider(
+                    search=first("search"),
+                    state=first("state"),
+                    agent=first("agent"),
+                    provider=first("provider"),
+                    limit=limit,
+                )
+                self._json(200, payload if isinstance(payload, dict) else {"tasks": payload})
+                return
             if path == "/evaluation":
                 html = render_dashboard(Path("data/evaluation.jsonl"))
                 self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
@@ -237,6 +260,7 @@ class AvatarServer:
         voice_handler=None,
         runtime_status=None,
         cancel_active_task=None,
+        runtime_tasks=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -246,6 +270,7 @@ class AvatarServer:
         self.voice_handler = voice_handler
         self.runtime_status = runtime_status
         self.cancel_active_task = cancel_active_task
+        self.runtime_tasks = runtime_tasks
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -261,6 +286,7 @@ class AvatarServer:
         voice_handler = self.voice_handler
         runtime_status = self.runtime_status
         cancel_active_task = self.cancel_active_task
+        runtime_tasks = self.runtime_tasks
 
         class Handler(_AvatarHandler):
             pass
@@ -273,6 +299,7 @@ class AvatarServer:
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
         Handler.runtime_status = staticmethod(runtime_status) if runtime_status is not None else None
         Handler.cancel_active_task = staticmethod(cancel_active_task) if cancel_active_task is not None else None
+        Handler.runtime_tasks = staticmethod(runtime_tasks) if runtime_tasks is not None else None
         return Handler
 
     def _create_server(self) -> None:
