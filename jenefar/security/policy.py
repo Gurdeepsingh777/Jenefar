@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib, hmac, ipaddress, json, os, re, secrets, time
+import hashlib, hmac, ipaddress, json, os, re, secrets, threading, time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -12,7 +12,11 @@ SECRET_PATTERNS = (
 def redact(value: object, replacement: str = "[REDACTED]") -> str:
     text = str(value)
     for pattern in SECRET_PATTERNS:
-        text = pattern.sub(lambda m: (m.group(1) + "=" + replacement) if m.lastindex and m.lastindex >= 2 and "=" in m.group(0) else replacement, text)
+        def replace(match):
+            if match.lastindex and match.lastindex >= 2 and "=" in match.group(0):
+                return f"{match.group(1)}={replacement}"
+            return replacement
+        text = pattern.sub(replace, text)
     return text
 
 def safe_path(path: str | Path, roots: list[str | Path]) -> Path:
@@ -23,8 +27,9 @@ def safe_path(path: str | Path, roots: list[str | Path]) -> Path:
     return target
 
 def validate_url(url: str, *, allow_http: bool = True, allow_private: bool = False) -> str:
-    parsed = urlparse(url)
-    if parsed.scheme not in (("http", "https") if allow_http else ("https",)) or not parsed.hostname:
+    parsed = urlparse(str(url).strip())
+    schemes = ("http", "https") if allow_http else ("https",)
+    if parsed.scheme not in schemes or not parsed.hostname:
         raise ValueError("unsupported or malformed URL")
     host = parsed.hostname
     try:
@@ -33,8 +38,7 @@ def validate_url(url: str, *, allow_http: bool = True, allow_private: bool = Fal
             raise PermissionError("private/loopback URL blocked")
     except ValueError:
         lowered = host.lower().rstrip(".")
-        blocked = ("localhost", "localhost.localdomain")
-        if lowered in blocked or lowered.endswith(".localhost"):
+        if lowered == "localhost" or lowered.endswith(".localhost"):
             raise PermissionError("local hostname blocked")
     return parsed.geturl()
 
@@ -51,7 +55,8 @@ class ApprovalManager:
         try:
             tid, act, expiry, sig = token.split("|", 3)
             body = f"{tid}|{act}|{expiry}"
-            return tid == task_id and act == action and int(expiry) >= int(time.time()) and hmac.compare_digest(sig, hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest())
+            expected = hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()
+            return tid == task_id and act == action and int(expiry) >= int(time.time()) and hmac.compare_digest(sig, expected)
         except (ValueError, TypeError):
             return False
 
@@ -59,19 +64,22 @@ class AuditChain:
     def __init__(self, path: str | Path = "data/security_audit.jsonl"):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
     def append(self, event: dict[str, object]) -> str:
-        previous = ""
-        if self.path.exists():
-            try:
-                previous = json.loads(self.path.read_text(encoding="utf-8").splitlines()[-1]).get("hash", "")
-            except (IndexError, json.JSONDecodeError):
-                pass
-        payload = dict(event)
-        payload["event"] = redact(payload.get("event", ""))
-        payload["previous_hash"] = previous
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-        digest = hashlib.sha256(canonical.encode()).hexdigest()
-        payload["hash"] = digest
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, sort_keys=True) + "\n")
-        return digest
+        with self._lock:
+            previous = ""
+            if self.path.exists():
+                try:
+                    lines = self.path.read_text(encoding="utf-8").splitlines()
+                    if lines:
+                        previous = json.loads(lines[-1]).get("hash", "")
+                except (OSError, IndexError, json.JSONDecodeError):
+                    previous = ""
+            payload = {key: redact(value) if key in {"event", "error"} else value for key, value in dict(event).items()}
+            payload["previous_hash"] = previous
+            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
+            digest = hashlib.sha256(canonical.encode()).hexdigest()
+            payload["hash"] = digest
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(payload, sort_keys=True, default=str) + "\n")
+            return digest
