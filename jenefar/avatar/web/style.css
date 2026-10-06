@@ -1989,3 +1989,13 @@ html,body,#stage{
   .task-history-filters{grid-template-columns:1fr 92px 58px}
   .task-history-panel{height:172px!important}
 }
+
+.production-runtime-line{
+  gap:10px;
+  flex-wrap:wrap;
+  border-top:1px solid rgba(255,255,255,.05);
+  padding-top:7px;
+  margin-top:2px;
+}
+#production-runtime[data-state="warning"]{color:#ffbb5c}
+#production-runtime[data-state="healthy"]{color:#72ffd8}

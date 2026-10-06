@@ -1244,6 +1244,21 @@ telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
     health.textContent="HEALTH "+(calls ? (Number(h.success_rate||0)*100).toFixed(0)+"%" : "READY")
       +" • "+failures+" FAIL • "+Number(h.retries||0)+" RETRY";
     health.dataset.state=h.circuit_open?"degraded":(failures?"warning":"healthy");
+
+    const production=snapshot?.production||{};
+    const metrics=production.metrics||{};
+    const counters=metrics.counters||{};
+    const memory=production.memory||{};
+    const readiness=production.readiness||{};
+    const productionEl=document.getElementById("production-runtime");
+    const memoryEl=document.getElementById("production-memory");
+    const costEl=document.getElementById("production-cost");
+    if(productionEl){
+      productionEl.textContent="PRODUCTION "+(readiness.ready?"READY":"CHECK REQUIRED");
+      productionEl.dataset.state=readiness.ready?"healthy":"warning";
+    }
+    if(memoryEl) memoryEl.textContent="MEMORY "+Number(memory.count||0);
+    if(costEl) costEl.textContent="TOKENS "+Number(metrics.tokens||0)+" • "+Number(counters.tasks_completed||0)+" DONE";
   }
 
   async function poll(){

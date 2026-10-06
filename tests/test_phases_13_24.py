@@ -58,3 +58,25 @@ def test_metrics():
 def test_benchmark():
     r=BenchmarkRunner().run([BenchmarkCase("1","x","ok")],lambda _: "ok")
     assert BenchmarkRunner.summary(r)["success_rate"]==1.0
+
+
+def test_task_graph_node_timeout():
+    import time
+    from jenefar.execution.task_graph import TaskGraph, TaskNode
+    graph = TaskGraph()
+    graph.add(TaskNode("slow", lambda _: (time.sleep(0.05), "done")[1], timeout=0.01, retries=0))
+    result = graph.run()["slow"]
+    assert result.state == "failed"
+    assert "timeout" in (result.error or "")
+
+
+def test_orchestrator_exposes_production_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("JENEFAR_TASK_HISTORY_PATH", str(tmp_path / "history.jsonl"))
+    monkeypatch.chdir(tmp_path)
+    from jenefar.core.orchestrator import JenefarOrchestrator
+    runtime = JenefarOrchestrator()
+    snapshot = runtime.runtime_status()
+    assert "production" in snapshot
+    assert "metrics" in snapshot["production"]
+    assert "memory" in snapshot["production"]
+    assert "readiness" in snapshot["production"]
