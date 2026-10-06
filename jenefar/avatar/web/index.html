@@ -186,6 +186,28 @@
         <span id="runtime-event">Waiting for activity</span>
       </div>
     </section>
+    <section id="task-history-panel" class="task-history-panel" aria-label="Persistent task history">
+      <div class="task-history-head">
+        <div>
+          <span class="runtime-kicker">TASK HISTORY</span>
+          <strong>OPERATIONS CONSOLE</strong>
+        </div>
+        <span id="task-history-count">0 SAVED</span>
+      </div>
+      <div class="task-history-filters">
+        <input id="task-history-search" type="search" placeholder="Search task, agent, provider..." autocomplete="off">
+        <select id="task-history-state" aria-label="Filter by task state">
+          <option value="">All states</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <button id="task-history-refresh" type="button">REFRESH</button>
+      </div>
+      <div id="task-history-list" class="task-history-list" aria-live="polite">
+        <div class="task-history-empty">No persistent task history yet.</div>
+      </div>
+    </section>
     <section class="avatar-shell">
       <div class="halo halo-a"></div>
       <div class="halo halo-b"></div>
