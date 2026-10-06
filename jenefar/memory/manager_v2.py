@@ -39,7 +39,8 @@ class MemoryManagerV2:
             for line in lines:
                 try:
                     raw = json.loads(line)
-                    record = MemoryRecord(**raw, tags=tuple(raw.get("tags", ())))
+                    raw["tags"] = tuple(raw.get("tags", ()))
+                    record = MemoryRecord(**raw)
                     self.records[record.memory_id] = record
                 except (TypeError, ValueError, json.JSONDecodeError):
                     continue
