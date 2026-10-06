@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+      - "phase*"
 
 
 jobs:
@@ -49,9 +50,9 @@ jobs:
         python -m compileall jenefar
 
 
-    - name: Lint
+    - name: Lint production code
       run: |
-        ruff check jenefar || true
+        ruff check jenefar/security jenefar/execution jenefar/memory/manager_v2.py jenefar/production jenefar/observability jenefar/core/production_runtime.py tests/test_phases_13_24.py tests/test_live_runtime_integration.py
 
 
     - name: Run tests
