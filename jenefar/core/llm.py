@@ -400,6 +400,7 @@ class LLMClient:
         model: str,
         model_role: str,
         deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         if provider == "openai":
             return self._complete_openai_responses(
@@ -464,6 +465,7 @@ class LLMClient:
         max_tool_rounds: int = 4,
         model_role: str | None = None,
         deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         self._check_cancel(cancel_token)
         online = internet_available()
@@ -532,6 +534,7 @@ class LLMClient:
                 max_tool_rounds=max_tool_rounds,
                 model_role=selected_role,
                 deadline=deadline,
+                cancel_token=cancel_token,
             )
         except Exception as exc:
             return LLMResponse(
