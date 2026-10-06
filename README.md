@@ -1047,3 +1047,60 @@ python -m compileall jenefar
 ```
 
 These phases are deliberately implemented as composable infrastructure. Hardware-specific microphone, GPU, browser, compositor and robotics behavior still requires live-machine smoke tests; no CI-only abstraction can honestly claim those physical integrations are universally verified.
+
+
+## Complete Real-Machine E2E
+
+### 1. Secure local configuration
+
+Generate a persistent approval secret without printing it:
+
+```bash
+.venv/bin/python scripts/configure_production.py --no-provider
+```
+
+Optional online failover provider (entered with hidden input):
+
+```bash
+.venv/bin/python scripts/configure_production.py --provider openai
+```
+
+Ollama remains sufficient for local LLM execution; an online API key is only needed for online failover/online STT-TTS paths.
+
+### 2. Browser control
+
+Install Playwright and its Chromium binary:
+
+```bash
+.venv/bin/python -m playwright install chromium
+```
+
+This follows the official Playwright Python installation model. urlPlaywright Python installationhttps://playwright.dev/python/docs/library
+
+### 3. Real hardware E2E
+
+Start Jenefar normally, then run only the checks you want:
+
+```bash
+.venv/bin/python scripts/live_e2e.py --voice-once
+.venv/bin/python scripts/live_e2e.py --vision-once
+.venv/bin/python scripts/live_e2e.py --browser-url http://127.0.0.1:8787/
+.venv/bin/python scripts/live_e2e.py --vrm-url http://127.0.0.1:8787/
+.venv/bin/python scripts/live_e2e.py --long-run 8
+```
+
+For vision actions, use `--allow-actions` only when you are watching the desktop and explicitly want the grounded click to occur.
+
+### 4. Remote deployment
+
+Set:
+
+- `JENEFAR_HOST` to a non-loopback address
+- `JENEFAR_AUTH_USER`
+- `JENEFAR_AUTH_PASSWORD`
+- `JENEFAR_TLS_CERT`
+- `JENEFAR_TLS_KEY`
+
+Remote non-loopback startup is rejected when authentication or TLS is missing unless `JENEFAR_ALLOW_INSECURE_REMOTE=1` is explicitly set.
+
+For internet-facing deployment, prefer a hardened reverse proxy for TLS, authentication, rate limiting and request-size controls.
