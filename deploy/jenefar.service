@@ -5,7 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=%i
 WorkingDirectory=%h/Documents/jenefar-AI/Jenefar
 EnvironmentFile=-%h/Documents/jenefar-AI/Jenefar/.env
 ExecStart=%h/Documents/jenefar-AI/Jenefar/.venv/bin/python -m jenefar.production.service
