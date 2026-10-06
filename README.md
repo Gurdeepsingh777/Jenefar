@@ -962,3 +962,88 @@ Runtime task history supports:
 - browser operations console with live search and state filtering
 
 The live runtime status continues to expose the active task and lifecycle snapshot, while the task-history console survives runtime restarts.
+
+
+## Phases 13–24 — Production Completion Track
+
+The next production track is now represented by tested, dependency-light primitives in the repository. These components are intentionally isolated so they can be adopted by the existing orchestrator without weakening existing approval and authorization boundaries.
+
+### Phase 13 — Security & Secrets Hardening
+- secret redaction
+- authorized workspace path containment
+- SSRF/private-host URL blocking
+- expiring HMAC approval tokens bound to task/action
+- append-only hash-chained security audit events
+
+### Phase 14 — Durable Task/DAG Execution
+- dependency-aware task graph
+- cycle/dependency validation
+- bounded retries
+- cooperative cancellation
+- checkpoints and rollback hooks
+- parallel execution of independent nodes
+
+### Phase 15 — Memory 2.0
+- typed memories
+- importance and time-decay scoring
+- provenance and tags
+- deterministic deduplication
+- explicit forgetting
+
+### Phase 16 — Skill Runtime 2.0
+- versioned manifests
+- permissions and dependencies
+- health/failure tracking
+- disable-on-failure control
+- runtime capability snapshots
+
+### Phase 17 — Voice Session 2.0
+- turn lifecycle
+- interruption/barge-in state
+- bounded turn history
+- thread-safe voice session transitions
+
+### Phase 18 — Vision Grounding 2.0
+- normalized visual elements
+- lexical/role/confidence ranking
+- confidence gate before action
+
+### Phase 19 — Browser/Computer Agent
+- observe → act → verify loop
+- bounded step budget
+- adapter boundary for browser/desktop implementations
+- verified terminal actions only
+
+### Phase 20 — Self-Healing Execution Foundation
+The task graph, verification boundaries, retries, rollback hooks, skill health and runtime metrics provide the execution-level recovery substrate. Existing Phase 6 self-healing remains the provider/runtime recovery layer.
+
+### Phase 21 — Production Observability
+- counters
+- latency histograms
+- token accounting
+- cost accounting
+- runtime snapshots suitable for dashboards/health endpoints
+
+### Phase 22 — UI/UX Integration Foundation
+The new runtime primitives expose structured state rather than UI-specific strings, allowing the existing Phase 9–12 dashboard to consume task, skill, metric and verification state without coupling business logic to browser code.
+
+### Phase 23 — Evaluation & Benchmarking
+- reproducible benchmark cases
+- handler/evaluator separation
+- pass/fail, latency and success-rate summaries
+
+### Phase 24 — Production Readiness
+- readiness diagnostics
+- explicit provider configuration check
+- warnings for non-explicit approval secret configuration
+- packaging-safe, standard-library implementation of the new production layer
+
+### Verification
+Run the full existing suite plus the new production-track tests:
+
+```bash
+python -m pytest -q
+python -m compileall jenefar
+```
+
+These phases are deliberately implemented as composable infrastructure. Hardware-specific microphone, GPU, browser, compositor and robotics behavior still requires live-machine smoke tests; no CI-only abstraction can honestly claim those physical integrations are universally verified.
