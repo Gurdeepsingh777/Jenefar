@@ -39,6 +39,7 @@ from jenefar.capabilities.store import CapabilityStore
 from jenefar.offline.connectivity import internet_available
 from jenefar.skills.manager import SkillManager
 from jenefar.evaluation.runtime_status import build_runtime_snapshot
+from jenefar.core.production_runtime import ProductionRuntime
 
 class JenefarOrchestrator:
     def __init__(self, avatar=None):
@@ -88,6 +89,7 @@ class JenefarOrchestrator:
         self.runtime_context: dict[str, Any] = {"state": "idle"}
         self._active_cancel_token: CancellationToken | None = None
         self.task_lifecycle = TaskLifecycle()
+        self.production = ProductionRuntime()
 
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
@@ -121,6 +123,7 @@ class JenefarOrchestrator:
             provider_pool=ProviderPool(),
         )
         snapshot["tasks"] = self.task_lifecycle.snapshot()
+        snapshot["production"] = self.production.snapshot()
         return snapshot
 
     def runtime_tasks(
@@ -229,6 +232,7 @@ class JenefarOrchestrator:
         if self.task_lifecycle.admit(trace.trace_id, text) is None:
             return "Jenefar abhi ek task execute kar rahi hai. Pehle current task complete ya cancel hone dein."
         self.task_lifecycle.transition(trace.trace_id, "running")
+        self.production.task_started(trace.trace_id, text, agent="pending")
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "")
         self.session.add("user", text)
@@ -238,6 +242,7 @@ class JenefarOrchestrator:
             text,
             importance=0.55 if source == "user" else 0.5,
         )
+        self.production.remember(text, kind="episodic", importance=0.55 if source == "user" else 0.5, provenance="conversation")
         self.graph.learn_text(text)
         try:
             direct_window = self._direct_window_transfer(text)
@@ -253,6 +258,8 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
+                self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or "direct")
                 return output
 
             direct_screen = self._direct_screen_read(text)
@@ -440,6 +447,10 @@ class JenefarOrchestrator:
                 self._avatar_state("speaking", output)
             if not awaiting:
                 self._active_cancel_token = None
+                self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
+                self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or result.agent, provider=trace.provider)
+            else:
+                self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or result.agent, provider=trace.provider)
             return output
         except Exception as exc:
             cancelled = bool(self._active_cancel_token and self._active_cancel_token.cancelled)
@@ -453,6 +464,7 @@ class JenefarOrchestrator:
                 provider="cancelled" if cancelled else "error",
             )
             self.trace_store.append(trace)
+            self.production.task_finished(trace.trace_id, state="cancelled" if cancelled else "failed", agent=trace.actual_agent or trace.planned_agent, provider="cancelled" if cancelled else "error", error=str(exc))
             self.evaluator.evaluate(text, str(exc), provider="error", trace=trace.as_dict())
             self.state = JenefarState.SLEEPING
             self._avatar_state("cancelled" if cancelled else "error", str(exc))
