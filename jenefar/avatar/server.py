@@ -26,7 +26,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     voice_handler = None
     runtime_status = None
     cancel_active_task = None
-  runtime_tasks = None
+    runtime_tasks = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
