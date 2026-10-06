@@ -42,9 +42,25 @@ else:
 
 check("gpu_device", Path("/dev/dri/renderD128").exists(), "Intel/DRM render node")
 if shutil.which("intel_gpu_top"):
-    command("intel_gpu_top_help", ["intel_gpu_top", "--help"], timeout=5)
+    try:
+        gpu_help = subprocess.run(
+            ["intel_gpu_top", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        detail = (gpu_help.stdout or gpu_help.stderr).strip()[:1200]
+        usable_help = (
+            gpu_help.returncode == 0
+            or "Usage: intel_gpu_top" in detail
+            or "intel_gpu_top - Display a top-like summary" in detail
+        )
+        check("intel_gpu_top_help", usable_help, detail)
+    except Exception as exc:
+        check("intel_gpu_top_help", False, f"{type(exc).__name__}: {exc}")
 else:
-    check("intel_gpu_top", False, "install intel-gpu-tools for live Intel telemetry")
+    check("intel_gpu_top_help", False, "install intel-gpu-tools for live Intel telemetry")
 
 try:
     import psutil
