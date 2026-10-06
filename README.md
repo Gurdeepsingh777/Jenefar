@@ -947,3 +947,18 @@ Explicit commands such as "Firefox ko blue screen par shift karo", "terminal ko 
 
 On native Wayland, application-window capture is available through the XDG ScreenCast portal and PipeWire, but generic cross-application window movement/minimization is compositor-managed rather than a single universal client API. The portal explicitly supports application-window sources, while the Wayland xdg-shell protocol exposes move/resize operations as user-driven surface operations. citeturn144502search0turn144502search6 Jenefar therefore reports the actual backend capability instead of pretending a native transfer succeeded when it did not.
 
+
+
+## Phase 12 — Persistent Task History & Runtime Operations Console
+
+The runtime task lifecycle now persists terminal task records across process restarts in a bounded local JSONL store. Records are credential-redacted and arbitrary runtime metadata is not persisted.
+
+Runtime task history supports:
+- completed, failed, and cancelled task records
+- task duration, agent, provider, outcome, reason, and timestamp
+- bounded retention via `JENEFAR_TASK_HISTORY_LIMIT` (default 100)
+- custom local storage path via `JENEFAR_TASK_HISTORY_PATH`
+- runtime filtering/search through `/runtime/tasks`
+- browser operations console with live search and state filtering
+
+The live runtime status continues to expose the active task and lifecycle snapshot, while the task-history console survives runtime restarts.
