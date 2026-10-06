@@ -20,7 +20,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e .
       - name: Dependency audit
-        run: pip install pip-audit && pip-audit --strict
+        run: pip install pip-audit && pip-audit --strict --skip-editable
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
         env:
