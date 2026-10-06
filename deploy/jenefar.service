@@ -1,0 +1,22 @@
+[Unit]
+Description=Jenefar AI Runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/Documents/jenefar-AI/Jenefar
+EnvironmentFile=-%h/Documents/jenefar-AI/Jenefar/.env
+ExecStart=%h/Documents/jenefar-AI/Jenefar/.venv/bin/python -m jenefar.production.service
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/Documents/jenefar-AI/Jenefar/data
+UMask=0077
+
+[Install]
+WantedBy=default.target
