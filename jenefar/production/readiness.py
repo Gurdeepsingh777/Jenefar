@@ -25,8 +25,11 @@ def check() -> dict:
         else:
             try:
                 import urllib.request
+                health_base = local_url.rstrip("/")
+                if health_base.endswith("/v1"):
+                    health_base = health_base[:-3].rstrip("/")
                 with urllib.request.urlopen(
-                    local_url.rstrip("/") + "/api/tags",
+                    health_base + "/api/tags",
                     timeout=2,
                 ) as response:
                     local_llm_configured = 200 <= response.status < 300
