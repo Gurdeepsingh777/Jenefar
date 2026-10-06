@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from pathlib import Path
 import json, threading, time
 from jenefar.core.cancellation import CancellationToken
@@ -85,13 +85,26 @@ class TaskGraph:
         last_error = None
         for attempts in range(1, node.retries + 2):
             if token: token.raise_if_cancelled()
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(node.action, context)
             try:
-                value = node.action(context)
-                return NodeResult(node.node_id, "completed", value=value, attempts=attempts, elapsed=time.monotonic()-started)
-            except TimeoutError as exc:
-                last_error = str(exc)
+                value = future.result(timeout=max(0.001, float(node.timeout)))
+                return NodeResult(
+                    node.node_id,
+                    "completed",
+                    value=value,
+                    attempts=attempts,
+                    elapsed=time.monotonic() - started,
+                )
+            except (FutureTimeoutError, TimeoutError) as exc:
+                future.cancel()
+                last_error = f"node timeout after {node.timeout:.3f}s"
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
+            finally:
+                # Do not wait for a timed-out action. The action must itself
+                # honor cancellation/deadlines if it performs external work.
+                executor.shutdown(wait=False, cancel_futures=True)
         return NodeResult(node.node_id, "failed", error=last_error, attempts=attempts, elapsed=time.monotonic()-started)
     def rollback(self) -> list[str]:
         rolled = []
