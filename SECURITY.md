@@ -20,7 +20,7 @@ Online providers are optional when Ollama is healthy. If an online provider is d
 
 Jenefar binds to localhost by default. A non-loopback bind requires Basic Auth and TLS certificate/key configuration. The server uses TLS 1.2+ when configured. Do not set `JENEFAR_ALLOW_INSECURE_REMOTE=1` unless a trusted external TLS/authentication proxy is already protecting the service.
 
-Python's built-in `http.server` is suitable for this bounded local application surface but is not a general internet-facing production web server; for public deployment, a hardened reverse proxy should terminate TLS and enforce additional authentication/rate limiting. citeturn2search0turn2search1
+Python's built-in `http.server` is suitable for this bounded local application surface but is not a general internet-facing production web server; for public deployment, a hardened reverse proxy should terminate TLS and enforce additional authentication/rate limiting.
 
 ## Real-machine E2E
 
