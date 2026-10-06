@@ -1911,3 +1911,81 @@ html,body,#stage{
 #runtime-cancel:disabled{opacity:.3;cursor:not-allowed}
 #runtime-cancel:not(:disabled):hover{background:rgba(255,107,127,.14)}
 #runtime-state[data-state="cancelling"]{color:#ff91a2;border-color:rgba(255,107,127,.3)}
+
+
+/* =========================================================
+   PHASE 12 — PERSISTENT TASK HISTORY CONSOLE
+   ========================================================= */
+.task-history-panel{
+  position:absolute!important;
+  right:calc(var(--p1-right) + 16px)!important;
+  left:calc(var(--p1-left) + 365px)!important;
+  bottom:10px!important;
+  height:176px!important;
+  z-index:77!important;
+  box-sizing:border-box!important;
+  padding:10px 12px!important;
+  border:1px solid rgba(103,232,255,.13)!important;
+  border-radius:14px!important;
+  background:linear-gradient(135deg,rgba(4,14,28,.92),rgba(9,8,24,.86))!important;
+  box-shadow:0 0 28px rgba(31,184,255,.05),inset 0 0 28px rgba(31,184,255,.025)!important;
+  backdrop-filter:blur(14px)!important;
+}
+.task-history-head{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+}
+.task-history-head strong{
+  display:block;margin-top:3px;color:#dceaff;font-size:10px;letter-spacing:.08em;
+}
+#task-history-count{
+  color:#6f82a6;font-size:6px;letter-spacing:.12em;
+}
+.task-history-filters{
+  display:grid;grid-template-columns:minmax(0,1fr) 120px 64px;gap:6px;margin-top:8px;
+}
+.task-history-filters input,
+.task-history-filters select,
+.task-history-filters button{
+  min-width:0;height:25px;padding:0 8px;border:1px solid rgba(255,255,255,.08);
+  border-radius:7px;background:rgba(255,255,255,.035);color:#cfe0fb;font:inherit;font-size:7px;
+  outline:none;
+}
+.task-history-filters input::placeholder{color:#566784}
+.task-history-filters button{cursor:pointer;color:#79eaff;letter-spacing:.08em}
+.task-history-filters button:hover{background:rgba(103,232,255,.08)}
+.task-history-list{
+  display:grid;gap:5px;margin-top:7px;height:100px;overflow:auto;padding-right:2px;
+}
+.task-history-item{
+  padding:7px 8px;border:1px solid rgba(255,255,255,.055);border-radius:8px;
+  background:rgba(255,255,255,.022);
+}
+.task-history-item-top{
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  color:#52637f;font-size:5px;letter-spacing:.09em;
+}
+.task-history-badge{
+  padding:2px 5px;border:1px solid rgba(103,232,255,.18);border-radius:999px;color:#79eaff;
+}
+.task-history-badge.state-failed{color:#ff8799;border-color:rgba(255,103,125,.28)}
+.task-history-badge.state-cancelled{color:#ffd17b;border-color:rgba(255,187,92,.28)}
+.task-history-task{
+  margin-top:4px;color:#d9e7ff;font-size:8px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.task-history-meta{
+  margin-top:3px;color:#657796;font-size:5px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.task-history-reason{
+  margin-top:3px;color:#9ba9c2;font-size:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.task-history-empty{
+  display:grid;place-items:center;height:100%;color:#596b89;font-size:7px;letter-spacing:.06em;
+}
+#task-history-panel[data-state="offline"]{opacity:.82}
+@media(max-width:950px){
+  .task-history-panel{left:12px!important;right:12px!important;bottom:8px!important;height:164px!important}
+}
+@media(max-width:600px){
+  .task-history-filters{grid-template-columns:1fr 92px 58px}
+  .task-history-panel{height:172px!important}
+}
