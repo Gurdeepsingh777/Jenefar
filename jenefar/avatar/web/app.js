@@ -1284,3 +1284,105 @@ telemetryFreshnessTimer = setInterval(updateTelemetryFreshness, 2000);
     }
   });
 })();
+
+
+/* PHASE 12 — PERSISTENT TASK HISTORY */
+(function setupTaskHistory(){
+  const panel=document.getElementById("task-history-panel");
+  const list=document.getElementById("task-history-list");
+  const search=document.getElementById("task-history-search");
+  const state=document.getElementById("task-history-state");
+  const refresh=document.getElementById("task-history-refresh");
+  const count=document.getElementById("task-history-count");
+  if(!panel||!list) return;
+
+  let timer=null;
+  function fmtDuration(ms){
+    const n=Number(ms);
+    if(!Number.isFinite(n)) return "—";
+    if(n<1000) return Math.round(n)+"ms";
+    const seconds=n/1000;
+    return seconds<60 ? seconds.toFixed(1)+"s" : Math.floor(seconds/60)+"m "+Math.round(seconds%60)+"s";
+  }
+  function fmtTime(ts){
+    const n=Number(ts);
+    if(!Number.isFinite(n)) return "—";
+    return new Date(n*1000).toLocaleString([],{
+      month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"
+    });
+  }
+  function render(items){
+    list.innerHTML="";
+    if(count) count.textContent=String(items.length)+" SAVED";
+    if(!items.length){
+      list.innerHTML='<div class="task-history-empty">No matching task history.</div>';
+      return;
+    }
+    for(const item of items){
+      const row=document.createElement("article");
+      row.className="task-history-item";
+      const top=document.createElement("div");
+      top.className="task-history-item-top";
+      const badge=document.createElement("span");
+      badge.className="task-history-badge state-"+String(item.state||"unknown");
+      badge.textContent=String(item.state||"UNKNOWN").replaceAll("_"," ").toUpperCase();
+      const timeNode=document.createElement("time");
+      timeNode.textContent=fmtTime(item.finished_at||item.created_at);
+      top.appendChild(badge);
+      top.appendChild(timeNode);
+
+      const task=document.createElement("div");
+      task.className="task-history-task";
+      task.textContent=String(item.task||"Untitled task");
+
+      const meta=document.createElement("div");
+      meta.className="task-history-meta";
+      meta.textContent=[
+        item.agent||"agent —",
+        item.provider||"provider —",
+        fmtDuration(item.elapsed_ms),
+        item.task_id ? "#"+String(item.task_id).slice(0,12) : ""
+      ].filter(Boolean).join(" • ");
+
+      row.appendChild(top);
+      row.appendChild(task);
+      row.appendChild(meta);
+      if(item.reason){
+        const reason=document.createElement("div");
+        reason.className="task-history-reason";
+        reason.textContent=String(item.reason);
+        row.appendChild(reason);
+      }
+      list.appendChild(row);
+    }
+  }
+
+  async function load(){
+    try{
+      const params=new URLSearchParams();
+      const q=String(search?.value||"").trim();
+      const st=String(state?.value||"").trim();
+      if(q) params.set("search",q);
+      if(st) params.set("state",st);
+      params.set("limit","100");
+      const response=await fetch("/runtime/tasks?"+params.toString()+"&ts="+Date.now(),{cache:"no-store"});
+      if(!response.ok) throw new Error("task history "+response.status);
+      const payload=await response.json();
+      render(Array.isArray(payload?.items)?payload.items:[]);
+      panel.dataset.state="online";
+    }catch(_){
+      panel.dataset.state="offline";
+      list.innerHTML='<div class="task-history-empty">Task history temporarily unavailable.</div>';
+    }
+  }
+
+  function schedule(){
+    clearTimeout(timer);
+    timer=setTimeout(load,180);
+  }
+  search?.addEventListener("input",schedule);
+  state?.addEventListener("change",load);
+  refresh?.addEventListener("click",load);
+  load();
+  setInterval(load,5000);
+})();
