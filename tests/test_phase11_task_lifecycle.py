@@ -49,7 +49,8 @@ def test_task_lifecycle_is_thread_safe_for_admission():
     assert sum(results) == 1
 
 
-def test_orchestrator_runtime_snapshot_exposes_task_lifecycle():
+def test_orchestrator_runtime_snapshot_exposes_task_lifecycle(tmp_path, monkeypatch):
+    monkeypatch.setenv("JENEFAR_TASK_HISTORY_PATH", str(tmp_path / "task-history.jsonl"))
     from jenefar.core.orchestrator import JenefarOrchestrator
 
     orchestrator = JenefarOrchestrator()
