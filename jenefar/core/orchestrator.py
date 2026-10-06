@@ -123,6 +123,24 @@ class JenefarOrchestrator:
         snapshot["tasks"] = self.task_lifecycle.snapshot()
         return snapshot
 
+    def runtime_tasks(
+        self,
+        *,
+        search: str = "",
+        state: str = "",
+        agent: str = "",
+        provider: str = "",
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Return filtered persistent task history for the runtime console."""
+        return self.task_lifecycle.query_history(
+            search=search,
+            state=state,
+            agent=agent,
+            provider=provider,
+            limit=limit,
+        )
+
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
         print("[JENEFAR] Sleeping. Say/type 'Hi Jenefar' or 'Hello Jenefar' to wake me.")
