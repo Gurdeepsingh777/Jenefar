@@ -121,6 +121,11 @@ class TaskLifecycle:
                     continue
                 if not record.task_id:
                     continue
+                try:
+                    while record.task_id in self._history:
+                        self._history.remove(record.task_id)
+                except ValueError:
+                    pass
                 self._records[record.task_id] = record
                 self._history.append(record.task_id)
 
@@ -165,6 +170,12 @@ class TaskLifecycle:
                 task=redact_sensitive(str(task)),
                 agent=redact_sensitive(str(agent)),
             )
+            if record.task_id in self._history:
+                try:
+                    while record.task_id in self._history:
+                        self._history.remove(record.task_id)
+                except ValueError:
+                    pass
             self._records[record.task_id] = record
             if len(self._history) == self.max_history:
                 oldest = self._history[0]
