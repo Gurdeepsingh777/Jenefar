@@ -147,6 +147,18 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 payload = provider() if callable(provider) else {"error": "runtime status unavailable"}
                 self._json(200, payload if isinstance(payload, dict) else {"runtime": payload})
                 return
+            if path == "/runtime/metrics":
+                provider = self.runtime_status
+                payload = provider() if callable(provider) else {}
+                production = payload.get("production", {}) if isinstance(payload, dict) else {}
+                self._json(200, production.get("metrics", {}))
+                return
+            if path == "/production/readiness":
+                provider = self.runtime_status
+                payload = provider() if callable(provider) else {}
+                production = payload.get("production", {}) if isinstance(payload, dict) else {}
+                self._json(200, production.get("readiness", {"ready": False}))
+                return
             if path == "/runtime/tasks":
                 provider = self.runtime_tasks
                 if not callable(provider):
