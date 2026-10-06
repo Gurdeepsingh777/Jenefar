@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   security:
@@ -23,7 +24,7 @@ jobs:
         run: pip install pip-audit && pip-audit -r requirements.txt --strict
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
-        with:
-          args: detect --source . --no-git --redact --exit-code 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Compile
         run: python -m compileall -q jenefar
