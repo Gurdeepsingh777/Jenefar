@@ -56,3 +56,13 @@ def test_task_history_snapshot_exposes_persistence(tmp_path):
     lifecycle = TaskLifecycle(history_path=tmp_path / "history.jsonl")
     assert lifecycle.snapshot()["history_persistent"] is True
     assert lifecycle.snapshot()["history_limit"] >= 1
+
+def test_task_history_query_api_shape(tmp_path):
+    lifecycle = TaskLifecycle(history_path=tmp_path / "history.jsonl")
+    lifecycle.admit("task-1", "research Jenefar", agent="research")
+    lifecycle.transition("task-1", "completed", provider="groq")
+
+    payload = lifecycle.query_history(search="jenefar", agent="research", provider="groq")
+    assert payload["persistent"] is True
+    assert payload["count"] == 1
+    assert payload["items"][0]["task_id"] == "task-1"
