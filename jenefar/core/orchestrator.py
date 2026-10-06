@@ -636,6 +636,7 @@ class JenefarOrchestrator:
         if not pending_tools:
             return
         workflow = {
+            "task_id": str(self.runtime_context.get("task_id") or ""),
             "task": task,
             "agent": result.agent,
             "response_language": response_language,
@@ -737,6 +738,11 @@ class JenefarOrchestrator:
             return final_result.content + (f" Remaining approval id(s): {ids}." if ids else "")
 
         output = self.verifier.verify(workflow["task"], final_result.content)
+        task_id = str(workflow.get("task_id") or "")
+        if task_id:
+            self.task_lifecycle.transition(task_id, "completed", provider=str(final_result.metadata.get("provider", "")))
+        self.runtime_context.update({"state": "speaking", "last_event": "approval_continuation_complete"})
+        self._active_cancel_token = None
         self.session.add("assistant", output)
         self.memory_engine.record_message(
             self.session.session_id,
