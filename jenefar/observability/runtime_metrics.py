@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
-import threading, time
+import threading
 
 @dataclass
 class Histogram:

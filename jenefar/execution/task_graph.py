@@ -2,7 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from pathlib import Path
-import json, threading, time
+import json
+import threading
+import time
 from jenefar.core.cancellation import CancellationToken
 
 @dataclass
@@ -96,7 +98,7 @@ class TaskGraph:
                     attempts=attempts,
                     elapsed=time.monotonic() - started,
                 )
-            except (FutureTimeoutError, TimeoutError) as exc:
+            except (FutureTimeoutError, TimeoutError):
                 future.cancel()
                 last_error = f"node timeout after {node.timeout:.3f}s"
             except Exception as exc:

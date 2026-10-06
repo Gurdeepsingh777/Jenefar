@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 import time
-from pathlib import Path
 import pytest
 
 from jenefar.security.policy import ApprovalManager, safe_path, validate_url, redact, AuditChain
@@ -61,7 +61,6 @@ def test_benchmark():
 
 
 def test_task_graph_node_timeout():
-    import time
     from jenefar.execution.task_graph import TaskGraph, TaskNode
     graph = TaskGraph()
     graph.add(TaskNode("slow", lambda _: (time.sleep(0.05), "done")[1], timeout=0.01, retries=0))

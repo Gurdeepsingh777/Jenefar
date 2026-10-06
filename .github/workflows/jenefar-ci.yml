@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+      - "phase*"
 
 
 jobs:
@@ -49,10 +50,14 @@ jobs:
         python -m compileall jenefar
 
 
-    - name: Lint
+    - name: Lint production code
       run: |
-        ruff check jenefar || true
+        ruff check jenefar/security jenefar/execution jenefar/memory/manager_v2.py jenefar/production jenefar/observability jenefar/core/production_runtime.py tests/test_production_hardening.py --select E,F --ignore E501,E701,E702
 
+
+    - name: Runtime integration smoke
+      run: |
+        python run.py --integration-smoke
 
     - name: Run tests
       run: |
