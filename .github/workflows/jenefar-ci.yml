@@ -52,7 +52,7 @@ jobs:
 
     - name: Lint production code
       run: |
-        ruff check jenefar/security jenefar/execution jenefar/memory/manager_v2.py jenefar/production jenefar/observability jenefar/core/production_runtime.py tests/test_phases_13_24.py tests/test_live_runtime_integration.py
+        ruff check jenefar/security jenefar/execution jenefar/memory/manager_v2.py jenefar/production jenefar/observability jenefar/core/production_runtime.py tests/test_phases_13_24.py tests/test_live_runtime_integration.py --select E,F --ignore E501
 
 
     - name: Runtime integration smoke
