@@ -1075,7 +1075,7 @@ Install Playwright and its Chromium binary:
 .venv/bin/python -m playwright install chromium
 ```
 
-This follows the official Playwright Python installation model. urlPlaywright Python installationhttps://playwright.dev/python/docs/library
+This follows the official Playwright Python installation model. https://playwright.dev/python/docs/library
 
 ### 3. Real hardware E2E
 
