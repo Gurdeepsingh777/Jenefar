@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
+import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +30,30 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     runtime_status = None
     cancel_active_task = None
     runtime_tasks = None
+    auth_user = ""
+    auth_password = ""
+
+    def _authorized(self) -> bool:
+        if not self.auth_user:
+            return True
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header[6:]).decode("utf-8")
+            user, password = decoded.split(":", 1)
+        except Exception:
+            return False
+        return user == self.auth_user and password == self.auth_password
+
+    def _require_auth(self) -> bool:
+        if self._authorized():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Jenefar"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -84,6 +111,8 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path or "/"
         try:
+            if path != "/health" and not self._require_auth():
+                return
             if path == "/":
                 self._serve_file("index.html")
                 return
@@ -195,6 +224,8 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         try:
+            if not self._require_auth():
+                return
             body = self._read_json()
 
             if path == "/voice/text":
@@ -273,6 +304,10 @@ class AvatarServer:
         runtime_status=None,
         cancel_active_task=None,
         runtime_tasks=None,
+        auth_user: str | None = None,
+        auth_password: str | None = None,
+        tls_cert: str | None = None,
+        tls_key: str | None = None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -283,13 +318,27 @@ class AvatarServer:
         self.runtime_status = runtime_status
         self.cancel_active_task = cancel_active_task
         self.runtime_tasks = runtime_tasks
+        self.auth_user = (auth_user if auth_user is not None else os.getenv("JENEFAR_AUTH_USER", "")).strip()
+        self.auth_password = auth_password if auth_password is not None else os.getenv("JENEFAR_AUTH_PASSWORD", "")
+        self.tls_cert = (tls_cert if tls_cert is not None else os.getenv("JENEFAR_TLS_CERT", "")).strip()
+        self.tls_key = (tls_key if tls_key is not None else os.getenv("JENEFAR_TLS_KEY", "")).strip()
+        self.allow_insecure_remote = os.getenv("JENEFAR_ALLOW_INSECURE_REMOTE", "").strip().lower() in {"1", "true", "yes"}
+        loopback = self.host in {"127.0.0.1", "::1", "localhost"}
+        if not loopback:
+            if not self.auth_user or not self.auth_password:
+                raise RuntimeError("Remote Jenefar requires JENEFAR_AUTH_USER and JENEFAR_AUTH_PASSWORD.")
+            if not (self.tls_cert and self.tls_key) and not self.allow_insecure_remote:
+                raise RuntimeError("Remote Jenefar requires JENEFAR_TLS_CERT and JENEFAR_TLS_KEY.")
+        elif bool(self.tls_cert) != bool(self.tls_key):
+            raise RuntimeError("JENEFAR_TLS_CERT and JENEFAR_TLS_KEY must be configured together.")
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}/"
+        scheme = "https" if self.tls_cert else "http"
+        return f"{scheme}://{self.host}:{self.port}/"
 
     def _build_handler(self):
         controller = self.controller
@@ -312,6 +361,8 @@ class AvatarServer:
         Handler.runtime_status = staticmethod(runtime_status) if runtime_status is not None else None
         Handler.cancel_active_task = staticmethod(cancel_active_task) if cancel_active_task is not None else None
         Handler.runtime_tasks = staticmethod(runtime_tasks) if runtime_tasks is not None else None
+        Handler.auth_user = self.auth_user
+        Handler.auth_password = self.auth_password
         return Handler
 
     def _create_server(self) -> None:
@@ -319,6 +370,11 @@ class AvatarServer:
             return
         handler = self._build_handler()
         self._server = ThreadingHTTPServer((self.host, self.port), handler)
+        if self.tls_cert and self.tls_key:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(self.tls_cert, self.tls_key)
+            self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
         self.port = self._server.server_address[1]
 
     def start(self) -> None:
