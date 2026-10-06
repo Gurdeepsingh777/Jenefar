@@ -166,6 +166,9 @@ class TaskLifecycle:
                 agent=redact_sensitive(str(agent)),
             )
             self._records[record.task_id] = record
+            if len(self._history) == self.max_history:
+                oldest = self._history[0]
+                self._records.pop(oldest, None)
             self._history.append(record.task_id)
             self._active_id = record.task_id
             return record
