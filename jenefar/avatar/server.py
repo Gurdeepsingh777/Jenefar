@@ -5,6 +5,8 @@ import json
 import os
 import ssl
 import threading
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -64,11 +66,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _json(self, status: int, payload: dict) -> None:
-        self._send(
-            status,
-            "application/json; charset=utf-8",
-            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        )
+        self._send(status, "application/json; charset=utf-8", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -95,16 +93,10 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"Not found")
             return
         content_type = {
-            ".html": "text/html; charset=utf-8",
-            ".js": "text/javascript; charset=utf-8",
-            ".css": "text/css; charset=utf-8",
-            ".json": "application/json; charset=utf-8",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".svg": "image/svg+xml",
-            ".webp": "image/webp",
-            ".ico": "image/x-icon",
+            ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".svg": "image/svg+xml", ".webp": "image/webp", ".ico": "image/x-icon",
         }.get(target.suffix.lower(), "application/octet-stream")
         self._send(200, content_type, target.read_bytes())
 
@@ -114,18 +106,10 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             if path != "/health" and not self._require_auth():
                 return
             if path == "/":
-                self._serve_file("index.html")
-                return
+                self._serve_file("index.html"); return
             if path == "/health":
-                self._json(
-                    200,
-                    {
-                        "status": "ok",
-                        "avatar": self.controller.current(),
-                        "vrm_available": bool(self.vrm_path and self.vrm_path.is_file()),
-                    },
-                )
-                return
+                self._json(200, {"status": "ok", "avatar": self.controller.current(),
+                                 "vrm_available": bool(self.vrm_path and self.vrm_path.is_file())}); return
             if path == "/events":
                 subscriber = self.controller.subscribe()
                 try:
@@ -136,8 +120,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     while True:
                         event = subscriber.get()
-                        payload = json.dumps(event, ensure_ascii=False)
-                        self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                        self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8"))
                         self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
@@ -146,77 +129,50 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 return
             if path == "/avatar.vrm":
                 if not self.vrm_path or not self.vrm_path.is_file():
-                    self._send(404, "text/plain; charset=utf-8", b"VRM unavailable")
-                    return
-                self._send(200, "model/gltf-binary", self.vrm_path.read_bytes())
-                return
+                    self._send(404, "text/plain; charset=utf-8", b"VRM unavailable"); return
+                self._send(200, "model/gltf-binary", self.vrm_path.read_bytes()); return
             if path == "/desktop/mirror/status":
                 mirror = self.tool_broker
-                payload = (
-                    mirror.desktop_mirror_status()
-                    if mirror and hasattr(mirror, "desktop_mirror_status")
-                    else {"active": False}
-                )
-                self._json(200, payload)
-                return
+                payload = mirror.desktop_mirror_status() if mirror and hasattr(mirror, "desktop_mirror_status") else {"active": False}
+                self._json(200, payload); return
             if path == "/desktop/mirror.jpg":
                 mirror = self.tool_broker
-                frame = (
-                    mirror.desktop_mirror_frame()
-                    if mirror and hasattr(mirror, "desktop_mirror_frame")
-                    else None
-                )
+                frame = mirror.desktop_mirror_frame() if mirror and hasattr(mirror, "desktop_mirror_frame") else None
                 if not frame:
-                    self._send(204, "image/jpeg", b"")
-                    return
-                self._send(200, "image/jpeg", frame)
-                return
+                    self._send(204, "image/jpeg", b""); return
+                self._send(200, "image/jpeg", frame); return
             if path == "/runtime/status":
                 provider = self.runtime_status
                 payload = provider() if callable(provider) else {"error": "runtime status unavailable"}
-                self._json(200, payload if isinstance(payload, dict) else {"runtime": payload})
-                return
+                self._json(200, payload if isinstance(payload, dict) else {"runtime": payload}); return
             if path == "/runtime/metrics":
                 provider = self.runtime_status
                 payload = provider() if callable(provider) else {}
                 production = payload.get("production", {}) if isinstance(payload, dict) else {}
-                self._json(200, production.get("metrics", {}))
-                return
+                self._json(200, production.get("metrics", {})); return
             if path == "/production/readiness":
                 provider = self.runtime_status
                 payload = provider() if callable(provider) else {}
                 production = payload.get("production", {}) if isinstance(payload, dict) else {}
-                self._json(200, production.get("readiness", {"ready": False}))
-                return
+                self._json(200, production.get("readiness", {"ready": False})); return
             if path == "/runtime/tasks":
                 provider = self.runtime_tasks
                 if not callable(provider):
-                    self._json(503, {"error": "runtime task history unavailable"})
-                    return
+                    self._json(503, {"error": "runtime task history unavailable"}); return
                 query = parse_qs(urlparse(self.path).query)
                 def first(name: str) -> str:
                     values = query.get(name, [""])
                     return str(values[0] or "")
-                try:
-                    limit = max(1, min(int(first("limit") or "20"), 1000))
-                except ValueError:
-                    limit = 20
-                payload = provider(
-                    search=first("search"),
-                    state=first("state"),
-                    agent=first("agent"),
-                    provider=first("provider"),
-                    limit=limit,
-                )
-                self._json(200, payload if isinstance(payload, dict) else {"tasks": payload})
-                return
+                try: limit = max(1, min(int(first("limit") or "20"), 1000))
+                except ValueError: limit = 20
+                payload = provider(search=first("search"), state=first("state"), agent=first("agent"),
+                                   provider=first("provider"), limit=limit)
+                self._json(200, payload if isinstance(payload, dict) else {"tasks": payload}); return
             if path == "/evaluation":
                 html = render_dashboard(Path("data/evaluation.jsonl"))
-                self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
-                return
+                self._send(200, "text/html; charset=utf-8", html.encode("utf-8")); return
             if path.startswith("/avatar/"):
-                self._serve_file(path[len("/avatar/"):])
-                return
+                self._serve_file(path[len("/avatar/"):]); return
             self._serve_file(path.lstrip("/"))
         except Exception as exc:
             self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
@@ -224,61 +180,38 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         try:
-            if not self._require_auth():
-                return
+            if not self._require_auth(): return
             body = self._read_json()
-
             if path == "/voice/text":
                 handler = self.voice_handler
                 if handler is None:
-                    self._json(503, {"error": "Browser voice handler unavailable."})
-                    return
+                    self._json(503, {"error": "Browser voice handler unavailable."}); return
                 result = handler(str(body.get("text", "")))
-                self._json(200, result if isinstance(result, dict) else {"result": result})
-                return
-
+                self._json(200, result if isinstance(result, dict) else {"result": result}); return
             if path == "/runtime/cancel":
                 handler = self.cancel_active_task
                 if handler is None:
-                    self._json(503, {"error": "runtime cancellation unavailable"})
-                    return
-                reason = str(body.get("reason") or "cancelled from dashboard")
-                result = handler(reason)
-                self._json(200, result)
-                return
+                    self._json(503, {"error": "runtime cancellation unavailable"}); return
+                self._json(200, handler(str(body.get("reason") or "cancelled from dashboard"))); return
             if path == "/settings":
                 settings = UISettings(Path("data/ui_settings.json"))
-                self._json(200, {"settings": settings.update(body)})
-                return
-
+                self._json(200, {"settings": settings.update(body)}); return
             if path == "/approval/reject":
                 pending_id = str(body.get("approve_id", "")).strip()
                 if not self.tool_broker or not pending_id:
-                    self._json(400, {"error": "approval id required"})
-                    return
-                self._json(200, {"result": self.tool_broker.reject(pending_id)})
-                return
-
+                    self._json(400, {"error": "approval id required"}); return
+                self._json(200, {"result": self.tool_broker.reject(pending_id)}); return
             if path == "/realtime/session":
-                self._json(200, create_ephemeral_session(self.tool_broker))
-                return
-
+                self._json(200, create_ephemeral_session(self.tool_broker)); return
             if path == "/realtime/tool":
                 pending_id = str(body.get("approve_id", "")).strip()
                 if pending_id and self.tool_broker:
-                    self._json(200, {"result": self.tool_broker.approve(pending_id)})
-                    return
+                    self._json(200, {"result": self.tool_broker.approve(pending_id)}); return
                 tool_name = str(body.get("name", "")).strip()
                 args = body.get("arguments", {})
                 if not tool_name or not isinstance(args, dict):
-                    self._json(400, {"error": "tool name and object arguments are required"})
-                    return
-                self._json(
-                    200,
-                    {"result": invoke_realtime_tool(tool_name, args, self.tool_broker)},
-                )
-                return
-
+                    self._json(400, {"error": "tool name and object arguments are required"}); return
+                self._json(200, {"result": invoke_realtime_tool(tool_name, args, self.tool_broker)}); return
             self._send(404, "text/plain; charset=utf-8", b"Not found")
         except RealtimeSessionError as exc:
             self._json(400, {"error": str(exc)})
@@ -290,25 +223,17 @@ class _AvatarHandler(BaseHTTPRequestHandler):
 
 
 class AvatarServer:
-    """Local HTTP server for the Jenefar avatar workspace."""
+    """Local HTTP server for the Jenefar avatar workspace.
 
-    def __init__(
-        self,
-        controller: AvatarController,
-        *,
-        host: str = "127.0.0.1",
-        port: int = 8787,
-        vrm_path: Path | None = None,
-        tool_broker=None,
-        voice_handler=None,
-        runtime_status=None,
-        cancel_active_task=None,
-        runtime_tasks=None,
-        auth_user: str | None = None,
-        auth_password: str | None = None,
-        tls_cert: str | None = None,
-        tls_key: str | None = None,
-    ) -> None:
+    If the requested port is already serving a healthy Jenefar instance, this
+    instance attaches to it instead of crashing with EADDRINUSE. An unrelated
+    listener is still rejected with a clear diagnostic.
+    """
+
+    def __init__(self, controller: AvatarController, *, host: str = "127.0.0.1", port: int = 8787,
+                 vrm_path: Path | None = None, tool_broker=None, voice_handler=None, runtime_status=None,
+                 cancel_active_task=None, runtime_tasks=None, auth_user: str | None = None,
+                 auth_password: str | None = None, tls_cert: str | None = None, tls_key: str | None = None) -> None:
         self.controller = controller
         self.host = host
         self.port = int(port)
@@ -333,12 +258,52 @@ class AvatarServer:
             raise RuntimeError("JENEFAR_TLS_CERT and JENEFAR_TLS_KEY must be configured together.")
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._external = False
         self._create_server()
 
     @property
     def url(self) -> str:
         scheme = "https" if self.tls_cert else "http"
         return f"{scheme}://{self.host}:{self.port}/"
+
+    def _probe_existing(self) -> bool:
+        scheme = "https" if self.tls_cert else "http"
+        url = f"{scheme}://{self.host}:{self.port}/health"
+        request = urllib.request.Request(url, headers={"User-Agent": "Jenefar-Port-Probe/1"})
+        context = ssl._create_unverified_context() if scheme == "https" else None
+        try:
+            with urllib.request.urlopen(request, timeout=0.75, context=context) as response:
+                if response.status != 200:
+                    return False
+                payload = json.loads(response.read().decode("utf-8"))
+                return payload.get("status") == "ok" and "avatar" in payload
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+            return False
+
+    def _create_server(self) -> None:
+        if self._server is not None or self._external:
+            return
+        if self._probe_existing():
+            self._external = True
+            return
+        handler = self._build_handler()
+        try:
+            self._server = ThreadingHTTPServer((self.host, self.port), handler)
+        except OSError as exc:
+            if getattr(exc, "errno", None) == 98 and self._probe_existing():
+                self._external = True
+                return
+            if getattr(exc, "errno", None) == 98:
+                raise RuntimeError(
+                    f"Jenefar avatar port {self.host}:{self.port} is already in use by another service."
+                ) from exc
+            raise
+        if self.tls_cert and self.tls_key:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(self.tls_cert, self.tls_key)
+            self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
+        self.port = self._server.server_address[1]
 
     def _build_handler(self):
         controller = self.controller
@@ -348,15 +313,11 @@ class AvatarServer:
         runtime_status = self.runtime_status
         cancel_active_task = self.cancel_active_task
         runtime_tasks = self.runtime_tasks
-
         class Handler(_AvatarHandler):
             pass
-
         Handler.controller = controller
         Handler.vrm_path = vrm_path
         Handler.tool_broker = tool_broker
-        # Functions stored on a handler class become bound methods. Keep the
-        # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
         Handler.runtime_status = staticmethod(runtime_status) if runtime_status is not None else None
         Handler.cancel_active_task = staticmethod(cancel_active_task) if cancel_active_task is not None else None
@@ -365,31 +326,20 @@ class AvatarServer:
         Handler.auth_password = self.auth_password
         return Handler
 
-    def _create_server(self) -> None:
-        if self._server is not None:
-            return
-        handler = self._build_handler()
-        self._server = ThreadingHTTPServer((self.host, self.port), handler)
-        if self.tls_cert and self.tls_key:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            context.load_cert_chain(self.tls_cert, self.tls_key)
-            self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
-        self.port = self._server.server_address[1]
-
     def start(self) -> None:
+        if self._external:
+            return
         if self._server is None:
             self._create_server()
         if self._thread is not None and self._thread.is_alive():
             return
-        self._thread = threading.Thread(
-            target=self._server.serve_forever,
-            name="jenefar-avatar-server",
-            daemon=True,
-        )
+        self._thread = threading.Thread(target=self._server.serve_forever, name="jenefar-avatar-server", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
+        if self._external:
+            self._external = False
+            return
         server = self._server
         if server is None:
             return
