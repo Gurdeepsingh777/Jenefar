@@ -156,6 +156,7 @@ def vrm_once(url: str) -> int:
 
 def long_run(seconds: int) -> int:
     from jenefar.core.production_runtime import ProductionRuntime
+    from jenefar.execution.task_graph import TaskNode
 
     runtime = ProductionRuntime()
     graph = runtime.build_task_graph(str(ROOT / 'data' / 'e2e-checkpoint.json'))
@@ -165,10 +166,10 @@ def long_run(seconds: int) -> int:
         time.sleep(2)
         return value
 
-    graph.add("prepare", lambda _: work("prepared"))
-    graph.add("compute", lambda _: work("computed"), depends_on=["prepare"], retries=1)
-    graph.add("verify", lambda _: work("verified"), depends_on=["compute"])
-    graph.add("finish", lambda _: work("finished"), depends_on=["verify"])
+    graph.add(TaskNode("prepare", lambda _: work("prepared")))
+    graph.add(TaskNode("compute", lambda _: work("computed"), deps={"prepare"}, retries=1))
+    graph.add(TaskNode("verify", lambda _: work("verified"), deps={"compute"}))
+    graph.add(TaskNode("finish", lambda _: work("finished"), deps={"verify"}))
     result = graph.run({}, max_workers=2, checkpoint_path=str(ROOT / "data" / "e2e-checkpoint.json"))
     elapsed = time.monotonic() - started
     ok = elapsed >= min(seconds, 6) and all(item.ok for item in result.values())
