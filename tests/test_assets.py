@@ -33,3 +33,29 @@ def test_resource_spec_has_license():
         100,
     )
     assert spec.license
+
+
+def test_avatar_paths_are_anchored_to_repository_root(tmp_path, monkeypatch):
+    import run
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JENEFAR_PREMIUM_AVATAR", "0")
+    target = Path(run.__file__).resolve().parent / "data" / "avatar" / "AvatarSample_A_1.0.vrm.glb"
+    result = run.prepare_avatar_model()
+    if target.exists():
+        assert result == target
+    else:
+        assert result is None or result != tmp_path / "data" / "avatar" / "AvatarSample_A_1.0.vrm.glb"
+
+
+def test_avatar_server_rejects_oversized_request_body():
+    from jenefar.avatar.server import _AvatarHandler
+    class Headers(dict):
+        pass
+    handler = object.__new__(_AvatarHandler)
+    handler.headers = Headers({"Content-Length": str(_AvatarHandler.MAX_REQUEST_BODY_BYTES + 1)})
+    try:
+        handler._read_json()
+    except ValueError as exc:
+        assert "request body too large" in str(exc)
+    else:
+        raise AssertionError("oversized request body was accepted")
