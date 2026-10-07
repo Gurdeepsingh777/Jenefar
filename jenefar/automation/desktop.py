@@ -154,5 +154,11 @@ class DesktopAutomation:
     def screenshot(self, filename: str = "screen.png") -> dict[str, object]:
         clean = Path(filename).name
         path = self.screenshot_dir / clean
-        self._pyautogui().screenshot(str(path))
-        return {"action": "screenshot", "path": str(path)}
+        frame = self.capture_frame(save=False)
+        path.write_bytes(frame.png_bytes)
+        return {
+            "action": "screenshot",
+            "path": str(path),
+            "width": frame.width,
+            "height": frame.height,
+        }
