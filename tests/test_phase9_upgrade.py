@@ -65,3 +65,25 @@ def test_robot_unified():
         def command(self,c,a): return (c,a)
     r=UnifiedRobotController(serial=A())
     assert r.command("stop")==("stop","")
+
+
+def test_phase_runtime_bridge(tmp_path):
+    from jenefar.core.phase_runtime import PhaseRuntime
+    runtime = PhaseRuntime(data_root=tmp_path)
+    runtime.remember_fact("mode", "online", source="test")
+    assert runtime.recall_fact("mode")[0]["value"] == "online"
+    turn = runtime.voice_listening()
+    runtime.voice_speaking()
+    runtime.voice_interrupt()
+    state = runtime.voice_snapshot()
+    assert state["interrupted"] is True and state["turn_id"] == turn
+    assert runtime.avatar_visemes("hello Jenefar")
+    assert runtime.research_citations(
+        ["claim"],
+        [{"source": "test", "title": "Test", "locator": "local:test"}],
+    )[0]["citations"]
+    runtime.security_start("test", ["127.0.0.1"])
+    runtime.security_finding("Synthetic", "info", "127.0.0.1", "evidence", "none")
+    assert runtime.security_report()["finding_count"] == 1
+    assert runtime.coding_workflow(object()).__class__.__name__ == "CodingWorkflow"
+    assert runtime.vision_loop(object()).__class__.__name__ == "VisionAgentLoop"
