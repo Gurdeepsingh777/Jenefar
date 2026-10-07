@@ -158,7 +158,7 @@ def long_run(seconds: int) -> int:
     from jenefar.core.production_runtime import ProductionRuntime
 
     runtime = ProductionRuntime()
-    graph = runtime.task_graph()
+    graph = runtime.build_task_graph(str(ROOT / 'data' / 'e2e-checkpoint.json'))
     started = time.monotonic()
 
     def work(value: str) -> str:
