@@ -193,7 +193,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 self._json(200, payload if isinstance(payload, dict) else {"tasks": payload})
                 return
             if path == "/evaluation":
-                html = render_dashboard(Path("data/evaluation.jsonl"))
+                html = render_dashboard(Path(__file__).resolve().parents[2] / "data" / "evaluation.jsonl")
                 self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 return
             if path.startswith("/avatar/"):
@@ -227,7 +227,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 self._json(200, result)
                 return
             if path == "/settings":
-                settings = UISettings(Path("data/ui_settings.json"))
+                settings = UISettings()
                 self._json(200, {"settings": settings.update(body)})
                 return
 
