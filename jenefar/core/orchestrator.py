@@ -41,6 +41,7 @@ from jenefar.skills.manager import SkillManager
 from jenefar.evaluation.runtime_status import build_runtime_snapshot
 from jenefar.core.production_runtime import ProductionRuntime
 from jenefar.core.phase_runtime import PhaseRuntime
+from jenefar.core.phase_runtime import PhaseRuntime
 
 class JenefarOrchestrator:
     def __init__(self, avatar=None):
@@ -92,6 +93,7 @@ class JenefarOrchestrator:
         self.task_lifecycle = TaskLifecycle()
         self.production = ProductionRuntime()
         self.phase_runtime = PhaseRuntime(data_root="data")
+        self.phase_runtime = PhaseRuntime(data_root="data")
 
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
@@ -126,6 +128,7 @@ class JenefarOrchestrator:
         )
         snapshot["tasks"] = self.task_lifecycle.snapshot()
         snapshot["production"] = self.production.snapshot()
+        snapshot["phase_runtime"] = self.phase_runtime.snapshot()
         snapshot["phase_runtime"] = self.phase_runtime.snapshot()
         return snapshot
 
@@ -278,6 +281,7 @@ class JenefarOrchestrator:
                     importance=0.5,
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self.phase_runtime.voice_speaking()
                 self.phase_runtime.voice_speaking()
                 self.phase_runtime.voice_speaking()
                 self.phase_runtime.voice_speaking()
