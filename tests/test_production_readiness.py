@@ -11,18 +11,12 @@ def test_readiness_detects_local_ollama(monkeypatch, tmp_path):
         "GEMINI_API_KEY",
         "OPENROUTER_API_KEY",
         "CEREBRAS_API_KEY",
+        "JENEFAR_LOCAL_LLM_BASE_URL",
+        "JENEFAR_TASK_HISTORY_PATH",
     ):
         monkeypatch.delenv(name, raising=False)
 
-    # Fully define the local-only test environment so unrelated shell/.env
-    # settings cannot change the expected readiness result.
-    monkeypatch.setenv(
-        "JENEFAR_LOCAL_LLM_BASE_URL",
-        "http://127.0.0.1:11434/v1",
-    )
     monkeypatch.setenv("JENEFAR_APPROVAL_SECRET", "test-secret")
-    monkeypatch.delenv("JENEFAR_TASK_HISTORY_PATH", raising=False)
-
     monkeypatch.setattr(
         readiness.LocalLLMClient,
         "detect",
@@ -37,7 +31,7 @@ def test_readiness_detects_local_ollama(monkeypatch, tmp_path):
 
     result = readiness.check()
 
-    assert result["ready"] is True
+    assert result["ready"] is True, result
     assert result["local_llm_configured"] is True
     assert result["providers"] == ["local:qwen3-vl:4b"]
     assert result["failures"] == []
