@@ -6,6 +6,7 @@ from jenefar.production import readiness
 
 
 def test_readiness_detects_local_ollama(monkeypatch):
+    monkeypatch.setattr(readiness, "load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -31,6 +32,7 @@ def test_readiness_detects_local_ollama(monkeypatch):
 
 
 def test_readiness_reports_explicit_local_provider_unreachable(monkeypatch):
+    monkeypatch.setattr(readiness, "load_dotenv", lambda *args, **kwargs: None)
     for name in (
         "OPENAI_API_KEY",
         "GROQ_API_KEY",
@@ -57,6 +59,7 @@ def test_readiness_reports_explicit_local_provider_unreachable(monkeypatch):
 
 
 def test_readiness_uses_dotenv_and_root_relative_data_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(readiness, "load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
