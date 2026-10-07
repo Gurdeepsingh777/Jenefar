@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 from jenefar.core.config import ROOT
-from jenefar.offline.local_llm import LocalLLMClient
+from jenefar.offline.local_llm import LocalLLMClient, LocalModelInfo
 
 
 def _online_providers() -> list[str]:
@@ -43,7 +43,7 @@ def check() -> dict:
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             failures.append("JENEFAR_LOCAL_LLM_BASE_URL is malformed")
 
-    local_info = None
+    local_info: LocalModelInfo | None = None
     if not failures:
         try:
             local_info = LocalLLMClient().detect()
