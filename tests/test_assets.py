@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from jenefar.assets.provisioning import ALLOWED_HOSTS, ResourceSpec, _validate_url
 
 
@@ -37,6 +39,7 @@ def test_resource_spec_has_license():
 
 def test_avatar_paths_are_anchored_to_repository_root(tmp_path, monkeypatch):
     import run
+
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("JENEFAR_PREMIUM_AVATAR", "0")
     target = Path(run.__file__).resolve().parent / "data" / "avatar" / "AvatarSample_A_1.0.vrm.glb"
@@ -49,10 +52,14 @@ def test_avatar_paths_are_anchored_to_repository_root(tmp_path, monkeypatch):
 
 def test_avatar_server_rejects_oversized_request_body():
     from jenefar.avatar.server import _AvatarHandler
+
     class Headers(dict):
         pass
+
     handler = object.__new__(_AvatarHandler)
-    handler.headers = Headers({"Content-Length": str(_AvatarHandler.MAX_REQUEST_BODY_BYTES + 1)})
+    handler.headers = Headers(
+        {"Content-Length": str(_AvatarHandler.MAX_REQUEST_BODY_BYTES + 1)}
+    )
     try:
         handler._read_json()
     except ValueError as exc:
