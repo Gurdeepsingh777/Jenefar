@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from jenefar.production import readiness
 
 
-def test_readiness_detects_local_ollama(monkeypatch):
+def test_readiness_detects_local_ollama(monkeypatch, tmp_path):
     monkeypatch.setattr(readiness, "load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
@@ -21,7 +19,9 @@ def test_readiness_detects_local_ollama(monkeypatch):
             "qwen3-vl:4b",
         ),
     )
-    monkeypatch.setenv("JENEFAR_DATA_DIR", str(Path("data")))
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.setenv("JENEFAR_DATA_DIR", str(data_dir))
 
     result = readiness.check()
 
