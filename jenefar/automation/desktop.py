@@ -60,8 +60,20 @@ class DesktopAutomation:
         size = self._pyautogui().size()
         return {"width": int(size.width), "height": int(size.height)}
 
+    @staticmethod
+    def screen_capture_enabled() -> bool:
+        return os.getenv("JENEFAR_ALLOW_SCREEN_CAPTURE", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+
     def _capture_screen_image(self):
-        """Capture the full desktop without invoking PyAutoGUI screenshot helpers."""
+        """Capture the full desktop only when explicitly enabled."""
+        if not self.screen_capture_enabled():
+            raise PermissionError(
+                "Full-screen capture is disabled by default. "
+                "Use browser/DOM accessibility for browser tasks, or explicitly set "
+                "JENEFAR_ALLOW_SCREEN_CAPTURE=1 for an authorized screen-vision task."
+            )
         try:
             import mss
             from PIL import Image
