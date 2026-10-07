@@ -58,7 +58,7 @@ class ProviderPool:
     def order(self) -> list[str]:
         raw = os.getenv(
             "JENEFAR_PROVIDER_ORDER",
-            "openai,openrouter,gemini,groq",
+            "openai,groq,gemini,openrouter",
         )
         names = [item.strip().lower() for item in raw.split(",") if item.strip()]
         valid = [name for name in names if name in self.CONFIGS]
