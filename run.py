@@ -551,7 +551,7 @@ def main() -> int:
             "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
             "evaluation_report", "trace_report", "runtime_health", "self_healing_policy",
             "evaluation_dashboard", "setup_assets", "wakeword_prepare_validation",
-            "wakeword_prepare", "wakeword_train", "analyze_github", "plan_github",
+            "wakeword_prepare", "wakeword_train", "analyze_github", "plan_github", "phase_runtime_smoke", "phase_upgrade_check",
         )
     ):
         args.voice_auto = True
