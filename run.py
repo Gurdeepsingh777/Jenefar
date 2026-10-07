@@ -455,6 +455,7 @@ def main() -> int:
     if args.phase_runtime_smoke:
         import tempfile
         from jenefar.core.phase_runtime import PhaseRuntime
+        from jenefar.core.orchestrator import JenefarOrchestrator
         with tempfile.TemporaryDirectory() as tmp:
             runtime = PhaseRuntime(data_root=tmp)
             runtime.remember_fact("runtime", "connected", source="smoke")
