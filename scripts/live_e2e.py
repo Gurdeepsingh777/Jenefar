@@ -8,6 +8,7 @@ import asyncio
 import json
 import time
 import urllib.request
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,9 +45,33 @@ def voice_once() -> int:
 
     reply = runtime.orchestrator.handle(text, response_language="Hinglish")
     report("llm", True, reply[:500])
-    asyncio.run(runtime.speak(reply))
-    report("tts", True, "TTS playback completed")
-    return 0
+    try:
+        asyncio.run(asyncio.wait_for(runtime.speak(reply), timeout=60))
+        report("tts", True, "TTS playback completed")
+        return 0
+    except Exception as exc:
+        # E2E-only local fallback; production defaults remain unchanged.
+        previous = os.environ.get("JENEFAR_ENABLE_NATIVE_TTS")
+        os.environ["JENEFAR_ENABLE_NATIVE_TTS"] = "1"
+        try:
+            runtime.reset_audio_health()
+            asyncio.run(asyncio.wait_for(runtime.speak(reply), timeout=60))
+            report("tts", True, {
+                "provider": "native-fallback",
+                "cloud_error": f"{type(exc).__name__}: {exc}",
+            })
+            return 0
+        except Exception as fallback_exc:
+            report("tts", False, {
+                "cloud_error": f"{type(exc).__name__}: {exc}",
+                "native_fallback_error": f"{type(fallback_exc).__name__}: {fallback_exc}",
+            })
+            return 1
+        finally:
+            if previous is None:
+                os.environ.pop("JENEFAR_ENABLE_NATIVE_TTS", None)
+            else:
+                os.environ["JENEFAR_ENABLE_NATIVE_TTS"] = previous
 
 
 def vision_once(allow_actions: bool) -> int:
@@ -170,7 +195,7 @@ def long_run(seconds: int) -> int:
     graph.add(TaskNode("compute", lambda _: work("computed"), deps={"prepare"}, retries=1))
     graph.add(TaskNode("verify", lambda _: work("verified"), deps={"compute"}))
     graph.add(TaskNode("finish", lambda _: work("finished"), deps={"verify"}))
-    result = graph.run({}, max_workers=2, checkpoint_path=str(ROOT / "data" / "e2e-checkpoint.json"))
+    result = graph.run(context={}, max_workers=2)
     elapsed = time.monotonic() - started
     ok = elapsed >= min(seconds, 6) and all(item.ok for item in result.values())
     report("long_running_task", ok, {"elapsed_seconds": round(elapsed, 2), "nodes": len(result)})
