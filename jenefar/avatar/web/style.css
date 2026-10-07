@@ -1999,3 +1999,84 @@ html,body,#stage{
 }
 #production-runtime[data-state="warning"]{color:#ffbb5c}
 #production-runtime[data-state="healthy"]{color:#72ffd8}
+
+
+/* =========================================================
+   FINAL UI LAYOUT + SCREEN PRIVACY HARDENING
+   Keep structural panels in non-overlapping vertical lanes.
+   ========================================================= */
+:root{
+  --ui-right:18px;
+  --ui-right-width:min(320px, calc(100vw - 40px));
+  --ui-top:78px;
+  --ui-bottom:74px;
+}
+.system-card{
+  right:var(--ui-right)!important;
+  top:var(--ui-top)!important;
+  width:var(--ui-right-width)!important;
+  max-height:190px!important;
+  overflow:hidden!important;
+}
+.command-stack{
+  right:var(--ui-right)!important;
+  top:286px!important;
+  width:var(--ui-right-width)!important;
+  gap:7px!important;
+}
+#activity-panel{
+  right:var(--ui-right)!important;
+  top:454px!important;
+  bottom:var(--ui-bottom)!important;
+  width:var(--ui-right-width)!important;
+  height:auto!important;
+  max-height:none!important;
+  min-height:220px!important;
+}
+#activity-list{min-height:0!important;overflow:auto!important}
+.task-history-panel{
+  bottom:10px!important;
+  left:calc(var(--p1-left) + 365px)!important;
+  right:calc(var(--p1-right) + 16px)!important;
+  height:176px!important;
+  max-height:176px!important;
+  overflow:hidden!important;
+}
+.quick-apps{
+  bottom:200px!important;
+  max-height:150px!important;
+  overflow:hidden!important;
+}
+.chat-glass{max-height:390px!important;overflow:hidden!important}
+.realtime-controls{
+  right:var(--ui-right)!important;
+  bottom:14px!important;
+  width:var(--ui-right-width)!important;
+  z-index:110!important;
+}
+.bottom-dock{bottom:14px!important;z-index:110!important}
+
+@media (max-width:1200px){
+  .system-card{width:290px!important;top:72px!important}
+  .command-stack{width:290px!important;top:276px!important}
+  #activity-panel{width:290px!important;top:438px!important;bottom:70px!important}
+  .realtime-controls{width:290px!important}
+  .hero-copy{max-width:390px!important}
+}
+@media (max-width:900px){
+  .system-card{right:12px!important;top:72px!important;width:270px!important}
+  .command-stack{right:12px!important;top:270px!important;width:270px!important}
+  #activity-panel{right:12px!important;top:430px!important;bottom:78px!important;width:270px!important}
+  .quick-apps{left:12px!important;bottom:190px!important;width:calc(100vw - 300px)!important;max-width:360px!important}
+  .task-history-panel{left:12px!important;right:300px!important}
+  .realtime-controls{right:12px!important;width:270px!important}
+}
+@media (max-width:720px){
+  .system-card{left:12px!important;right:12px!important;top:74px!important;width:auto!important;max-height:155px!important}
+  .command-stack{left:12px!important;right:12px!important;top:240px!important;width:auto!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #activity-panel{left:12px!important;right:12px!important;top:350px!important;bottom:126px!important;width:auto!important}
+  .quick-apps{left:12px!important;right:12px!important;bottom:184px!important;width:auto!important;max-width:none!important}
+  .task-history-panel{left:12px!important;right:12px!important;bottom:12px!important;height:150px!important}
+  .realtime-controls{left:12px!important;right:12px!important;bottom:78px!important;width:auto!important}
+  .bottom-dock{bottom:12px!important}
+}
