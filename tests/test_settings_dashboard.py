@@ -69,3 +69,19 @@ def test_avatar_server_serves_health_endpoint():
         assert "vrm_available" in payload
     finally:
         server.stop()
+
+
+def test_ui_settings_default_path_is_repository_root(tmp_path, monkeypatch):
+    from jenefar.avatar.settings import UISettings
+
+    monkeypatch.chdir(tmp_path)
+    settings = UISettings()
+    assert settings.path == Path(UISettings.__module__.replace(".", "/")).resolve() if False else Path(__file__).resolve().parents[1] / "data" / "ui_settings.json"
+    assert settings.path != tmp_path / "data" / "ui_settings.json"
+
+
+def test_avatar_server_evaluation_path_is_repository_root():
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    assert 'Path(__file__).resolve().parents[2] / "data" / "evaluation.jsonl"' in source
+    assert 'settings = UISettings()' in source
