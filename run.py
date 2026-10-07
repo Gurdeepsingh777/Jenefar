@@ -61,6 +61,9 @@ def prepare_avatar_model() -> "Path | None":
     import os
     from pathlib import Path
 
+    root = Path(__file__).resolve().parent
+    data_root = root / "data"
+
     configured_avatar = os.getenv("JENEFAR_AVATAR_VRM_PATH", "").strip()
     if configured_avatar:
         avatar_model = Path(configured_avatar).expanduser().resolve()
@@ -71,9 +74,9 @@ def prepare_avatar_model() -> "Path | None":
                 "[JENEFAR] Configured VRM avatar not found: "
                 f"{avatar_model}; falling back to the sample asset."
             )
-            avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+            avatar_model = data_root / "avatar" / "AvatarSample_A_1.0.vrm.glb"
     else:
-        avatar_model = Path("data/avatar/AvatarSample_A_1.0.vrm.glb")
+        avatar_model = data_root / "avatar" / "AvatarSample_A_1.0.vrm.glb"
 
     if not avatar_model.is_file():
         try:
@@ -86,7 +89,7 @@ def prepare_avatar_model() -> "Path | None":
                 f"{type(exc).__name__}: {exc}"
             )
 
-    premium_output = Path("data/avatar/Jenefar_Premium.vrm")
+    premium_output = data_root / "avatar" / "Jenefar_Premium.vrm"
     premium_enabled = os.getenv(
         "JENEFAR_PREMIUM_AVATAR", "1"
     ).strip().lower() not in {"0", "false", "no"}
