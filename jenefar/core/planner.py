@@ -80,10 +80,20 @@ class Planner:
             "pytest", "runtime", "implementation", "implement", "fix", "debug",
             "inspect code", "check code", "source code", "run checks",
         )
-        if any(x in t for x in project_terms) and any(x in t for x in (
-            "jenefar", ".py", "python", "code", "repo", "project", "runtime",
-            "validation", "test", "pytest", "implementation",
-        )):
+        scheduler_or_memory_terms = (
+            "remember", "save in memory", "store in memory", "recall from memory",
+            "procedure", "playbook", "schedule", "remind me", "every day",
+            "every hour", "every week", "watch for", "when this happens",
+            "trigger an event", "event watcher",
+        )
+        if (
+            any(x in t for x in project_terms)
+            and any(x in t for x in (
+                "jenefar", ".py", "python", "code", "repo", "project", "runtime",
+                "validation", "test", "pytest", "implementation",
+            ))
+            and not any(x in t for x in scheduler_or_memory_terms)
+        ):
             return self._make_plan(
                 text,
                 "local_development",
