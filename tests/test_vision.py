@@ -1,4 +1,6 @@
 from pathlib import Path
+
+import pytest
 from jenefar.core.planner import Planner
 from jenefar.vision.screen import ScreenFrame, ScreenVision
 
