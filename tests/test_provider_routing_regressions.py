@@ -51,3 +51,8 @@ def test_chat_tool_schema_conversion():
             },
         },
     }]
+
+
+def test_default_provider_order_prefers_groq_over_openrouter(monkeypatch):
+    monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
+    assert ProviderPool().order() == ["openai", "groq", "gemini", "openrouter"]
