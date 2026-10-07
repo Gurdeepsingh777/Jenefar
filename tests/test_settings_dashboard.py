@@ -76,7 +76,7 @@ def test_ui_settings_default_path_is_repository_root(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     settings = UISettings()
-    assert settings.path == Path(UISettings.__module__.replace(".", "/")).resolve() if False else Path(__file__).resolve().parents[1] / "data" / "ui_settings.json"
+    assert settings.path == Path(__file__).resolve().parents[1] / "data" / "ui_settings.json"
     assert settings.path != tmp_path / "data" / "ui_settings.json"
 
 
