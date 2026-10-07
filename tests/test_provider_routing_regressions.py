@@ -13,7 +13,7 @@ def test_openrouter_key_is_not_treated_as_openai(monkeypatch):
 
 def test_current_default_provider_order(monkeypatch):
     monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
-    assert ProviderPool().order() == ["openai", "openrouter", "gemini", "groq"]
+    assert ProviderPool().order() == ["openai", "groq", "gemini", "openrouter"]
 
 
 def test_groq_default_model_is_current():
