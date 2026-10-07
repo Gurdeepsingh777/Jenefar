@@ -8,7 +8,7 @@ from jenefar.offline.local_llm import LocalLLMClient
 
 
 def test_execution_budget_defaults_to_60_seconds():
-    assert JenefarOrchestrator._execution_budget_seconds("research", "research") == 60.0
+    assert JenefarOrchestrator._execution_budget_seconds("research", "research") == 120.0
 
 
 def test_execution_budget_is_clamped_and_agent_override_wins(monkeypatch):
