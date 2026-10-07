@@ -117,6 +117,45 @@ class JenefarOrchestrator:
         self.task_lifecycle.transition(active["task_id"], "cancelling", reason=token.reason)
         self.runtime_context.update({"state": "cancelling", "last_event": token.reason})
         return {"cancelled": changed, "active": True, "task_id": active["task_id"], "reason": token.reason}
+    def run_autonomous_task(self, text: str) -> dict[str, Any]:
+        """Execute the hierarchical task plan through the bounded autonomous runtime."""
+        plan = self.planner.plan(text)
+        task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
+        steps = [step.as_dict() for step in task_plan.steps]
+        base_metadata = {
+            "session_id": self.session.session_id,
+            "intent": plan.intent,
+            "planned_agent": plan.agent,
+            "planner_confidence": plan.confidence,
+            "task_plan": task_plan.as_dict(),
+            "response_language": "Hinglish",
+            "source": "autonomous",
+            "capabilities": self.capabilities.list(),
+            "skills": [item for item in self.skills.list() if item.get("enabled")],
+        }
+
+        def execute(step):
+            result = self.router.dispatch(
+                str(step.get("instruction") or step.get("title") or text),
+                metadata=base_metadata | {"autonomous_step": step},
+            )
+            return {"agent": result.agent, "content": result.content, "metadata": result.metadata}
+
+        def verify(step, result):
+            return bool(str(result.get("content") or "").strip())
+
+        def replan(_task, history):
+            completed = {item.step_id for item in history if item.status == "completed"}
+            return [step for step in steps if step.get("id") not in completed]
+
+        self.phase_runtime.configure_autonomous(
+            planner=lambda _task: list(steps),
+            executor=execute,
+            verifier=verify,
+            replanner=replan,
+        )
+        return self.phase_runtime.run_autonomous(text)
+
     def runtime_status(self) -> dict[str, Any]:
         """Return a live, credential-safe runtime snapshot for the UI."""
         from jenefar.core.provider_pool import ProviderPool
