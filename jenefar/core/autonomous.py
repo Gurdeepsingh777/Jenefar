@@ -28,7 +28,7 @@ class AutonomousTaskEngine:
                  replanner: Callable[[str, list[TaskStepResult]], list[dict[str, Any]]] | None = None,
                  recovery: SelfHealingRuntime | None = None, max_steps: int = 12) -> None:
         self.planner, self.executor, self.verifier = planner, executor, verifier
-        self.replanner = replanner or (lambda _task, _history: [])
+        self.replanner = replanner or (lambda task, _history: self.planner(task))
         self.recovery = recovery or SelfHealingRuntime()
         self.max_steps = max(1, min(int(max_steps), 50))
 
