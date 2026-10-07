@@ -99,7 +99,16 @@ class JenefarOrchestrator:
         agent_name = str(agent or "agent").strip().lower().replace("-", "_")
         agent_key = f"JENEFAR_AGENT_TIMEOUT_{agent_name.upper()}"
         role_key = f"JENEFAR_AGENT_TIMEOUT_{role.upper()}"
-        raw = os.getenv(agent_key, os.getenv(role_key, os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "60")))
+        defaults = {
+            "gui_vision": "180",
+            "local_development": "180",
+            "repository": "120",
+            "research": "120",
+        }
+        raw = os.getenv(
+            agent_key,
+            os.getenv(role_key, os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", defaults.get(agent_name, "60"))),
+        )
         try:
             value = float(raw)
         except (TypeError, ValueError):
