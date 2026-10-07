@@ -37,9 +37,6 @@ class DesktopMirror:
         if not query:
             raise ValueError("A window or app query is required.")
 
-        result = self.screen_vision.locate_window(query)
-        bbox = tuple(int(value) for value in result["bbox"])
-        label = str(result.get("label") or query)
         native = None
         try:
             native = self.window_control.find(query)
@@ -47,7 +44,23 @@ class DesktopMirror:
             native = None
 
         backend = self.window_control.backend
-        capture_mode = "native_window" if native and backend in {"wmctrl", "xdotool"} else "screen_crop"
+        if native and backend in {"wmctrl", "xdotool"}:
+            bbox = (native.x, native.y, native.x + native.width, native.y + native.height)
+            label = native.title or query
+            provider = "native_window"
+            capture_mode = "native_window"
+        else:
+            if not self.desktop.screen_capture_enabled():
+                raise PermissionError(
+                    "Desktop mirror cannot fall back to full-screen capture. "
+                    "Use a supported native window backend (wmctrl/xdotool), "
+                    "or explicitly enable JENEFAR_ALLOW_SCREEN_CAPTURE=1."
+                )
+            result = self.screen_vision.locate_window(query)
+            bbox = tuple(int(value) for value in result["bbox"])
+            label = str(result.get("label") or query)
+            provider = result.get("provider", "")
+            capture_mode = "screen_crop"
         window_id = native.window_id if native else ""
 
         with self._lock:
@@ -71,7 +84,7 @@ class DesktopMirror:
             "control_backend": backend,
             "capture_mode": capture_mode,
             "native_control_available": bool(native and backend != "none"),
-            "provider": result.get("provider", ""),
+            "provider": provider,
         }
 
     def stop(self) -> dict[str, object]:
