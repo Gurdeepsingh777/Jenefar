@@ -218,7 +218,10 @@ class ProviderVoiceRuntime:
         from openai import AsyncOpenAI
 
         audio.seek(0)
-        client = AsyncOpenAI(\n            api_key=ProviderVoiceRuntime._direct_openai_key(),\n            timeout=float(os.getenv("JENEFAR_VOICE_PROVIDER_TIMEOUT_SECONDS", "30")),\n        )
+        client = AsyncOpenAI(
+            api_key=ProviderVoiceRuntime._direct_openai_key(),
+            timeout=float(os.getenv("JENEFAR_VOICE_PROVIDER_TIMEOUT_SECONDS", "30")),
+        )
         result = await client.audio.transcriptions.create(
             model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
             file=audio,
@@ -233,6 +236,7 @@ class ProviderVoiceRuntime:
         client = OpenAI(
             api_key=os.getenv("GROQ_API_KEY", "").strip(),
             base_url="https://api.groq.com/openai/v1",
+            timeout=float(os.getenv("JENEFAR_VOICE_PROVIDER_TIMEOUT_SECONDS", "30")),
         )
 
         def request() -> str:
@@ -445,7 +449,10 @@ class ProviderVoiceRuntime:
         from openai import AsyncOpenAI
         from openai.helpers import LocalAudioPlayer
 
-        client = AsyncOpenAI(\n            api_key=self._direct_openai_key(),\n            timeout=float(os.getenv("JENEFAR_VOICE_PROVIDER_TIMEOUT_SECONDS", "30")),\n        )
+        client = AsyncOpenAI(
+            api_key=self._direct_openai_key(),
+            timeout=float(os.getenv("JENEFAR_VOICE_PROVIDER_TIMEOUT_SECONDS", "30")),
+        )
         animation = asyncio.create_task(self._animate_speaking(text)) if self.avatar else None
         try:
             async with client.audio.speech.with_streaming_response.create(
