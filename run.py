@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
     parser.add_argument("--production-readiness", action="store_true", help="show production readiness diagnostics")
     parser.add_argument("--integration-smoke", action="store_true", help="run local Phase 13-24 integration smoke checks")
+    parser.add_argument("--phase-upgrade-check", action="store_true", help="validate the nine-phase Jenefar upgrade components without executing privileged actions")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
     parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
     parser.add_argument("--wakeword-prepare", metavar="PHRASE", help="generate an openWakeWord training config for PHRASE")
@@ -227,6 +228,55 @@ def doctor() -> int:
     print("[JENEFAR] Doctor checks passed. Optional features may still need extra packages.")
     return 0
 
+def phase_upgrade_check() -> int:
+    """Run deterministic checks for the nine-phase upgrade surface."""
+    from pathlib import Path
+    import tempfile
+
+    checks = {}
+    try:
+        from jenefar.core.autonomous import AutonomousTaskEngine
+        checks["phase1_autonomous_loop"] = AutonomousTaskEngine is not None
+
+        from jenefar.memory.lifecycle import MemoryLifecycle
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = MemoryLifecycle(Path(tmp) / "memory.db")
+            memory.remember("upgrade-check", "one")
+            memory.remember("upgrade-check", "two")
+            checks["phase2_memory_lifecycle"] = len(memory.contradictions("upgrade-check")) == 2
+
+        from jenefar.voice.interaction import VoiceInteractionController
+        voice = VoiceInteractionController()
+        turn = voice.begin_listening()
+        voice.begin_speaking()
+        voice.interrupt()
+        checks["phase3_voice_barge_in"] = voice.should_stop_speech(turn)
+
+        from jenefar.avatar.viseme import text_to_visemes
+        checks["phase4_avatar_visemes"] = bool(text_to_visemes("Jenefar"))
+
+        from jenefar.vision.agent_loop import VisionAgentLoop
+        checks["phase5_vision_loop"] = VisionAgentLoop is not None
+
+        from jenefar.coding.workflow import CodingWorkflow
+        checks["phase6_coding_workflow"] = CodingWorkflow is not None
+
+        from jenefar.research.citations import Citation, attach_citations
+        checks["phase7_research_citations"] = bool(attach_citations(["check"], [Citation("local", "check", "test")]))
+
+        from jenefar.security.engagement import SecurityEngagement
+        checks["phase8_security_engagement"] = SecurityEngagement is not None
+
+        from jenefar.robotics.unified import UnifiedRobotController
+        checks["phase9_robotics_unified"] = UnifiedRobotController().status() == {"serial": False, "mqtt": False, "ros2": False}
+    except Exception as exc:
+        print(f"[JENEFAR] Phase upgrade check error: {type(exc).__name__}: {exc}")
+        return 1
+
+    print({"phase_upgrade_checks": checks, "all_passed": all(checks.values())})
+    return 0 if all(checks.values()) else 1
+
+
 def setup_vision() -> int:
     import os
     import shutil
@@ -400,6 +450,9 @@ def main() -> int:
         }
         print({"checks": checks, "snapshot": snapshot})
         return 0 if all(checks.values()) else 1
+
+    if args.phase_upgrade_check:
+        return phase_upgrade_check()
 
     if args.setup_vision:
         return setup_vision()
