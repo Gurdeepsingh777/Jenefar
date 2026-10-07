@@ -231,6 +231,12 @@ def main() -> int:
     run_cmd("pytest", [PYTHON, "-m", "pytest", "-q"], timeout=180)
     run_cmd("final_acceptance", [PYTHON, "scripts/final_acceptance.py"], timeout=90)
 
+    try:
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        check("voice_configuration", True, ProviderVoiceRuntime.audio_status(), required=False)
+    except Exception as exc:
+        check("voice_configuration", False, f"{type(exc).__name__}: {exc}", required=False)
+
     privacy_check()
     browser_dom_check()
 
