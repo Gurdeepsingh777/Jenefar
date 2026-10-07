@@ -87,3 +87,31 @@ def test_phase_runtime_bridge(tmp_path):
     assert runtime.security_report()["finding_count"] == 1
     assert runtime.coding_workflow(object()).__class__.__name__ == "CodingWorkflow"
     assert runtime.vision_loop(object()).__class__.__name__ == "VisionAgentLoop"
+
+def test_phase_runtime_live_backend_binding(tmp_path):
+    from jenefar.core.phase_runtime import PhaseRuntime
+
+    class Workspace:
+        pass
+
+    class Robot:
+        def command(self, command, argument=""):
+            return {"command": command, "argument": argument}
+
+    class Broker:
+        workspace = Workspace()
+        screen_vision = object()
+        security = object()
+        robotics = Robot()
+        mqtt_robot = Robot()
+        ros2_robot = Robot()
+
+    runtime = PhaseRuntime(data_root=tmp_path, tool_broker=Broker())
+    assert runtime.coding_workflow().workspace is Broker.workspace
+    assert runtime.vision_loop().vision is Broker.screen_vision
+    assert runtime.robotics.status() == {
+        "serial": True,
+        "mqtt": True,
+        "ros2": True,
+    }
+    assert runtime.snapshot()["integrated_backends"]["coding_workspace"] is True
