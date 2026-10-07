@@ -46,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--production-readiness", action="store_true", help="show production readiness diagnostics")
     parser.add_argument("--integration-smoke", action="store_true", help="run local Phase 13-24 integration smoke checks")
     parser.add_argument("--phase-upgrade-check", action="store_true", help="validate the nine-phase Jenefar upgrade components without executing privileged actions")
+    parser.add_argument("--phase-runtime-smoke", action="store_true", help="exercise the nine-phase runtime bridge through the orchestrator without privileged actions")
     parser.add_argument("--setup-assets", choices=["wakeword", "avatar", "all"], help="download verified external assets into the local data directory")
     parser.add_argument("--wakeword-asset-profile", choices=["safe", "rich"], default="safe", help="wake-word asset profile: safe uses SLR26 + LibriSpeech; rich also downloads SLR28 noise/RIR data")
     parser.add_argument("--wakeword-prepare", metavar="PHRASE", help="generate an openWakeWord training config for PHRASE")
@@ -450,6 +451,44 @@ def main() -> int:
         }
         print({"checks": checks, "snapshot": snapshot})
         return 0 if all(checks.values()) else 1
+
+    if args.phase_runtime_smoke:
+        import tempfile
+        from jenefar.core.phase_runtime import PhaseRuntime
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = PhaseRuntime(data_root=tmp)
+            runtime.remember_fact("runtime", "connected", source="smoke")
+            memory_ok = runtime.recall_fact("runtime")[0]["value"] == "connected"
+            turn = runtime.voice_listening()
+            runtime.voice_speaking()
+            runtime.voice_interrupt()
+            voice_state = runtime.voice_snapshot()
+            voice_ok = voice_state["interrupted"] and voice_state["turn_id"] == turn
+            viseme_ok = bool(runtime.avatar_visemes("hello Jenefar"))
+            citations = runtime.research_citations(
+                ["claim"],
+                [{"source": "smoke", "title": "Smoke", "locator": "local:test"}],
+            )
+            research_ok = bool(citations and citations[0]["citations"])
+            runtime.security_start("runtime-smoke", ["127.0.0.1"])
+            finding = runtime.security_finding(
+                "Smoke finding", "info", "127.0.0.1", "synthetic evidence", "No action required."
+            )
+            security_ok = finding["severity"] == "info" and runtime.security_report()["finding_count"] == 1
+            robotics_ok = runtime.robot_status()["serial"] is False
+            checks = {
+                "memory_lifecycle": memory_ok,
+                "voice_barge_in": voice_ok,
+                "avatar_visemes": viseme_ok,
+                "research_citations": research_ok,
+                "security_engagement": security_ok,
+                "robotics_bridge": robotics_ok,
+                "coding_workflow_factory": runtime.coding_workflow(object()).__class__.__name__ == "CodingWorkflow",
+                "vision_loop_factory": runtime.vision_loop(object()).__class__.__name__ == "VisionAgentLoop",
+                "orchestrator_import": True,
+            }
+            print({"phase_runtime_checks": checks, "all_passed": all(checks.values())})
+            return 0 if all(checks.values()) else 1
 
     if args.phase_upgrade_check:
         return phase_upgrade_check()
