@@ -10,6 +10,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--voice", action="store_true", help="run bounded microphone -> STT -> agent -> TTS mode")
     parser.add_argument("--voice-continuous", action="store_true", help="run continuous microphone VAD -> STT -> agent -> TTS mode")
     parser.add_argument("--text", action="store_true", help="force typed CLI mode instead of the default voice-first runtime")
+    parser.add_argument("--autonomous-task", metavar="TASK", help="execute one bounded observe -> act -> verify -> replan task through the integrated autonomous runtime")
     parser.add_argument("--avatar", action="store_true", help="show Jenefar's local real-time particle avatar UI")
     parser.add_argument("--realtime", action="store_true", help="launch the avatar UI for browser Realtime speech-to-speech")
     parser.add_argument("--desktop", action="store_true", help="launch Jenefar inside the optional native desktop shell")
@@ -491,6 +492,17 @@ def main() -> int:
             print({"phase_runtime_checks": checks, "all_passed": all(checks.values())})
             return 0 if all(checks.values()) else 1
 
+    if args.autonomous_task:
+        try:
+            from jenefar.core.orchestrator import JenefarOrchestrator
+            orchestrator = JenefarOrchestrator()
+            result = orchestrator.run_autonomous_task(args.autonomous_task)
+            print(result)
+            return 0 if result.get("status") in {"completed", "success"} else 1
+        except Exception as exc:
+            print(f"[JENEFAR] Autonomous task error: {type(exc).__name__}: {exc}")
+            return 1
+
     if args.phase_upgrade_check:
         return phase_upgrade_check()
 
@@ -552,7 +564,7 @@ def main() -> int:
             "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
             "evaluation_report", "trace_report", "runtime_health", "self_healing_policy",
             "evaluation_dashboard", "setup_assets", "wakeword_prepare_validation",
-            "wakeword_prepare", "wakeword_train", "analyze_github", "plan_github", "phase_runtime_smoke", "phase_upgrade_check",
+            "wakeword_prepare", "wakeword_train", "analyze_github", "plan_github", "phase_runtime_smoke", "phase_upgrade_check", "autonomous_task",
         )
     ):
         args.voice_auto = True
