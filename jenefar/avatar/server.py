@@ -20,6 +20,7 @@ ASSET_DIR = Path(__file__).with_name("web")
 
 
 class _AvatarHandler(BaseHTTPRequestHandler):
+    MAX_REQUEST_BODY_BYTES = 1024 * 1024
     controller: AvatarController
     vrm_path: Path | None
     tool_broker = None
@@ -44,7 +45,17 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         )
 
     def _read_json(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw_length = self.headers.get("Content-Length", "0") or "0"
+        try:
+            length = int(raw_length)
+        except ValueError as exc:
+            raise ValueError("invalid Content-Length") from exc
+        if length < 0:
+            raise ValueError("invalid Content-Length")
+        if length > self.MAX_REQUEST_BODY_BYTES:
+            raise ValueError(
+                f"request body too large; limit is {self.MAX_REQUEST_BODY_BYTES} bytes"
+            )
         if length <= 0:
             return {}
         try:
