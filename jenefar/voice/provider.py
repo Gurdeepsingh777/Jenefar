@@ -11,6 +11,14 @@ import wave
 from pathlib import Path
 import subprocess
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - requirements.txt provides python-dotenv
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+
 from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
 from jenefar.voice.speech import enforce_hinglish
 
