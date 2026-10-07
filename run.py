@@ -485,7 +485,7 @@ def main() -> int:
                 "robotics_bridge": robotics_ok,
                 "coding_workflow_factory": runtime.coding_workflow(object()).__class__.__name__ == "CodingWorkflow",
                 "vision_loop_factory": runtime.vision_loop(object()).__class__.__name__ == "VisionAgentLoop",
-                "orchestrator_import": True,
+                "orchestrator_import": JenefarOrchestrator.__name__ == "JenefarOrchestrator",
             }
             print({"phase_runtime_checks": checks, "all_passed": all(checks.values())})
             return 0 if all(checks.values()) else 1
