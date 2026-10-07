@@ -8,8 +8,9 @@ from typing import Any
 class UISettings:
     """Non-secret persistent desktop UI preferences."""
 
-    def __init__(self, path: str | Path = "data/ui_settings.json"):
-        self.path = Path(path)
+    def __init__(self, path: str | Path | None = None):
+        default_path = Path(__file__).resolve().parents[2] / "data" / "ui_settings.json"
+        self.path = Path(path) if path is not None else default_path
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> dict[str, Any]:
