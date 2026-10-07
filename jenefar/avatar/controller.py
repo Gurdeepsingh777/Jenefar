@@ -6,6 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 
 from jenefar.avatar.expression import ExpressionEngine
+from jenefar.avatar.viseme import text_to_visemes
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class AvatarEvent:
     timestamp: float = 0.0
     audio_b64: str = ""
     audio_mime: str = ""
+    visemes: tuple[dict[str, object], ...] = ()
 
     def payload(self) -> dict[str, object]:
         value = asdict(self)
@@ -57,6 +59,7 @@ class AvatarController:
             timestamp=time.time(),
             audio_b64=str(audio_b64 or ""),
             audio_mime=str(audio_mime or ""),
+            visemes=tuple(item.__dict__ for item in text_to_visemes(text)) if text else (),
 
         ).payload()
         with self._lock:
