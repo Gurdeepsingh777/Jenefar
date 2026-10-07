@@ -34,13 +34,17 @@ def check() -> dict:
     providers = _online_providers()
 
     explicit_local_url = os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "").strip()
-    local_url = explicit_local_url or "http://127.0.0.1:11434/v1"
-    parsed = urlparse(local_url)
+
+    # Only an explicitly configured endpoint needs syntax validation here.
+    # When no endpoint is configured, LocalLLMClient owns the application
+    # default (Ollama on 127.0.0.1:11434) and should be allowed to detect it.
+    if explicit_local_url:
+        parsed = urlparse(explicit_local_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            failures.append("JENEFAR_LOCAL_LLM_BASE_URL is malformed")
 
     local_info = None
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        failures.append("JENEFAR_LOCAL_LLM_BASE_URL is malformed")
-    else:
+    if not failures:
         try:
             local_info = LocalLLMClient().detect()
         except Exception:
