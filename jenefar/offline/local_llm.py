@@ -7,6 +7,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 import time
+from collections import Counter
 
 from jenefar.core.model_router import ModelRouter
 from jenefar.core.cancellation import CancellationToken
@@ -108,6 +109,7 @@ class LocalLLMClient:
             {"role": "user", "content": prompt},
         ]
         local_tools = self._convert_tools(tools)
+        tool_counts: Counter[str] = Counter()
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
             if cancel_token is not None:
@@ -167,6 +169,18 @@ class LocalLLMClient:
                     arguments = json.loads(arguments_raw)
                 except json.JSONDecodeError:
                     arguments = {}
+
+                try:
+                    signature = f"{name}:{json.dumps(arguments, sort_keys=True, ensure_ascii=False)}"
+                except TypeError:
+                    signature = f"{name}:{arguments}"
+                tool_counts[signature] += 1
+                if tool_counts[signature] > 1:
+                    return (
+                        "I stopped a repeated tool loop. The latest tool result is already available. "
+                        "A more specific next step is needed before running that same action again.",
+                        [],
+                    )
 
                 if deadline is not None and deadline <= time.monotonic():
                     raise TimeoutError("Jenefar execution budget exhausted")
