@@ -35,7 +35,7 @@ class AutonomousTaskEngine:
     def run(self, task: str) -> AutonomousRun:
         run = AutonomousRun(task=task, status="running")
         plan, cursor = list(self.planner(task))[:self.max_steps], 0
-        while cursor < self.max_steps and plan:
+        while cursor < min(self.max_steps, len(plan)) and plan:
             step = dict(plan[cursor]); step_id = str(step.get("id") or f"step-{cursor + 1}"); run.attempts += 1
             try:
                 result = self.recovery.run(f"autonomous:{step_id}", lambda: self.executor(step),
