@@ -137,3 +137,20 @@ def test_provider_defaults_do_not_depend_on_obsolete_gemini_model():
     assert "gemini-3.5-flash-lite" in source
     assert "gemini-2.5-flash-lite" in source
     assert "openrouter/free" in source
+
+
+def test_full_screen_capture_is_disabled_by_default(monkeypatch, tmp_path):
+    from jenefar.automation.desktop import DesktopAutomation
+
+    monkeypatch.delenv("JENEFAR_ALLOW_SCREEN_CAPTURE", raising=False)
+    desktop = DesktopAutomation(tmp_path / "screenshots")
+    assert desktop.screen_capture_enabled() is False
+    with pytest.raises(PermissionError, match="Full-screen capture is disabled"):
+        desktop.capture_frame()
+
+
+def test_full_screen_capture_requires_explicit_opt_in(monkeypatch):
+    from jenefar.automation.desktop import DesktopAutomation
+
+    monkeypatch.setenv("JENEFAR_ALLOW_SCREEN_CAPTURE", "1")
+    assert DesktopAutomation.screen_capture_enabled() is True
