@@ -75,6 +75,24 @@ class Planner:
     def plan(self, text: str) -> Plan:
         t = text.lower()
 
+        project_terms = (
+            "project", "codebase", "validate", "validation", "test", "tests",
+            "pytest", "runtime", "implementation", "implement", "fix", "debug",
+            "inspect code", "check code", "source code", "run checks",
+        )
+        if any(x in t for x in project_terms) and any(x in t for x in (
+            "jenefar", ".py", "python", "code", "repo", "project", "runtime",
+            "validation", "test", "pytest", "implementation",
+        )):
+            return self._make_plan(
+                text,
+                "local_development",
+                "local_development",
+                confidence=0.94,
+                reason="project/code validation task priority",
+                needs_tool=True,
+            )
+
         repository_terms = (
             "github",
             "repository",
