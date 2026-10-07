@@ -93,7 +93,6 @@ class JenefarOrchestrator:
         self.task_lifecycle = TaskLifecycle()
         self.production = ProductionRuntime()
         self.phase_runtime = PhaseRuntime(data_root="data")
-        self.phase_runtime = PhaseRuntime(data_root="data")
 
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
@@ -167,7 +166,6 @@ class JenefarOrchestrator:
         )
         snapshot["tasks"] = self.task_lifecycle.snapshot()
         snapshot["production"] = self.production.snapshot()
-        snapshot["phase_runtime"] = self.phase_runtime.snapshot()
         snapshot["phase_runtime"] = self.phase_runtime.snapshot()
         return snapshot
 
