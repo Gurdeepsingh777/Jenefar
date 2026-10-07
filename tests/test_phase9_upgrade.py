@@ -115,3 +115,12 @@ def test_phase_runtime_live_backend_binding(tmp_path):
         "ros2": True,
     }
     assert runtime.snapshot()["integrated_backends"]["coding_workspace"] is True
+
+
+def test_planner_prioritizes_project_validation_over_memory_keyword():
+    from jenefar.core.planner import Planner
+    plan = Planner().plan(
+        "Jenefar project ka current runtime inspect karo aur validation tests run karke verified result do"
+    )
+    assert plan.agent == "local_development"
+    assert plan.intent == "local_development"
