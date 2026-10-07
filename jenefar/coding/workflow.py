@@ -13,6 +13,6 @@ class CodingWorkflow:
         if not validation.get("valid"): return CodingWorkflowResult("validation_failed",path,result.get("diff",""),validation,backup=result.get("backup",""))
         tests=None
         if run_tests:
-            tests=self.workspace.run_pytest(test_path or str(self.workspace.policy.root))
+            tests=self.workspace.run_pytest(test_path or str(self.workspace.policy.roots[0]))
             if not tests.get("passed"): return CodingWorkflowResult("tests_failed",path,result.get("diff",""),validation,tests,result.get("backup",""))
         return CodingWorkflowResult("completed",path,result.get("diff",""),validation,tests,result.get("backup",""))
