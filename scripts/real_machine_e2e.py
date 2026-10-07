@@ -143,12 +143,11 @@ def browser_dom_check() -> None:
         adapter = PlaywrightComputerAdapter(page)
         page.set_content(
             "<main><label for='name'>Name</label>"
-            "<input id='name'><button>Run</button>"
+            "<input id='name'><button onclick=\"document.querySelector('#result').textContent = document.querySelector('#name').value\">Run</button>"
             "<div id='result'>idle</div></main>"
         )
         adapter.act({"type": "fill", "label": "Name", "value": "Jenefar"})
         adapter.act({"type": "click_role", "role": "button", "name": "Run"})
-        page.locator("#result").evaluate("(e) => e.textContent = document.querySelector('#name').value")
         observation = adapter.observe()
         ok = "Jenefar" in observation["text"]
         check("browser_dom", ok, {
