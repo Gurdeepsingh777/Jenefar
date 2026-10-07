@@ -1,67 +1,72 @@
 from __future__ import annotations
+
 import os
 from pathlib import Path
 from urllib.parse import urlparse
 
+from dotenv import dotenv_values
+
+
+def _config() -> dict[str, str]:
+    """Resolve process env first, then the project .env as a deployment fallback."""
+    values: dict[str, str] = {}
+    env_path = Path(os.getenv("JENEFAR_ENV_FILE", ".env")).expanduser()
+    if env_path.is_file():
+        values.update({k: v for k, v in dotenv_values(env_path).items() if v is not None})
+    values.update({k: v for k, v in os.environ.items() if k.startswith(("JENEFAR_", "OLLAMA_", "OPENAI_", "GROQ_", "GEMINI_", "OPENROUTER_", "CEREBRAS_"))})
+    return values
+
+
 def check() -> dict:
+    cfg = _config()
     warnings: list[str] = []
     failures: list[str] = []
-    providers = [name for name in ("OPENAI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY") if os.getenv(name)]
-    local_url = os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "").strip()
-
-    # Jenefar's local Ollama runtime is the supported zero-key fallback.
-    # If no explicit URL is configured, use the standard local Ollama endpoint
-    # when it is reachable/configured by the local runtime.
+    providers = [name for name in ("OPENAI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY") if cfg.get(name)]
+    local_url = cfg.get("JENEFAR_LOCAL_LLM_BASE_URL", "").strip()
     if not local_url:
-        local_url = os.getenv("OLLAMA_HOST", "").strip()
+        local_url = cfg.get("OLLAMA_HOST", "").strip()
         if not local_url:
             local_url = "http://127.0.0.1:11434"
 
     local_llm_configured = False
-    if local_url:
-        parsed = urlparse(local_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            failures.append("JENEFAR_LOCAL_LLM_BASE_URL is malformed")
-        else:
-            try:
-                import urllib.request
-                health_base = local_url.rstrip("/")
-                if health_base.endswith("/v1"):
-                    health_base = health_base[:-3].rstrip("/")
-                with urllib.request.urlopen(
-                    health_base + "/api/tags",
-                    timeout=2,
-                ) as response:
-                    local_llm_configured = 200 <= response.status < 300
-            except Exception:
-                local_llm_configured = False
+    parsed = urlparse(local_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        failures.append("JENEFAR_LOCAL_LLM_BASE_URL is malformed")
+    else:
+        try:
+            import urllib.request
+            health_base = local_url.rstrip("/")
+            if health_base.endswith("/v1"):
+                health_base = health_base[:-3].rstrip("/")
+            with urllib.request.urlopen(health_base + "/api/tags", timeout=2) as response:
+                local_llm_configured = 200 <= response.status < 300
+        except Exception:
+            local_llm_configured = False
 
     if not providers and not local_llm_configured:
         failures.append("no online or local LLM provider configured")
-    if local_url:
-        parsed = urlparse(local_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            failures.append("JENEFAR_LOCAL_LLM_BASE_URL is malformed")
-    data_dir = Path(os.getenv("JENEFAR_DATA_DIR", "data"))
+    data_dir = Path(cfg.get("JENEFAR_DATA_DIR", "data"))
     if not data_dir.exists():
         warnings.append("data directory missing; it will be created on first persistence")
     elif not data_dir.is_dir():
         failures.append("configured data directory is not a directory")
-    if not os.getenv("JENEFAR_APPROVAL_SECRET"):
-        if os.getenv("JENEFAR_REQUIRE_EXPLICIT_APPROVAL_SECRET", "").strip().lower() in {"1", "true", "yes"}:
+
+    approval_secret = cfg.get("JENEFAR_APPROVAL_SECRET", "").strip()
+    if not approval_secret:
+        if cfg.get("JENEFAR_REQUIRE_EXPLICIT_APPROVAL_SECRET", "").strip().lower() in {"1", "true", "yes"}:
             failures.append("JENEFAR_APPROVAL_SECRET is required but not configured")
         else:
             warnings.append("approval secret not explicitly configured; process-local secret will be generated")
-    if os.getenv("JENEFAR_TASK_HISTORY_PATH", "").startswith("/"):
+    if cfg.get("JENEFAR_TASK_HISTORY_PATH", "").startswith("/"):
         warnings.append("task history uses an absolute path; verify filesystem permissions")
 
-    host = os.getenv("JENEFAR_HOST", "127.0.0.1").strip()
+    host = cfg.get("JENEFAR_HOST", "127.0.0.1").strip()
     loopback = host in {"127.0.0.1", "::1", "localhost"}
-    auth_user = os.getenv("JENEFAR_AUTH_USER", "").strip()
-    auth_password = os.getenv("JENEFAR_AUTH_PASSWORD", "")
-    tls_cert = os.getenv("JENEFAR_TLS_CERT", "").strip()
-    tls_key = os.getenv("JENEFAR_TLS_KEY", "").strip()
-    allow_insecure_remote = os.getenv("JENEFAR_ALLOW_INSECURE_REMOTE", "").strip().lower() in {"1", "true", "yes"}
+    auth_user = cfg.get("JENEFAR_AUTH_USER", "").strip()
+    auth_password = cfg.get("JENEFAR_AUTH_PASSWORD", "")
+    tls_cert = cfg.get("JENEFAR_TLS_CERT", "").strip()
+    tls_key = cfg.get("JENEFAR_TLS_KEY", "").strip()
+    allow_insecure_remote = cfg.get("JENEFAR_ALLOW_INSECURE_REMOTE", "").strip().lower() in {"1", "true", "yes"}
 
     if not loopback:
         if not auth_user or not auth_password:
