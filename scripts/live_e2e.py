@@ -197,7 +197,7 @@ def long_run(seconds: int) -> int:
     graph.add(TaskNode("finish", lambda _: work("finished"), deps={"verify"}))
     result = graph.run(context={}, max_workers=2)
     elapsed = time.monotonic() - started
-    ok = elapsed >= min(seconds, 6) and all(item.ok for item in result.values())
+    ok = elapsed >= min(seconds, 6) and all(item.state == "completed" for item in result.values())
     report("long_running_task", ok, {"elapsed_seconds": round(elapsed, 2), "nodes": len(result)})
     return 0 if ok else 1
 
