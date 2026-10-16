@@ -130,3 +130,85 @@ def test_confirmation_mode_defaults_to_critical_only(monkeypatch):
     assert load_config().require_confirmation_for_tools is False
     monkeypatch.setenv("JENEFAR_CONFIRMATION_MODE", "all")
     assert load_config().require_confirmation_for_tools is True
+
+
+
+def test_realtime_voice_mode_is_connected_and_uses_conversational_instructions():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    js = (WEB / "realtime.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "realtime" / "server.py").read_text(encoding="utf-8")
+    env = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert 'id="realtime-button"' in html
+    assert 'id="realtime-state"' in html
+    assert '<script src="/realtime.js"></script>' in html
+    assert "new RTCPeerConnection()" in js
+    assert "function parseToolResult(payload)" in js
+    assert "LIVE VOICE FAILED" in js
+    assert "female-presenting conversational assistant" in server
+    assert "Do not ask for approval unless the tool broker returns approval_required." in server
+    assert "active OpenAI API access and credits" in env
+
+
+def test_successful_multi_tool_workflow_is_saved_as_procedure_and_skill(tmp_path: Path):
+    from jenefar.core.orchestrator import JenefarOrchestrator
+    from jenefar.skills.manager import SkillManager
+
+    class CaptureMemory:
+        def __init__(self):
+            self.saved = []
+
+        def save_procedure(self, **kwargs):
+            self.saved.append(kwargs)
+
+    root = tmp_path / "skills"
+    orchestrator = JenefarOrchestrator.__new__(JenefarOrchestrator)
+    orchestrator.skills = SkillManager(tmp_path / "skill-state.json", skill_roots=[root])
+    orchestrator.memory_engine = CaptureMemory()
+
+    orchestrator._auto_learn_successful_workflow(
+        "Check Python project tests and summarize the results",
+        "local_development",
+        [{"tool": "workspace_list_files"}, {"tool": "workspace_run_tests"}],
+    )
+
+    assert len(orchestrator.memory_engine.saved) == 1
+    assert orchestrator.memory_engine.saved[0]["source"] == "auto_verified_workflow"
+    learned = [item for item in orchestrator.skills.list() if item["name"].startswith("learned_")]
+    assert learned
+    assert all(item["enabled"] for item in learned)
+    learned_file = next(root.glob("*/SKILL.md"))
+    body = learned_file.read_text(encoding="utf-8")
+    assert "workspace_list_files" in body
+    assert "workspace_run_tests" in body
+
+
+def test_automatic_skill_learning_skips_sensitive_and_security_workflows(tmp_path: Path):
+    from jenefar.core.orchestrator import JenefarOrchestrator
+    from jenefar.skills.manager import SkillManager
+
+    class CaptureMemory:
+        def __init__(self):
+            self.saved = []
+
+        def save_procedure(self, **kwargs):
+            self.saved.append(kwargs)
+
+    root = tmp_path / "skills"
+    orchestrator = JenefarOrchestrator.__new__(JenefarOrchestrator)
+    orchestrator.skills = SkillManager(tmp_path / "skill-state.json", skill_roots=[root])
+    orchestrator.memory_engine = CaptureMemory()
+    actions = [{"tool": "workspace_list_files"}, {"tool": "workspace_run_tests"}]
+
+    orchestrator._auto_learn_successful_workflow(
+        "Check my API key and password",
+        "local_development",
+        actions,
+    )
+    orchestrator._auto_learn_successful_workflow(
+        "Review a local security workflow",
+        "cybersecurity",
+        actions,
+    )
+
+    assert orchestrator.memory_engine.saved == []
+    assert not list(root.glob("*/SKILL.md"))
