@@ -104,7 +104,7 @@ class ToolBroker:
     def _terminal_command_is_critical(command: str) -> bool:
         """Permit bounded, low-risk local inspection/test commands without prompts."""
         raw = str(command or "").strip()
-        if not raw or any(char in raw for char in ("\n", "\r", chr(96), "$", ">", "<")):
+        if not raw or any(char in raw for char in ("\n", "\r", chr(96), "$", ">", "<", "&", "(", ")")):
             return True
         segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", raw)
         if not segments or any(not segment.strip() for segment in segments):
@@ -162,7 +162,9 @@ class ToolBroker:
                 }
                 if subcommand not in safe_git:
                     return True
-                if subcommand == "branch" and any(arg in {"-D", "--delete"} for arg in args):
+                if subcommand == "branch" and any(arg in {"-d", "-D", "--delete"} for arg in args):
+                    return True
+                if subcommand == "tag" and any(arg in {"-d", "--delete"} for arg in args):
                     return True
                 if subcommand == "remote" and any(arg in {"add", "remove", "set-url"} for arg in args):
                     return True
