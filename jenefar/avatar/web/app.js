@@ -44,7 +44,7 @@ refreshDesktopMirror();
 
 const stage=document.getElementById("stage");
 const canvas=document.getElementById("particles");
-const ctx=canvas.getContext("2d");
+const ctx=canvas?.getContext("2d")||null;
 const stateEl=document.getElementById("state");
 const captionEl=document.getElementById("caption");
 const dot=document.querySelector(".pulse-dot");
@@ -78,6 +78,7 @@ let activityFilter="all";
 const taskState=new Map();
 
 function resize(){
+  if(!canvas||!ctx) return;
   dpr=Math.min(window.devicePixelRatio||1,2);
   width=window.innerWidth;height=window.innerHeight;
   canvas.width=width*dpr;canvas.height=height*dpr;
@@ -103,6 +104,7 @@ function palette(state){
 }
 
 function draw(t){
+  if(!ctx){requestAnimationFrame(draw);return;}
   ctx.clearRect(0,0,width,height);
   const workWidth=width*.66;
   const centerX=workWidth/2,centerY=height*.46;
@@ -256,6 +258,7 @@ function addActivity(event){
   lastActivityKey=key;
 
   const bucket=activityBucket(state);
+  activityList.querySelector(".workspace-idle")?.remove();
   const row=document.createElement("article");
   row.className="activity-item activity-"+state;
   row.dataset.bucket=bucket;
@@ -720,9 +723,13 @@ function setupBrowserVoice(){
   if(!Recognition){
     voiceSupported=false;
     micEnabled=false;
-    setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED",false);
+    setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED — type in chat or use a supported browser",false);
     setMicButton(false, false);
-    if(micButton) micButton.textContent="MIC UNSUPPORTED";
+    if(micButton){
+      const label=micButton.querySelector(".mic-label");
+      if(label) label.textContent="MIC UNSUPPORTED";
+      micButton.title="SpeechRecognition is not supported in this browser. Chat input still works.";
+    }
     return;
   }
 
