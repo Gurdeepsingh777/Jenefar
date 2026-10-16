@@ -428,6 +428,7 @@ def main() -> int:
             vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
+            voice_audio_handler=browser_voice.handle_audio if browser_voice_enabled else None,
         )
         avatar_server.start()
 
