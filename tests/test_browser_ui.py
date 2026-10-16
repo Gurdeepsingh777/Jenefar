@@ -330,13 +330,13 @@ def test_avatar_events_can_carry_browser_audio():
 def test_live_task_monitor_markup_and_runtime_mirroring():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     js = (WEB / "app.js").read_text(encoding="utf-8")
-    css = (WEB / "style.css").read_text(encoding="utf-8")
+    hud_css = (WEB / "style-hud-center.css").read_text(encoding="utf-8")
     assert 'id="activity-panel"' in html
     assert 'id="workspace-log"' in html
     assert "function addActivity(event)" in js
     assert "addActivity(event);" in js
     assert "LIVE WORKSPACE" in html
-    assert ".workspace-log" in css
+    assert ".workspace-log" in hud_css
 
 
 def test_workspace_create_tool_and_workspace_scope_include_documents():
