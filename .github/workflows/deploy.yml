@@ -9,6 +9,7 @@ on:
       - "agent/**"
       - "tools/github_tools.py"
       - "tools/utility_tools.py"
+      - "tools/skill_tools.py"
       - "requirements-telegram.txt"
       - "tests/test_telegram_agent.py"
       - ".github/workflows/deploy.yml"
@@ -44,6 +45,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-telegram.txt pytest
       - name: Compile source
-        run: python -m compileall -q main.py config.py agent tools/github_tools.py tools/utility_tools.py
+        run: python -m compileall -q main.py config.py agent tools/github_tools.py tools/utility_tools.py tools/skill_tools.py
       - name: Run Telegram agent tests
         run: python -m pytest -q tests/test_telegram_agent.py
