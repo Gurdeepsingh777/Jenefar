@@ -106,7 +106,9 @@ def test_index_has_valid_script_tags_for_runtime():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert '<script type="module" src="/app.js"></script>' in html
     assert '<script type="module" src="/vrm.js"></script>' in html
-    assert '<script src="/realtime.js"></script>' not in html
+    assert '<script src="/realtime.js"></script>' in html
+    assert 'id="realtime-button"' in html
+    assert 'id="realtime-state"' in html
 
 
 def test_browser_runtime_has_single_voice_path():
