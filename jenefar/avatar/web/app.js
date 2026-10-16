@@ -1098,6 +1098,11 @@ connect();
 requestAnimationFrame(draw);
 setupBrowserVoice();
 
+// Live Realtime voice owns the microphone; stop the standard STT listener first.
+window.addEventListener("jenefar-realtime-start",()=>{
+  if(micEnabled&&micButton) micButton.click();
+});
+
 /* Cinematic 3D holographic environment */
 (function setupHolographicEnvironment(){
   const particleHost = document.getElementById("holo-particles");
