@@ -1,34 +1,56 @@
-/*
- * Light layout helpers only — do NOT rebuild the whole UI here.
- * Full design lives in style.css (Phase 12 polished layout).
- */
-
-/* Keep task strip / desktop mirror off the avatar face */
-#desktop-mirror{
+/* Hide the VRM character. Keep the dashboard, moving particles, and the 3D HUD file. */
+#vrm-canvas,
+.avatar-shell,
+#photo-avatar,
+.photo-avatar{
   display:none!important;
-}
-
-/* Soften ambient layers so they don't fight panels */
-.sci-fi-bg,
-.room-lights,
-.holo-particles{
+  visibility:hidden!important;
   pointer-events:none!important;
 }
 
-/* Ensure side UI stays above ambient */
-.side-nav{z-index:80!important}
-.hero-copy,
-.chat-glass,
-.system-card,
-.command-stack,
-#activity-panel,
-.workspace-card,
-.quick-apps,
-.media-card{
-  z-index:55!important;
+/* Center the real hud_avatar.html iframe */
+#hud-avatar{
+  position:absolute!important;
+  left:calc(50% - 230px)!important;
+  right:auto!important;
+  top:78px!important;
+  bottom:96px!important;
+  width:460px!important;
+  height:auto!important;
+  opacity:1!important;
+  z-index:30!important;
+  overflow:hidden!important;
+  pointer-events:none!important;
+  background:transparent!important;
 }
-.bottom-dock,
-.status-strip,
-.siri-topbar{
-  z-index:70!important;
+#hud-avatar iframe,
+#hud-avatar-frame{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  border:0!important;
+  background:transparent!important;
+  pointer-events:none!important;
+}
+
+/* Original particle field stays full-screen behind the HUD */
+#particles{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  z-index:3!important;
+  opacity:1!important;
+  pointer-events:none!important;
+}
+.holo-particles{
+  pointer-events:none!important;
+  z-index:4!important;
+}
+
+@media(max-width:1250px){
+  #hud-avatar{left:calc(50% - 190px)!important;width:380px!important}
+}
+@media(max-width:800px){
+  #hud-avatar{left:8vw!important;width:84vw!important;top:90px!important;bottom:150px!important}
 }
