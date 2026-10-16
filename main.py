@@ -98,6 +98,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"API base URL: {status['provider_base_url']}\n"
         f"GitHub: {github_text}\n"
         f"Registered tools: {status['registered_tools']}\n"
+        f"Persistent skills: {status['learned_skills']}\n"
         f"Remembered messages: {status['remembered_messages']}/{status['max_history_messages']}\n"
         f"Maximum tool rounds: {status['max_tool_rounds']}\n"
         f"Allowlisted Telegram users: {len(settings.allowed_telegram_user_ids)}"
