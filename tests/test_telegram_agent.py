@@ -23,6 +23,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "llm_model_name": "test-model",
         "github_pat": "",
         "scratchpad_dir": tmp_path / "scratchpad",
+        "skill_store_dir": tmp_path / "skills",
         "request_timeout_seconds": 3.0,
         "agent_timeout_seconds": 10.0,
         "max_tool_rounds": 4,
@@ -240,3 +241,121 @@ def test_file_write_tool_schema_requires_explicit_path_content_and_commit_messag
     schema = next(item["function"] for item in registry.schemas() if item["function"]["name"] == "create_or_update_file")
     assert set(schema["parameters"]["required"]) == {"path", "content", "message"}
     assert schema["parameters"]["additionalProperties"] is False
+
+
+
+def test_persistent_skill_survives_store_restart_and_matches_keywords(tmp_path: Path):
+    from agent.skills import SkillStore
+
+    first = SkillStore(tmp_path / "permanent-skills")
+    saved = first.save(
+        name="Python Test Workflow",
+        description="Run and verify Python unit tests.",
+        keywords=["python", "pytest", "unit tests"],
+        instructions="Inspect the current project, run the registered test tools, and verify their output.",
+    )
+    assert saved["saved"] is True
+    assert saved["executable_code_installed"] is False
+
+    second = SkillStore(tmp_path / "permanent-skills")
+    matched = second.matching("Please use pytest to validate this Python project.")
+    assert any(item["name"] == "python_test_workflow" for item in matched)
+    assert "verify their output" in matched[0]["instructions"]
+
+
+def test_successful_multi_tool_task_is_auto_learned_and_reused(tmp_path: Path):
+    async def scenario():
+        class FakeLLM:
+            def __init__(self):
+                self.calls = 0
+                self.system_message = ""
+
+            async def complete_chat(self, messages, tools=None):
+                self.calls += 1
+                if self.calls == 1:
+                    self.system_message = messages[0]["content"]
+                    return {"choices": [{
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-read-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_python_versions",
+                                        "arguments": "{}",
+                                    },
+                                },
+                                {
+                                    "id": "call-read-2",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_dependency_manifest",
+                                        "arguments": "{}",
+                                    },
+                                },
+                            ],
+                        },
+                    }]}
+                return {"choices": [{
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "I checked the Python dependency details and summarized the results.",
+                    },
+                }]}
+
+        llm = FakeLLM()
+        core = AgentCore(make_settings(tmp_path), llm=llm)
+
+        @core.tools.tool(
+            name="read_python_versions",
+            description="Read Python version information.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        )
+        async def read_python_versions(_args):
+            return {"python": "3.x"}
+
+        @core.tools.tool(
+            name="read_dependency_manifest",
+            description="Read dependency metadata.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        )
+        async def read_dependency_manifest(_args):
+            return {"dependencies": ["pytest", "httpx"]}
+
+        answer = await core.respond(
+            12345,
+            "Check Python package dependencies and summarize version details.",
+        )
+        assert "summarized the results" in answer
+        learned = core.skills.list()
+        assert any(item["source"] == "auto_verified_workflow" for item in learned)
+        matched = core.skills.matching("Python dependency version details")
+        assert matched
+        assert "Relevant persistent SKILL.md guidance" in core._system_message("Python dependency version details")
+        await core.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_skill_store_refuses_credential_assignments_and_raw_targets(tmp_path: Path):
+    from agent.skills import SkillStore
+
+    store = SkillStore(tmp_path / "skills")
+    with pytest.raises(ValueError):
+        store.save(
+            name="unsafe-token-skill",
+            description="Example only",
+            keywords=["example"],
+            instructions="api_key = sk-test-do-not-save",
+        )
+    with pytest.raises(ValueError):
+        store.save(
+            name="target-specific-skill",
+            description="Example only",
+            keywords=["network"],
+            instructions="Scan https://example.com and reuse that target.",
+        )
