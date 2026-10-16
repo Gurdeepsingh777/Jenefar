@@ -947,3 +947,69 @@ Explicit commands such as "Firefox ko blue screen par shift karo", "terminal ko 
 
 On native Wayland, application-window capture is available through the XDG ScreenCast portal and PipeWire, but generic cross-application window movement/minimization is compositor-managed rather than a single universal client API. The portal explicitly supports application-window sources, while the Wayland xdg-shell protocol exposes move/resize operations as user-driven surface operations. citeturn144502search0turn144502search6 Jenefar therefore reports the actual backend capability instead of pretending a native transfer succeeded when it did not.
 
+
+
+## Telegram-only autonomous agent
+
+This is an additional, independent runtime for the Telegram-first agent described below. It does **not** replace the existing Jenefar desktop/avatar runtime (`run.py`). The Telegram bot's only user interface is Telegram: there is no web chat, Discord bot, or typed chat CLI in this runtime.
+
+### Features
+
+- Async Telegram handlers with an allowlist enforced before every command or message.
+- `/start`, `/status`, and `/clear` commands.
+- OpenAI-compatible REST LLM with environment-based `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_NAME`; aliases `API_KEY`, `BASE_URL`, and `MODEL_NAME` are also supported.
+- Bounded ReAct/function-calling loop: invoke registered tools, inspect observations, and continue until the task is complete or the configured tool-round limit is reached.
+- GitHub tools: list repositories, read files, create/update and commit files, create repositories, and list/create issues or pull requests.
+- Utility tools: public HTTP page text fetching plus read/write persistent scratchpad notes.
+- Async API calls, request timeouts, readable rate-limit errors, bounded tool output, and per-user short-term memory.
+- Docker Compose deployment with a non-root container, read-only application filesystem, dropped Linux capabilities, and a persistent scratchpad volume.
+
+### Local setup (Linux/Kali)
+
+1. Create a Telegram bot with [BotFather](https://t.me/BotFather) and copy the bot token. Do not publish the token.
+2. Get your numeric Telegram user ID from a trusted Telegram ID helper and put it in `ALLOWED_TELEGRAM_USER_IDS`. Use comma-separated numeric IDs only; anyone not listed is blocked before command/tool handlers run.
+3. Create a fine-grained GitHub PAT for the repositories you need. Grant only the permissions required for your work (Metadata read; Contents read/write for file edits; Issues read/write for issues; Pull requests read/write for PRs). Add it to `GITHUB_PAT`. GitHub tools remain disabled until a PAT is configured.
+4. Choose an OpenAI-compatible provider. Example defaults target Groq-compatible APIs; providers/models and their free quotas can change. Put the provider key in `LLM_API_KEY`, and adjust `LLM_BASE_URL` and `LLM_MODEL_NAME` for the selected API.
+5. Configure and run:
+
+```bash
+cp .env.example .env
+nano .env
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-telegram.txt
+python main.py
+```
+
+Send the bot `/start`, then `/status`. Send ordinary text messages to request tasks. `/clear` erases this Telegram user's in-memory conversation history; it does not delete scratchpad files or GitHub content.
+
+### Docker deployment
+
+```bash
+cp .env.example .env
+nano .env
+docker compose up -d --build
+docker compose logs -f jenefar-telegram
+```
+
+To stop the bot:
+
+```bash
+docker compose down
+```
+
+The scratchpad stays in the `jenefar_scratchpad` Docker volume. The container runs as a non-root user with a read-only root filesystem and no extra Linux capabilities.
+
+### Add a new tool
+
+Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asynchronous function, and register its JSON schema using `@registry.tool(name=..., description=..., parameters=...)`. New tool modules should expose a `register_*_tools(registry, settings)` function and be added to `AgentCore.__init__`. Tool parameters must be JSON Schema objects with `additionalProperties: false`.
+
+### Security and operational notes
+
+- Keep `.env`, Telegram tokens, LLM keys and `GITHUB_PAT` out of Git. Rotate a key immediately if it is accidentally disclosed.
+- Use a GitHub PAT with the smallest practical repository access. File edits create commits; repository/issue/PR creation has real effects. The agent prompt requires the current task to authorize writes, but token permissions remain the ultimate boundary.
+- `fetch_url` allows public HTTP(S) pages only, blocks private/loopback/reserved IP targets and does not follow redirects. Fetched web pages and repository text are untrusted reference data, not agent instructions.
+- The short-term chat memory lives in process memory and resets when the bot restarts. `/clear` resets only the requesting authorized user's short-term history.
+- Free API provider limits can change; rate-limit and quota errors are surfaced without terminating polling. The bot does not bypass provider authentication or quota requirements.
+- Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.
