@@ -87,3 +87,27 @@ def test_hermes_skill_does_not_import_executable_code(tmp_path: Path):
     )
     manager = SkillManager(tmp_path / "state.json", skill_roots=[root])
     assert manager.get("sample_helper").source.endswith("SKILL.md")
+
+
+def test_learned_skill_is_persisted_and_auto_enabled(tmp_path: Path):
+    root = tmp_path / "skills"
+    manager_state = tmp_path / "skills-state.json"
+    manager = SkillManager(manager_state, skill_roots=[root])
+    result = manager.save_learned_skill(
+        name="learned_python_test_workflow",
+        description="A reusable workflow for local Python test validation.",
+        keywords=["python", "pytest", "validation"],
+        system_prompt="Inspect current project state, run the registered test workflow, and verify results.",
+        connectors=[],
+        permissions=[],
+    )
+    assert result["saved"] is True
+    assert result["enabled"] is True
+    assert result["executable_code_installed"] is False
+    assert Path(result["path"]).name == "SKILL.md"
+
+    manager_after_restart = SkillManager(manager_state, skill_roots=[root])
+    learned = manager_after_restart.get("learned_python_test_workflow")
+    assert manager_after_restart.is_enabled("learned_python_test_workflow") is True
+    assert "verify results" in learned.system_prompt
+    assert Path(learned.source).is_file()
