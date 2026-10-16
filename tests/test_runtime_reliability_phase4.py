@@ -75,3 +75,49 @@ def test_task_matched_skills_are_added_to_agent_instructions():
     agent.run(ctx)
     assert "Task-matched skill guidance" in agent.llm.instructions
     assert "Prefer cycles render engine." in agent.llm.instructions
+
+
+def test_mediarecorder_fallback_is_connected_to_provider_stt():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "new MediaRecorder(fallbackStream" in app
+    assert 'fetch("/voice/audio"' in app
+    assert 'if path == "/voice/audio":' in server
+    assert "def handle_audio(self, audio: bytes" in voice
+    assert "ProviderVoiceRuntime(self.orchestrator).transcribe_pcm" in voice
+    assert "voice_audio_handler=browser_voice.handle_audio" in run
+
+
+def test_browser_hud_does_not_draw_an_opaque_horizon_plate():
+    hud = (WEB / "hud_avatar.html").read_text(encoding="utf-8")
+    assert "ctx.fillRect(0, horizonY - 40, W, 48)" not in hud
+    assert "#vignette { display:none!important" in hud
+
+
+def test_terminal_safe_local_commands_auto_run_but_destructive_commands_wait():
+    import json
+    from jenefar.tools.broker import ToolBroker
+
+    broker = ToolBroker(require_confirmation=False)
+    safe = json.loads(broker.invoke("terminal_execute", {"command": "printf jenefar", "timeout": 5}))
+    assert safe["status"] == "ok"
+    assert "jenefar" in safe["result"]
+
+    dangerous = json.loads(broker.invoke(
+        "terminal_execute",
+        {"command": "rm -rf /tmp/jenefar-never-delete-test", "timeout": 5},
+    ))
+    assert dangerous["status"] == "approval_required"
+    assert dangerous["critical"] is True
+
+
+def test_confirmation_mode_defaults_to_critical_only(monkeypatch):
+    from jenefar.core.config import load_config
+
+    monkeypatch.setenv("JENEFAR_REQUIRE_CONFIRMATION", "true")
+    monkeypatch.delenv("JENEFAR_CONFIRMATION_MODE", raising=False)
+    assert load_config().require_confirmation_for_tools is False
+    monkeypatch.setenv("JENEFAR_CONFIRMATION_MODE", "all")
+    assert load_config().require_confirmation_for_tools is True
