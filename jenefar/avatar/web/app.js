@@ -48,11 +48,11 @@ const ctx=canvas.getContext("2d");
 const stateEl=document.getElementById("state");
 const captionEl=document.getElementById("caption");
 const dot=document.querySelector(".pulse-dot");
-const activityList=document.getElementById("activity-list");
-const runningCount=document.getElementById("activity-running");
-const queuedCount=document.getElementById("activity-queued");
-const doneCount=document.getElementById("activity-done");
-const errorCount=document.getElementById("activity-errors");
+const activityList=document.getElementById("activity-list") || document.getElementById("workspace-log");
+const runningCount=document.getElementById("activity-running") || document.getElementById("stat-running");
+const queuedCount=document.getElementById("activity-queued") || document.getElementById("stat-queue");
+const doneCount=document.getElementById("activity-done") || document.getElementById("stat-done");
+const errorCount=document.getElementById("activity-errors") || document.getElementById("stat-error");
 
 const labels={
   idle:["READY","Ready"],
@@ -307,20 +307,22 @@ function applyActivityFilter(){
 const clearActivityButton=document.getElementById("clear-activity");
 const clearWorkspaceButton=document.getElementById("clear-workspace");
 function clearActivity(){
-  if(activityList) activityList.innerHTML="";
+  if(activityList) activityList.replaceChildren();
   taskState.clear();
   updateTaskCounts();
   lastActivityKey="";
 }
-if(clearActivityButton) clearActivityButton.onclick=clearActivity;
+if(clearActivityButton) clearActivityButton.onclick=()=>document.getElementById("chat-log")?.replaceChildren();
 if(clearWorkspaceButton) clearWorkspaceButton.onclick=clearActivity;
 
 function setupActivityFilters(){
-  document.querySelectorAll("[data-activity-filter]").forEach(button=>{
+  const filters=document.querySelectorAll("[data-activity-filter], [data-tab]");
+  filters.forEach(button=>{
     button.addEventListener("click",()=>{
-      activityFilter=button.dataset.activityFilter||"all";
-      document.querySelectorAll("[data-activity-filter]").forEach(item=>{
+      activityFilter=button.dataset.activityFilter||button.dataset.tab||"all";
+      filters.forEach(item=>{
         item.dataset.active=String(item===button);
+        item.classList.toggle("active",item===button);
       });
       applyActivityFilter();
     });
@@ -382,13 +384,21 @@ function pauseBrowserVoice(){
 }
 
 function resumeBrowserVoice(){
-  if(!micEnabled||voiceLocked) return;
+  if(!micEnabled||voiceLocked||!voiceSupported||!recognition) return;
   if("speechSynthesis" in window && window.speechSynthesis.speaking) return;
   if(restartTimer) clearTimeout(restartTimer);
   restartTimer=setTimeout(()=>{
-    if(!micEnabled||voiceLocked) return;
-    try{recognition?.start();}catch(_){}
-  },450);
+    if(!micEnabled||voiceLocked||!recognition) return;
+    try{recognition.start();}
+    catch(error){
+      if(error?.name==="InvalidStateError") return;
+      addActivity({state:"error",text:"Mic could not start: "+(error?.name||error?.message||"unknown error")});
+      setVoiceInputStatus("MIC START ERROR — turn mic OFF then ON",false);
+      setMicButton(false,false);
+      micEnabled=false;
+      voiceLocked=true;
+    }
+  },restartDelay);
 }
 
 function selectPremiumVoice(){
@@ -496,8 +506,8 @@ function apply(event){
   }
 
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
-  stateEl.textContent=stateText;
-  captionEl.textContent=event.text||caption;
+  if(stateEl) stateEl.textContent=stateText;
+  if(captionEl) captionEl.textContent=event.text||caption;
 
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     document.body.dataset.voiceActive="true";
@@ -506,14 +516,22 @@ function apply(event){
   }
 
   const [r,g,b]=palette(currentState);
-  dot.style.background=`rgb(${r},${g},${b})`;
-  dot.style.boxShadow=`0 0 18px rgb(${r},${g},${b})`;
+  if(dot){
+    dot.style.background=`rgb(${r},${g},${b})`;
+    dot.style.boxShadow=`0 0 18px rgb(${r},${g},${b})`;
+  }
+  const voiceService=document.getElementById("service-voice");
+  if(voiceService) voiceService.textContent=(currentState==="speaking"||currentState==="speaking_fallback"||currentState==="listening")?"●":"○";
 }
 
 function connect(){
   const source=new EventSource("/events");
   source.onmessage=(message)=>{
-    try{apply(JSON.parse(message.data));}catch(_){}
+    try{apply(JSON.parse(message.data));}
+    catch(error){
+      console.error("[JENEFAR] Dashboard event handler failed:",error);
+      setVoiceInputStatus("DASHBOARD UPDATE ERROR — check browser console",false);
+    }
   };
   source.onerror=()=>{
     source.close();
@@ -549,12 +567,13 @@ if(browserSpeechReady){
   primeVoices();
   window.speechSynthesis.onvoiceschanged=primeVoices;
 }
-const voiceInputStatus=document.getElementById("voice-input-status");
+const voiceInputStatus=document.getElementById("voice-input-status") || document.getElementById("mic-status");
 let recognition=null;
 let micEnabled=true;
 let voiceLocked=false;
 let voiceSupported=false;
 let restartTimer=null;
+let restartDelay=450;
 let browserSpeechActive=false;
 let browserAudio=null;
 
@@ -570,7 +589,9 @@ function setMicButton(active, busy=false){
   micButton.classList.toggle("is-active", active);
   micButton.classList.toggle("is-busy", busy);
   micButton.setAttribute("aria-pressed", String(active));
-  micButton.textContent = busy ? "◌ PROCESSING" : active ? "● MIC ON" : "● MIC OFF";
+  micButton.setAttribute("aria-label",busy ? "Microphone processing" : active ? "Turn microphone off" : "Turn microphone on");
+  const label=micButton.querySelector(".mic-label");
+  if(label) label.textContent=busy ? "PROCESSING" : active ? "MIC ON" : "MIC OFF";
 }
 
 async function sendBrowserTranscript(text){
@@ -673,7 +694,11 @@ function setupBrowserVoice(){
 
   if(micButton){
     micButton.onclick=async()=>{
-      if(!voiceSupported) return;
+      if(!voiceSupported){
+        setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED — use chat or a supported browser",false);
+        setMicButton(false,false);
+        return;
+      }
       if(micEnabled){
         micEnabled=false;
         voiceLocked=true;
@@ -710,6 +735,7 @@ function setupBrowserVoice(){
 
   recognition.onstart=()=>{
     if(voiceLocked||!micEnabled){try{recognition.stop();}catch(_){};return;}
+    restartDelay=450;
     setVoiceInputStatus("BROWSER MIC: LISTENING",true);
     setMicButton(true, false);
   };
@@ -734,8 +760,9 @@ function setupBrowserVoice(){
       setVoiceInputStatus("MIC PERMISSION DENIED",false);
       setMicButton(false, false);
     }else{
-      setVoiceInputStatus("MIC RETRYING…",false);
-      setMicButton(true, true);
+      restartDelay=Math.min(5000,Math.max(900,restartDelay*1.8));
+      setVoiceInputStatus("MIC RETRYING IN "+(restartDelay/1000).toFixed(1)+"s — "+code,false);
+      setMicButton(true,true);
     }
   };
 
