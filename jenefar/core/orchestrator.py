@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
+import re
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
@@ -271,6 +273,7 @@ class JenefarOrchestrator:
                 ],
             }
             self._avatar_activity("thinking", "")
+            task_actions: list[dict[str, str]] = []
             if hasattr(self.tool_broker, "set_task_context"):
                 self.tool_broker.set_task_context(
                     agent=plan.agent,
@@ -280,13 +283,14 @@ class JenefarOrchestrator:
                 result = self.self_healing.run(
                     "agent_dispatch",
                     lambda: self.router.dispatch(text, metadata=dispatch_metadata),
-
                     metadata={
                         "approval_required": False,
                         "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
                     },
                 )
             finally:
+                if hasattr(self.tool_broker, "consume_task_actions"):
+                    task_actions = self.tool_broker.consume_task_actions()
                 if hasattr(self.tool_broker, "clear_task_context"):
                     self.tool_broker.clear_task_context()
             trace.metadata["self_healing"] = {
@@ -311,6 +315,8 @@ class JenefarOrchestrator:
             }
             awaiting = result.metadata.get("provider") in {"approval_required", "local_approval_required"}
             trace.finish(status="awaiting_approval" if awaiting else "success", provider=trace.provider, verification=verification)
+            if not awaiting and verification["passed"]:
+                self._auto_learn_successful_workflow(text, plan.agent, task_actions)
             self.session.add("assistant", output)
             self.memory_engine.record_message(
                 self.session.session_id,
@@ -517,6 +523,70 @@ class JenefarOrchestrator:
                 f"{payload['date']} ({payload['timezone']})."
             )
         return f"The current laptop time is {payload['time']} on {payload['date']} ({payload['timezone']})."
+
+    def _auto_learn_successful_workflow(
+        self,
+        task: str,
+        agent: str,
+        actions: list[dict[str, str]],
+    ) -> None:
+        """Promote verified multi-tool work into persistent procedural memory.
+
+        Only tool names are stored as steps; raw arguments/results, target values,
+        secrets and private contact details are not retained by this learner.
+        """
+        if len(actions) < 2:
+            return
+        sensitive_markers = (
+            "password", "passcode", "api key", "secret", "token",
+            "private key", "credential", "one-time password", "otp",
+            "bank account", "credit card", "medical record",
+        )
+        lowered = str(task or "").lower()
+        if any(marker in lowered for marker in sensitive_markers):
+            return
+
+        clean_trigger = str(task or "").strip()
+        clean_trigger = re.sub(r"https?://\S+|www\.\S+", "<url>", clean_trigger, flags=re.IGNORECASE)
+        clean_trigger = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b", "<email>", clean_trigger)
+        clean_trigger = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b", "<target>", clean_trigger)
+        clean_trigger = re.sub(r"(?<!\w)/(?:[^ \t\r\n]+)", "<path>", clean_trigger)
+        clean_trigger = " ".join(clean_trigger.split())[:180].strip()
+        if len(clean_trigger) < 8:
+            return
+
+        tool_names: list[str] = []
+        for item in actions:
+            name = re.sub(r"[^a-z0-9_]+", "", str(item.get("tool") or "").lower())
+            if name and name not in tool_names:
+                tool_names.append(name)
+        if len(tool_names) < 2:
+            return
+
+        slug = re.sub(r"[^a-z0-9]+", "_", clean_trigger.lower()).strip("_")[:36] or "workflow"
+        digest = hashlib.sha256(clean_trigger.lower().encode("utf-8")).hexdigest()[:8]
+        procedure_name = f"auto_{slug}_{digest}"
+        steps = [
+            "Use registered tool " + name + " for the corresponding workflow step; inspect its result and verify the postcondition before continuing."
+            for name in tool_names[:10]
+        ]
+        constraints = [
+            "This playbook was generated from a previously successful multi-tool task; re-check current inputs and outputs every time.",
+            "Never replay old values, paths, IP addresses, credentials or messages from a previous run.",
+            "Tool permissions, authorized-target scope, critical-action approvals and user intent always take precedence over this playbook.",
+        ]
+        try:
+            self.memory_engine.save_procedure(
+                name=procedure_name,
+                trigger_text=clean_trigger,
+                steps=steps,
+                constraints=constraints,
+                source="auto_verified_workflow",
+                importance=0.76,
+            )
+        except Exception as exc:
+            # Learning must never turn a completed user task into a failed response.
+            print(f"[JENEFAR] Workflow memory save skipped: {type(exc).__name__}: {exc}")
 
     @staticmethod
     def _model_role_for_plan(plan) -> str:
