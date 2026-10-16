@@ -18,12 +18,12 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 100);
-  camera.position.set(0, 1.35, 3.9);
-  camera.lookAt(0, 1.15, 0);
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+  camera.position.set(0, 1.2, 4.2);
+  camera.lookAt(0, 1.0, 0);
   let avatarBaseY = 0;
-  // Slightly under full humanoid unit height so head+feet fit the moderate canvas.
-  const TARGET_HEIGHT = 2.15;
+  // Fit full body (head to feet) inside the moderate canvas with headroom.
+  const TARGET_HEIGHT = 1.7;
 
   function frameAvatar(model) {
     if (!model?.scene) return;
@@ -42,19 +42,20 @@ if (canvas) {
     box.getSize(size);
     box.getCenter(center);
 
-    // Feet on ground, body centered; leave headroom in the canvas.
+    // Center on X/Z; put feet near bottom with extra headroom above.
     model.scene.position.x = -center.x;
-    model.scene.position.y = -box.min.y;
+    model.scene.position.y = -box.min.y - size.y * 0.02;
     model.scene.position.z = -center.z;
     model.scene.updateMatrixWorld(true);
     avatarBaseY = model.scene.position.y;
 
     const height = Math.max(size.y, 0.5);
-    // Pull camera back enough that head is not clipped at the top.
-    const camY = height * 0.48;
-    const camZ = Math.max(height * 1.55, 3.1);
+    // Wider FOV + farther camera so head is never clipped.
+    camera.fov = 30;
+    const camY = height * 0.52;
+    const camZ = Math.max(height * 2.15, 4.0);
     camera.position.set(0, camY, camZ);
-    camera.lookAt(0, height * 0.42, 0);
+    camera.lookAt(0, height * 0.48, 0);
     camera.updateProjectionMatrix();
   }
 
@@ -90,18 +91,10 @@ if (canvas) {
       const gltf = await loader.loadAsync("/avatar.vrm");
       vrm = gltf.userData.vrm;
       VRMUtils.rotateVRM0(vrm);
-      // The bundled VRM sample already faces the standard camera direction.
-      // The previous extra PI rotation showed its back to the user.
       vrm.scene.rotation.y = 0;
-      // Keep the full avatar visible from head to feet. Some VRM fixtures are
-      // authored with a T-pose; there is no safe generic way to infer a
-      // natural idle arm pose without editing the actual skeleton animation.
       vrm.scene.position.set(0, 0, 0);
       frameAvatar(vrm);
 
-      // Natural idle pose for the bundled humanoid VRM.
-      // VRM humanoid bones are rotated in local space around their current pose.
-      // These values relax the T-pose into a simple arms-down standing pose.
       const humanoid = vrm.humanoid;
       const bone = (name) => humanoid?.getNormalizedBoneNode(name);
       const setEuler = (name, x, y, z) => {
@@ -112,14 +105,12 @@ if (canvas) {
         node.rotation.z = z;
         node.updateMatrixWorld(true);
       };
-      // Premium relaxed pose: shoulders lowered, elbows softened, hands near the waist.
       setEuler("leftUpperArm", 0.08, 0.04, -1.32);
       setEuler("rightUpperArm", 0.08, -0.04, 1.32);
       setEuler("leftLowerArm", 0.34, 0.10, -0.12);
       setEuler("rightLowerArm", 0.34, -0.10, 0.12);
       setEuler("leftHand", 0.02, 0.0, -0.08);
       setEuler("rightHand", 0.02, 0.0, 0.08);
-      // Add a subtle jacket/sleeve tint when materials expose a base color.
       try {
         vrm.scene.traverse(node => {
           if (!node.isMesh || !node.material) return;
@@ -181,54 +172,32 @@ if (canvas) {
     });
   }
 
-  function addBox(group, size, position, material, radius=0.05){
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
-    mesh.position.set(...position);
-    group.add(mesh);
-    return mesh;
-  }
-
   function buildPremiumEnvironment(model){
     const group = new THREE.Group();
     group.name = "JenefarMinimalEnvironment";
-
-    // Keep the VRM visually clean. The uploaded HUD is now the main visual
-    // environment; the avatar itself only gets two subtle cyan accents.
     const trimMat = makePremiumMaterial(0x3cecff, 0.74, 0.20, 0x0a7ea0);
-
     const humanoid = model?.humanoid;
     const neck = humanoid?.getNormalizedBoneNode("neck");
     const chest =
       humanoid?.getNormalizedBoneNode("upperChest") ||
       humanoid?.getNormalizedBoneNode("chest");
-
     if (neck) {
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.12, 0.009, 8, 40),
-        trimMat
-      );
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.009, 8, 40), trimMat);
       ring.rotation.x = Math.PI / 2;
       ring.position.set(0, 0.02, 0);
       neck.add(ring);
     }
-
     if (chest) {
-      const core = new THREE.Mesh(
-        new THREE.SphereGeometry(0.045, 16, 16),
-        trimMat
-      );
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 16), trimMat);
       core.position.set(0, 0.02, 0.07);
       chest.add(core);
     }
-
     return group;
   }
 
   function setExpression(name, value) {
     if (!vrm?.expressionManager) return;
-    try {
-      vrm.expressionManager.setValue(name, value);
-    } catch (_) {}
+    try { vrm.expressionManager.setValue(name, value); } catch (_) {}
   }
 
   function phonemeForText(text, phase) {
