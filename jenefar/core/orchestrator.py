@@ -530,12 +530,14 @@ class JenefarOrchestrator:
         agent: str,
         actions: list[dict[str, str]],
     ) -> None:
-        """Promote verified multi-tool work into persistent procedural memory.
+        """Promote verified multi-tool work into persistent memory and a reusable skill.
 
-        Only tool names are stored as steps; raw arguments/results, target values,
-        secrets and private contact details are not retained by this learner.
+        Only generic tool names and redacted trigger text are retained; raw arguments,
+        results, targets, credentials and private contact details are never saved.
         """
         if len(actions) < 2:
+            return
+        if str(agent or "").lower() in {"kali", "cybersecurity", "bugbounty", "robotics"}:
             return
         sensitive_markers = (
             "password", "passcode", "api key", "secret", "token",
@@ -546,6 +548,20 @@ class JenefarOrchestrator:
         if any(marker in lowered for marker in sensitive_markers):
             return
 
+        tool_names: list[str] = []
+        for item in actions:
+            name = re.sub(r"[^a-z0-9_]+", "", str(item.get("tool") or "").lower())
+            if name and name not in tool_names:
+                tool_names.append(name)
+        # Do not auto-learn a workflow dominated by outbound, security or physical actions.
+        risky_tools = {
+            "terminal_execute", "kali_tool_execute", "security_tool_execute",
+            "connector_execute", "whatsapp_send_web", "robot_command",
+            "robot_mqtt_publish", "robot_ros2_publish",
+        }
+        if len(tool_names) < 2 or any(name in risky_tools for name in tool_names):
+            return
+
         clean_trigger = str(task or "").strip()
         clean_trigger = re.sub(r"https?://\S+|www\.\S+", "<url>", clean_trigger, flags=re.IGNORECASE)
         clean_trigger = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b", "<email>", clean_trigger)
@@ -553,14 +569,6 @@ class JenefarOrchestrator:
         clean_trigger = re.sub(r"(?<!\w)/(?:[^ \t\r\n]+)", "<path>", clean_trigger)
         clean_trigger = " ".join(clean_trigger.split())[:180].strip()
         if len(clean_trigger) < 8:
-            return
-
-        tool_names: list[str] = []
-        for item in actions:
-            name = re.sub(r"[^a-z0-9_]+", "", str(item.get("tool") or "").lower())
-            if name and name not in tool_names:
-                tool_names.append(name)
-        if len(tool_names) < 2:
             return
 
         slug = re.sub(r"[^a-z0-9]+", "_", clean_trigger.lower()).strip("_")[:36] or "workflow"
@@ -575,6 +583,7 @@ class JenefarOrchestrator:
             "Never replay old values, paths, IP addresses, credentials or messages from a previous run.",
             "Tool permissions, authorized-target scope, critical-action approvals and user intent always take precedence over this playbook.",
         ]
+
         try:
             self.memory_engine.save_procedure(
                 name=procedure_name,
@@ -585,8 +594,46 @@ class JenefarOrchestrator:
                 importance=0.76,
             )
         except Exception as exc:
-            # Learning must never turn a completed user task into a failed response.
             print(f"[JENEFAR] Workflow memory save skipped: {type(exc).__name__}: {exc}")
+
+        # Also create a durable Hermes-style SKILL.md for later automatic matching.
+        stopwords = {
+            "please", "make", "create", "help", "with", "from", "this", "that",
+            "what", "when", "where", "your", "my", "meri", "mujhe", "karo",
+            "karna", "kar", "do", "and", "the", "for", "into", "using", "use",
+            "jenefar", "can", "you", "task", "work", "need", "want", "please",
+        }
+        raw_keywords = re.findall(r"[a-z0-9_.+-]{3,}", clean_trigger.lower())
+        keywords: list[str] = []
+        for word in raw_keywords:
+            if word in stopwords or word in {"<url>", "<path>", "<target>", "<email>"}:
+                continue
+            if word not in keywords:
+                keywords.append(word)
+        if len(keywords) < 2:
+            return
+
+        skill_name = f"learned_{slug[:28]}_{digest[:6]}"
+        skill_prompt = (
+            "Use this automatically learned workflow only when its keywords match the current task. "
+            "Begin by checking the current context; do not reuse old input values or assume a previous result is still valid. "
+            "Suggested verified tool sequence: " + " -> ".join(tool_names[:10]) + ". "
+            "Inspect each tool result and verify the final postcondition. "
+            "Never store or request secrets as part of this playbook. "
+            "All active user instructions, tool approvals, security scope limits, and system policies take precedence."
+        )
+        try:
+            learned = self.skills.save_learned_skill(
+                name=skill_name,
+                description="Automatically learned, verified local workflow for: " + clean_trigger[:400],
+                keywords=keywords[:12],
+                system_prompt=skill_prompt,
+                connectors=[],
+                permissions=[],
+            )
+            print(f"[JENEFAR] Learned reusable skill: {learned.get('name', skill_name)}")
+        except Exception as exc:
+            print(f"[JENEFAR] Automatic skill save skipped: {type(exc).__name__}: {exc}")
 
     @staticmethod
     def _model_role_for_plan(plan) -> str:
