@@ -383,9 +383,11 @@ def test_critical_tool_returns_natural_yes_no_prompt():
     from jenefar.tools.broker import ToolBroker
 
     broker = ToolBroker(require_confirmation=False)
+    # A destructive command is classified as critical and is never executed
+    # by this test; it must stop at the approval gate.
     result = broker.invoke(
         "terminal_execute",
-        {"command": "printf jenefar", "timeout": 5},
+        {"command": "rm -rf /tmp/jenefar-never-delete-test", "timeout": 5},
     )
     assert '"status": "approval_required"' in result
     assert "Kya main terminal execute kar doon?" in result
