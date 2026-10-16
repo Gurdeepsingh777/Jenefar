@@ -41,23 +41,72 @@ class SkillManager:
         self._skills: dict[str, SkillManifest] = {
             skill.name: skill for skill in BUILTIN_SKILLS
         }
-        self._load_installed()
+        self._discovered_paths: set[Path] = set()
         self._load_state()
+        self._load_installed(auto_enable_new=True)
 
-    def _load_installed(self) -> None:
-        for root in self.skill_roots:
+    def _load_installed(self, *, auto_enable_new: bool = False) -> None:
+        """Discover declarative manifests only within configured local skill roots.
+
+        Supports flat JSON/.skill manifests and Hermes-style child-folder SKILL.md
+        files. Skill instructions are prompt text only; no supplied code is executed.
+        """
+        discovered: list[tuple[Path, SkillManifest]] = []
+        for root_value in self.skill_roots:
+            root = root_value.resolve()
             if not root.is_dir():
                 continue
-            for path in sorted(root.glob("*.json")):
+            candidates = list(root.glob("*.json")) + list(root.glob("*.skill"))
+            candidates += list(root.glob("*/SKILL.md"))
+            for path in sorted(set(candidates)):
                 try:
-                    manifest = load_manifest(path)
-                    self._skills[manifest.name] = manifest
+                    resolved = path.resolve()
+                    if root != resolved and root not in resolved.parents:
+                        continue
+                    if path.name.lower() == "skill.md":
+                        source = path.read_text(encoding="utf-8")
+                        if len(source) > 24000 or not source.lstrip().startswith("---"):
+                            continue
+                        parts = source.lstrip().split("---", 2)
+                        if len(parts) != 3:
+                            continue
+                        import yaml
+                        metadata = yaml.safe_load(parts[1]) or {}
+                        if not isinstance(metadata, dict):
+                            continue
+                        metadata = dict(metadata)
+                        metadata["system_prompt"] = parts[2].strip()[:6000]
+                        metadata.setdefault("name", path.parent.name)
+                        metadata.setdefault("description", "Local declarative Hermes-style skill.")
+                        manifest = SkillManifest.from_dict(metadata, source=str(path))
+                    else:
+                        manifest = load_manifest(path)
+                    discovered.append((resolved, manifest))
                 except Exception:
                     continue
+        known_names = set(self._skills)
+        for path, manifest in discovered:
+            self._skills[manifest.name] = manifest
+            self._discovered_paths.add(path)
+        if auto_enable_new and discovered:
+            enabled = self._enabled_names()
+            changed = False
+            for _path, manifest in discovered:
+                if manifest.name not in known_names and manifest.enabled_by_default:
+                    enabled.add(manifest.name)
+                    changed = True
+            if changed:
+                self._write_state(enabled)
+
+    def refresh(self) -> dict[str, Any]:
+        """Rescan configured roots so newly-added skill files load without restart."""
+        before = set(self._skills)
+        self._load_installed(auto_enable_new=True)
+        return {"discovered": sorted(set(self._skills) - before), "count": len(self._skills)}
 
     def _load_state(self) -> dict[str, Any]:
         if not self.state_path.is_file():
-            return {"enabled": [skill.name for skill in BUILTIN_SKILLS if skill.enabled_by_default]}
+            return {"enabled": [skill.name for skill in self._skills.values() if skill.enabled_by_default]}
         try:
             raw = json.loads(self.state_path.read_text(encoding="utf-8"))
             return raw if isinstance(raw, dict) else {}
@@ -75,10 +124,11 @@ class SkillManager:
         state = self._load_state()
         names = state.get("enabled")
         if not isinstance(names, list):
-            names = [skill.name for skill in BUILTIN_SKILLS if skill.enabled_by_default]
+            names = [skill.name for skill in self._skills.values() if skill.enabled_by_default]
         return {str(item).strip().lower() for item in names if str(item).strip()}
 
     def list(self) -> list[dict[str, Any]]:
+        self._load_installed(auto_enable_new=True)
         enabled = self._enabled_names()
         return [
             {
@@ -90,6 +140,7 @@ class SkillManager:
         ]
 
     def get(self, name: str) -> SkillManifest:
+        self._load_installed(auto_enable_new=True)
         key = str(name).strip().lower()
         try:
             return self._skills[key]
@@ -97,6 +148,7 @@ class SkillManager:
             raise KeyError(f"Unknown skill: {key}") from exc
 
     def is_enabled(self, name: str) -> bool:
+        self._load_installed(auto_enable_new=True)
         key = str(name).strip().lower()
         return key in self._enabled_names() and key in self._skills
 
