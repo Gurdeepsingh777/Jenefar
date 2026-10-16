@@ -686,12 +686,15 @@ def main() -> int:
             browser_voice = BrowserVoiceBridge(orchestrator, avatar=avatar)
 
         avatar_model = prepare_avatar_model()
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        audio_status = ProviderVoiceRuntime.audio_status()
         avatar_server = AvatarServer(
             avatar,
             port=args.avatar_port,
             vrm_path=avatar_model,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice else None,
+            voice_audio_handler=browser_voice.handle_audio if browser_voice else None,
         )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
@@ -700,6 +703,17 @@ def main() -> int:
             + (str(avatar_model) if avatar_model else "unavailable; procedural fallback only")
         )
         if browser_voice is not None:
+            if audio_status["stt"]:
+                stt = audio_status["stt"]
+                print(
+                    f"[JENEFAR] Browser microphone STT: {stt['provider']}/{stt['model']} "
+                    f"fallback={','.join(stt.get('fallback', [])) or 'none'}."
+                )
+            else:
+                print(
+                    "[JENEFAR] No provider STT key configured; mic will use browser SpeechRecognition. "
+                    "Set GROQ_API_KEY or a direct OPENAI_API_KEY for server transcription."
+                )
             print("[JENEFAR] Browser microphone + browser SpeechSynthesis voice path enabled.")
         if args.desktop:
             from jenefar.avatar.desktop import launch_desktop
