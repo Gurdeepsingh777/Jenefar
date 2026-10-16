@@ -24,6 +24,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     vrm_path: Path | None
     tool_broker = None
     voice_handler = None
+    voice_audio_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -153,6 +154,31 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         try:
+            if path == "/voice/audio":
+                handler = self.voice_audio_handler
+                if handler is None:
+                    self._json(503, {"error": "Browser microphone audio transcription is unavailable."})
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or "0")
+                except ValueError:
+                    self._json(400, {"error": "Invalid Content-Length."})
+                    return
+                if length <= 0:
+                    self._json(400, {"error": "No audio payload was received."})
+                    return
+                if length > 12 * 1024 * 1024:
+                    self._json(413, {"error": "Audio recording is too large (limit: 12 MiB)."})
+                    return
+                audio = self.rfile.read(length)
+                if len(audio) != length:
+                    self._json(400, {"error": "The microphone audio upload was incomplete."})
+                    return
+                result = handler(audio, self.headers.get("Content-Type", "audio/webm"))
+                payload = result if isinstance(result, dict) else {"result": result}
+                self._json(200 if not payload.get("error") else 422, payload)
+                return
+
             body = self._read_json()
 
             if path == "/voice/text":
@@ -219,6 +245,7 @@ class AvatarServer:
         vrm_path: Path | None = None,
         tool_broker=None,
         voice_handler=None,
+        voice_audio_handler=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -226,6 +253,7 @@ class AvatarServer:
         self.vrm_path = Path(vrm_path).expanduser().resolve() if vrm_path else None
         self.tool_broker = tool_broker
         self.voice_handler = voice_handler
+        self.voice_audio_handler = voice_audio_handler
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -239,6 +267,7 @@ class AvatarServer:
         vrm_path = self.vrm_path
         tool_broker = self.tool_broker
         voice_handler = self.voice_handler
+        voice_audio_handler = self.voice_audio_handler
 
         class Handler(_AvatarHandler):
             pass
@@ -249,6 +278,7 @@ class AvatarServer:
         # Functions stored on a handler class become bound methods. Keep the
         # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
+        Handler.voice_audio_handler = staticmethod(voice_audio_handler) if voice_audio_handler is not None else None
         return Handler
 
     def _create_server(self) -> None:
