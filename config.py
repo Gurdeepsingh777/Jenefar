@@ -55,6 +55,7 @@ class Settings:
     github_pat: str = ""
     github_api_url: str = "https://api.github.com"
     scratchpad_dir: Path = Path("data/scratchpad")
+    skill_store_dir: Path = Path("data/skills")
     request_timeout_seconds: float = 30.0
     agent_timeout_seconds: float = 180.0
     max_tool_rounds: int = 8
@@ -143,6 +144,7 @@ class Settings:
             github_pat=github_pat,
             github_api_url=github_api_url,
             scratchpad_dir=Path(_first_env("SCRATCHPAD_DIR", default="data/scratchpad")).expanduser(),
+            skill_store_dir=Path(_first_env("SKILL_STORE_DIR", default="data/skills")).expanduser(),
             request_timeout_seconds=request_timeout,
             agent_timeout_seconds=agent_timeout,
             max_tool_rounds=rounds,
