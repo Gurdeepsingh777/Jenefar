@@ -18,7 +18,10 @@ def test_premium_dashboard_has_single_workspace_markup():
 def test_browser_mic_starts_only_after_explicit_user_action():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert "requestMicrophonePermission" in js
-    assert 'navigator.mediaDevices.getUserMedia({audio:true,video:false})' in js
+    assert "navigator.mediaDevices?.getUserMedia" in js
+    assert "audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}" in js
+    assert "new MediaRecorder(fallbackStream" in js
+    assert 'fetch("/voice/audio"' in js
     assert 'micEnabled=false;' in js
     assert 'setVoiceInputStatus("CLICK MIC ON TO START",false);' in js
     assert 'micButton.onclick=async()=>{' in js
@@ -53,7 +56,8 @@ def test_mic_button_state_helper_and_permission_flow_are_present():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert "function setMicButton(active, busy=false)" in js
-    assert 'navigator.mediaDevices.getUserMedia({audio:true,video:false})' in js
+    assert "navigator.mediaDevices?.getUserMedia" in js
+    assert "audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}" in js
     assert '.talk-button.is-active' in css
     assert '.talk-button.is-busy' in css
 
@@ -117,8 +121,12 @@ def test_roman_hinglish_output_is_explicitly_enforced():
 
 def test_browser_bridge_does_not_construct_native_audio_output():
     voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
-    assert "ProviderVoiceRuntime" not in voice
+    # ProviderVoiceRuntime is a transcription-only adapter here; audio playback
+    # remains browser-side and never uses a native Python speaker stream.
+    assert "ProviderVoiceRuntime(self.orchestrator).transcribe_pcm" in voice
     assert "asyncio.run(self.voice.speak" not in voice
+    assert "sounddevice" not in voice
+    assert "_play_wav" not in voice
 
 
 def test_orchestrator_does_not_append_provider_metadata_to_user_output():
@@ -136,7 +144,7 @@ def test_final_layout_has_dedicated_regions():
 def test_browser_speech_is_the_only_playback_path():
     bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
     app = (WEB / "app.js").read_text(encoding="utf-8")
-    assert "ProviderVoiceRuntime" not in bridge
+    assert "ProviderVoiceRuntime(self.orchestrator).transcribe_pcm" in bridge
     assert "speechSynthesis" in app
     assert 'utterance.lang="en-IN"' in app
 
