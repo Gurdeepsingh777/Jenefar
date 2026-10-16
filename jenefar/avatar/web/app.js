@@ -383,12 +383,18 @@ function pauseBrowserVoice(){
   voiceLocked=true;
   if(restartTimer) clearTimeout(restartTimer);
   try{recognition?.stop();}catch(_){}
-  setVoiceInputStatus("BROWSER MIC: PAUSED WHILE JENEFAR SPEAKS",false);
+  if(fallbackMode) stopFallbackMonitor(false);
+  setVoiceInputStatus("MIC PAUSED WHILE JENEFAR SPEAKS",false);
 }
 
 function resumeBrowserVoice(){
-  if(!micEnabled||voiceLocked||!voiceSupported||!recognition) return;
-  if("speechSynthesis" in window && window.speechSynthesis.speaking) return;
+  if(!micEnabled||voiceLocked) return;
+  if(browserSpeechActive||("speechSynthesis" in window && window.speechSynthesis.speaking)) return;
+  if(fallbackMode){
+    startFallbackMonitor();
+    return;
+  }
+  if(!voiceSupported||!recognition) return;
   if(restartTimer) clearTimeout(restartTimer);
   restartTimer=setTimeout(()=>{
     if(!micEnabled||voiceLocked||!recognition) return;
@@ -579,6 +585,19 @@ let restartTimer=null;
 let restartDelay=450;
 let browserSpeechActive=false;
 let browserAudio=null;
+let fallbackMode=false;
+let fallbackStream=null;
+let fallbackContext=null;
+let fallbackAnalyser=null;
+let fallbackSource=null;
+let fallbackData=null;
+let fallbackAnimationFrame=0;
+let fallbackRecorder=null;
+let fallbackChunks=[];
+let fallbackRecordStartedAt=0;
+let fallbackLastSpeechAt=0;
+let fallbackStopping=false;
+let fallbackSubmitting=false;
 
 function setVoiceInputStatus(text,active=false){
   if(voiceInputStatus){
@@ -596,6 +615,167 @@ function setMicButton(active, busy=false){
   const label=micButton.querySelector(".mic-label");
   if(label) label.textContent=busy ? "PROCESSING" : active ? "MIC ON" : "MIC OFF";
 }
+
+
+function stopFallbackMonitor(releaseStream=false){
+  if(fallbackAnimationFrame){
+    cancelAnimationFrame(fallbackAnimationFrame);
+    fallbackAnimationFrame=0;
+  }
+  if(fallbackRecorder&&fallbackRecorder.state==="recording"){
+    fallbackRecorder.onstop=null;
+    try{fallbackRecorder.stop();}catch(_){}
+  }
+  fallbackRecorder=null;
+  fallbackChunks=[];
+  fallbackStopping=false;
+  if(fallbackSource){try{fallbackSource.disconnect();}catch(_){}}
+  fallbackSource=null;
+  fallbackAnalyser=null;
+  fallbackData=null;
+  if(fallbackContext){try{fallbackContext.close();}catch(_){};fallbackContext=null;}
+  if(releaseStream){
+    fallbackStream?.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
+    fallbackStream=null;
+    fallbackMode=false;
+  }
+}
+
+async function transcribeCapturedAudio(blob,durationMs){
+  if(!micEnabled||voiceLocked||!blob||blob.size<1200||durationMs<550) return;
+  fallbackSubmitting=true;
+  voiceLocked=true;
+  stopFallbackMonitor(false);
+  setVoiceInputStatus("TRANSCRIBING VOICE…",true);
+  setMicButton(true,true);
+  try{
+    const response=await fetch("/voice/audio",{
+      method:"POST",
+      headers:{"Content-Type":blob.type||"audio/webm"},
+      body:blob
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error) throw new Error(result?.error||("HTTP "+response.status));
+    if(result?.ignored){
+      fallbackSubmitting=false;
+      voiceLocked=false;
+      setVoiceInputStatus("MIC ON — LISTENING FOR SPEECH",true);
+      setMicButton(true,false);
+      resumeBrowserVoice();
+      return;
+    }
+    if(result?.busy){
+      fallbackSubmitting=false;
+      voiceLocked=false;
+      setVoiceInputStatus("Jenefar is busy — mic will resume after reply",true);
+      setMicButton(true,true);
+      resumeBrowserVoice();
+      return;
+    }
+    if(result?.accepted){
+      const heard=String(result.transcript||result.text||"").trim();
+      if(heard) addActivity({state:"listening",text:"You: "+heard});
+      setVoiceInputStatus(heard ? "HEARD: "+heard.slice(0,90) : "COMMAND RECEIVED — WORKING",true);
+      setMicButton(true,true);
+      // Stay muted until the assistant finishes speaking to avoid feedback.
+      fallbackSubmitting=false;
+      return;
+    }
+    fallbackSubmitting=false;
+    voiceLocked=false;
+    setVoiceInputStatus("VOICE WAS NOT TRANSCRIBED — TRY AGAIN",false);
+    setMicButton(true,false);
+    resumeBrowserVoice();
+  }catch(error){
+    fallbackSubmitting=false;
+    voiceLocked=false;
+    addActivity({state:"error",text:"Audio STT failed: "+(error?.message||error)});
+    setVoiceInputStatus("VOICE STT ERROR — "+String(error?.message||error).slice(0,90),false);
+    setMicButton(true,false);
+    resumeBrowserVoice();
+  }
+}
+
+function startFallbackMonitor(){
+  if(!micEnabled||voiceLocked||!fallbackMode||!fallbackStream||fallbackAnimationFrame||fallbackSubmitting) return;
+  try{
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextClass||!window.MediaRecorder) throw new Error("MediaRecorder/Web Audio unavailable");
+    fallbackContext=new AudioContextClass();
+    fallbackAnalyser=fallbackContext.createAnalyser();
+    fallbackAnalyser.fftSize=1024;
+    fallbackData=new Uint8Array(fallbackAnalyser.fftSize);
+    fallbackSource=fallbackContext.createMediaStreamSource(fallbackStream);
+    fallbackSource.connect(fallbackAnalyser);
+    fallbackContext.resume().catch(()=>{});
+  }catch(error){
+    setVoiceInputStatus("AUDIO CAPTURE ERROR — "+String(error?.message||error).slice(0,80),false);
+    addActivity({state:"error",text:"Audio capture setup failed: "+(error?.message||error)});
+    return;
+  }
+
+  const beginSegment=(now)=>{
+    try{
+      const candidates=["audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/webm","audio/ogg"];
+      const mimeType=candidates.find(type=>MediaRecorder.isTypeSupported?.(type));
+      const recorder=new MediaRecorder(fallbackStream,mimeType?{mimeType}:{});
+      const chunks=[];
+      fallbackRecorder=recorder;
+      fallbackChunks=chunks;
+      fallbackRecordStartedAt=now;
+      fallbackLastSpeechAt=now;
+      fallbackStopping=false;
+      recorder.ondataavailable=(event)=>{if(event.data&&event.data.size) chunks.push(event.data);};
+      recorder.onerror=(event)=>{
+        addActivity({state:"error",text:"Audio recorder: "+(event.error?.name||"recording error")});
+      };
+      recorder.onstop=()=>{
+        if(fallbackRecorder===recorder) fallbackRecorder=null;
+        fallbackStopping=false;
+        fallbackChunks=[];
+        if(!micEnabled||voiceLocked) return;
+        const duration=Math.max(0,performance.now()-fallbackRecordStartedAt);
+        const blob=new Blob(chunks,{type:recorder.mimeType||"audio/webm"});
+        if(duration<550||blob.size<1200) return;
+        transcribeCapturedAudio(blob,duration);
+      };
+      recorder.start();
+    }catch(error){
+      fallbackRecorder=null;
+      setVoiceInputStatus("AUDIO RECORDER ERROR — "+String(error?.message||error).slice(0,80),false);
+      addActivity({state:"error",text:"Could not start MediaRecorder: "+(error?.message||error)});
+    }
+  };
+
+  const monitor=()=>{
+    fallbackAnimationFrame=0;
+    if(!micEnabled||voiceLocked||!fallbackMode||!fallbackStream||fallbackSubmitting) return;
+    if(!fallbackAnalyser||!fallbackData) return;
+    fallbackAnalyser.getByteTimeDomainData(fallbackData);
+    let energy=0;
+    for(let i=0;i<fallbackData.length;i++){
+      const centered=fallbackData[i]-128;
+      energy+=centered*centered;
+    }
+    const rms=Math.sqrt(energy/fallbackData.length)/128;
+    const now=performance.now();
+    if(rms>0.020){
+      fallbackLastSpeechAt=now;
+      if(!fallbackRecorder&&!fallbackStopping) beginSegment(now);
+    }
+    if(fallbackRecorder&&fallbackRecorder.state==="recording"){
+      const elapsed=now-fallbackRecordStartedAt;
+      const quietFor=now-fallbackLastSpeechAt;
+      if((elapsed>=700&&quietFor>=850)||elapsed>=12000){
+        fallbackStopping=true;
+        try{fallbackRecorder.stop();}catch(_){fallbackStopping=false;}
+      }
+    }
+    fallbackAnimationFrame=requestAnimationFrame(monitor);
+  };
+  fallbackAnimationFrame=requestAnimationFrame(monitor);
+}
+
 
 async function sendBrowserTranscript(text){
   const clean=String(text||"").trim();
@@ -656,6 +836,8 @@ async function sendBrowserTranscript(text){
 
 function setupBrowserVoice(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const canRecord=Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder&&(window.AudioContext||window.webkitAudioContext));
+  voiceSupported=Boolean(Recognition);
 
   if(micButton){
     micButton.addEventListener("pointerdown",()=>micButton.classList.add("pressed"),{passive:true});
@@ -666,14 +848,14 @@ function setupBrowserVoice(){
   async function requestMicrophonePermission(){
     if(!navigator.mediaDevices?.getUserMedia){
       setVoiceInputStatus("MIC API UNSUPPORTED",false);
-      return false;
+      return null;
     }
     try{
       setVoiceInputStatus("MIC PERMISSION: CLICK ALLOW",true);
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-      stream.getTracks().forEach(track=>track.stop());
-      setVoiceInputStatus("MIC PERMISSION GRANTED",true);
-      return true;
+      return await navigator.mediaDevices.getUserMedia({
+        audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+        video:false
+      });
     }catch(error){
       const code=error?.name||"unknown";
       addActivity({state:"error",text:"Microphone permission: "+code});
@@ -681,109 +863,129 @@ function setupBrowserVoice(){
         micEnabled=false;
         voiceLocked=true;
         setVoiceInputStatus("MIC BLOCKED — USE SITE SETTINGS TO ALLOW",false);
-        setMicButton(false, false);
       }else if(code==="NotFoundError"||code==="DevicesNotFoundError"){
         micEnabled=false;
         voiceLocked=true;
         setVoiceInputStatus("NO MICROPHONE DEVICE FOUND",false);
-        setMicButton(false, false);
       }else{
         setVoiceInputStatus("MIC ERROR: "+code,false);
-        setMicButton(false, false);
       }
-      return false;
+      setMicButton(false,false);
+      return null;
     }
   }
 
   if(micButton){
     micButton.onclick=async()=>{
-      if(!voiceSupported){
-        setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED — use chat or a supported browser",false);
-        setMicButton(false,false);
-        return;
-      }
       if(micEnabled){
         micEnabled=false;
         voiceLocked=true;
         try{recognition?.stop();}catch(_){}
-        setVoiceInputStatus("BROWSER MIC: OFF",false);
-        setMicButton(false, false);
-      }else{
-        micEnabled=true;
-        voiceLocked=false;
-        const granted=await requestMicrophonePermission();
-        if(!granted) return;
+        stopFallbackMonitor(true);
+        setVoiceInputStatus("MIC OFF",false);
+        setMicButton(false,false);
+        return;
+      }
+      if(!voiceSupported&&!canRecord){
+        setVoiceInputStatus("MIC UNSUPPORTED — USE CHAT OR A SUPPORTED BROWSER",false);
+        setMicButton(false,false);
+        return;
+      }
+
+      const stream=await requestMicrophonePermission();
+      if(!stream) return;
+      micEnabled=true;
+      voiceLocked=false;
+      if(voiceSupported&&recognition){
+        stream.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
+        fallbackMode=false;
         setVoiceInputStatus("BROWSER MIC: STARTING",true);
-        setMicButton(true, false);
+        setMicButton(true,false);
         resumeBrowserVoice();
+      }else if(canRecord){
+        fallbackMode=true;
+        fallbackStream=stream;
+        setVoiceInputStatus("MIC ON — SPEAK NATURALLY; AUTO TRANSCRIBE ENABLED",true);
+        setMicButton(true,false);
+        startFallbackMonitor();
+      }else{
+        stream.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
+        micEnabled=false;
+        voiceLocked=true;
+        setVoiceInputStatus("MIC CAPTURE UNSUPPORTED — USE CHAT",false);
+        setMicButton(false,false);
       }
     };
   }
 
-  if(!Recognition){
-    voiceSupported=false;
-    micEnabled=false;
-    setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED — type in chat or use a supported browser",false);
-    setMicButton(false, false);
+  if(Recognition){
+    recognition=new Recognition();
+    recognition.lang="hi-IN";
+    recognition.continuous=true;
+    recognition.interimResults=false;
+    recognition.maxAlternatives=1;
+
+    recognition.onstart=()=>{
+      if(voiceLocked||!micEnabled){try{recognition.stop();}catch(_){};return;}
+      restartDelay=450;
+      setVoiceInputStatus("BROWSER MIC: LISTENING",true);
+      setMicButton(true,false);
+    };
+
+    recognition.onresult=(event)=>{
+      for(let i=event.resultIndex;i<event.results.length;i++){
+        const result=event.results[i];
+        if(result.isFinal&&!voiceLocked&&micEnabled){
+          const text=(result[0]?.transcript||"").trim();
+          if(text) sendBrowserTranscript(text);
+        }
+      }
+    };
+
+    recognition.onerror=(event)=>{
+      const code=event.error||"unknown";
+      if(code==="aborted") return;
+      addActivity({state:"error",text:"Browser mic: "+code});
+      if(code==="not-allowed"||code==="service-not-allowed"){
+        micEnabled=false;
+        voiceLocked=true;
+        setVoiceInputStatus("MIC PERMISSION DENIED",false);
+        setMicButton(false,false);
+      }else{
+        restartDelay=Math.min(5000,Math.max(900,restartDelay*1.8));
+        setVoiceInputStatus("MIC RETRYING IN "+(restartDelay/1000).toFixed(1)+"s — "+code,false);
+        setMicButton(true,true);
+      }
+    };
+
+    recognition.onend=()=>{
+      if(!micEnabled||voiceLocked||browserSpeechActive) return;
+      resumeBrowserVoice();
+    };
+  }
+
+  // Request the microphone only after a direct user click. Browsers without
+  // SpeechRecognition use MediaRecorder + server-side OpenAI/Groq STT.
+  micEnabled=false;
+  voiceLocked=true;
+  if(voiceSupported){
+    setVoiceInputStatus("CLICK MIC ON TO START",false);
+    if(micButton) micButton.title="Click to enable browser speech recognition.";
+  }else if(canRecord){
+    setVoiceInputStatus("CLICK MIC ON — AUDIO STT FALLBACK READY",false);
+    if(micButton){
+      const label=micButton.querySelector(".mic-label");
+      if(label) label.textContent="MIC OFF";
+      micButton.title="Click to enable microphone recording and automatic transcription.";
+    }
+  }else{
+    setVoiceInputStatus("MIC UNSUPPORTED — TYPE IN CHAT",false);
     if(micButton){
       const label=micButton.querySelector(".mic-label");
       if(label) label.textContent="MIC UNSUPPORTED";
-      micButton.title="SpeechRecognition is not supported in this browser. Chat input still works.";
+      micButton.title="This browser does not expose microphone recording. Chat input remains available.";
     }
-    return;
   }
-
-  voiceSupported=true;
-  recognition=new Recognition();
-  recognition.lang="hi-IN";
-  recognition.continuous=true;
-  recognition.interimResults=false;
-  recognition.maxAlternatives=1;
-
-  recognition.onstart=()=>{
-    if(voiceLocked||!micEnabled){try{recognition.stop();}catch(_){};return;}
-    restartDelay=450;
-    setVoiceInputStatus("BROWSER MIC: LISTENING",true);
-    setMicButton(true, false);
-  };
-
-  recognition.onresult=(event)=>{
-    for(let i=event.resultIndex;i<event.results.length;i++){
-      const result=event.results[i];
-      if(result.isFinal&&!voiceLocked&&micEnabled){
-        const text=(result[0]?.transcript||"").trim();
-        if(text) sendBrowserTranscript(text);
-      }
-    }
-  };
-
-  recognition.onerror=(event)=>{
-    const code=event.error||"unknown";
-    if(code==="aborted") return;
-    addActivity({state:"error",text:"Browser mic: "+code});
-    if(code==="not-allowed"||code==="service-not-allowed"){
-      micEnabled=false;
-      voiceLocked=true;
-      setVoiceInputStatus("MIC PERMISSION DENIED",false);
-      setMicButton(false, false);
-    }else{
-      restartDelay=Math.min(5000,Math.max(900,restartDelay*1.8));
-      setVoiceInputStatus("MIC RETRYING IN "+(restartDelay/1000).toFixed(1)+"s — "+code,false);
-      setMicButton(true,true);
-    }
-  };
-
-  recognition.onend=()=>{
-    if(!micEnabled||voiceLocked||browserSpeechActive) return;
-    resumeBrowserVoice();
-  };
-
-  // Do not auto-start SpeechRecognition on page load. Browser permission prompts
-  // are more reliable when microphone access follows a user gesture.
-  micEnabled=false;
-  voiceLocked=true;
-  setVoiceInputStatus("CLICK MIC ON TO START",false);
-  setMicButton(false, false);
 }
 
 
