@@ -259,7 +259,6 @@ function addActivity(event){
 
   const bucket=activityBucket(state);
   activityList.querySelector(".workspace-idle")?.remove();
-  activityList.querySelector(".workspace-idle")?.remove();
   const row=document.createElement("article");
   row.className="activity-item activity-"+state;
   row.dataset.bucket=bucket;
@@ -726,11 +725,6 @@ function setupBrowserVoice(){
     micEnabled=false;
     setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED — type in chat or use a supported browser",false);
     setMicButton(false, false);
-    if(micButton){
-      const label=micButton.querySelector(".mic-label");
-      if(label) label.textContent="MIC UNSUPPORTED";
-      micButton.title="SpeechRecognition is not supported in this browser. Chat input still works.";
-    }
     if(micButton){
       const label=micButton.querySelector(".mic-label");
       if(label) label.textContent="MIC UNSUPPORTED";
