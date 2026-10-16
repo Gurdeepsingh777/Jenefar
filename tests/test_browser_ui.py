@@ -25,6 +25,10 @@ def test_browser_mic_starts_only_after_explicit_user_action():
     assert 'micEnabled=false;' in js
     assert 'setVoiceInputStatus("CLICK MIC ON TO START",false);' in js
     assert 'micButton.onclick=async()=>{' in js
+    assert 'if(canRecord){\n        // Prefer server-side STT to Chromium' in js
+    assert 'setVoiceInputStatus("CLICK MIC ON — SERVER STT READY",false);' in js
+    assert "const speechThreshold=0.010;" in js
+    assert "NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL" in js
 
 
 def test_browser_mic_has_recovery_for_web_speech_end_and_errors():
@@ -275,6 +279,9 @@ def test_avatar_mode_uses_browser_voice_unless_an_explicit_voice_mode_owns_audio
     assert "BrowserVoiceBridge" in run
     assert "if not args.realtime and not args.voice and not args.voice_continuous:" in run
     assert "voice_handler=browser_voice.handle_text if browser_voice else None" in run
+    # --avatar is the user's launch command; it needs the binary-audio STT route too.
+    avatar_block = run.split("if args.avatar:", 1)[1].split("\n    else:", 1)[0]
+    assert "voice_audio_handler=browser_voice.handle_audio if browser_voice else None" in avatar_block
 
 
 
