@@ -112,6 +112,13 @@ def test_terminal_safe_local_commands_auto_run_but_destructive_commands_wait():
     assert dangerous["status"] == "approval_required"
     assert dangerous["critical"] is True
 
+    background = json.loads(broker.invoke(
+        "terminal_execute",
+        {"command": "printf harmless & rm -rf /tmp/jenefar-never-delete-test", "timeout": 5},
+    ))
+    assert background["status"] == "approval_required"
+    assert background["critical"] is True
+
 
 def test_confirmation_mode_defaults_to_critical_only(monkeypatch):
     from jenefar.core.config import load_config
