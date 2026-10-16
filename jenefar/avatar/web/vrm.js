@@ -18,15 +18,15 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(28, 1, 0.01, 100);
-  camera.position.set(0, 1.45, 3.6);
+  const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 100);
+  camera.position.set(0, 1.35, 3.9);
   camera.lookAt(0, 1.15, 0);
   let avatarBaseY = 0;
-  const TARGET_HEIGHT = 2.55;
+  // Slightly under full humanoid unit height so head+feet fit the moderate canvas.
+  const TARGET_HEIGHT = 2.15;
 
   function frameAvatar(model) {
     if (!model?.scene) return;
-    // Reset scale/position so bounds measurement is stable across reloads.
     model.scene.scale.setScalar(1);
     model.scene.position.set(0, 0, 0);
     model.scene.updateMatrixWorld(true);
@@ -42,7 +42,7 @@ if (canvas) {
     box.getSize(size);
     box.getCenter(center);
 
-    // Feet on the ground plane, body centered on X/Z.
+    // Feet on ground, body centered; leave headroom in the canvas.
     model.scene.position.x = -center.x;
     model.scene.position.y = -box.min.y;
     model.scene.position.z = -center.z;
@@ -50,12 +50,11 @@ if (canvas) {
     avatarBaseY = model.scene.position.y;
 
     const height = Math.max(size.y, 0.5);
-    const camY = height * 0.52;
-    const camZ = Math.max(height * 1.35, 2.6);
+    // Pull camera back enough that head is not clipped at the top.
+    const camY = height * 0.48;
+    const camZ = Math.max(height * 1.55, 3.1);
     camera.position.set(0, camY, camZ);
-    camera.near = 0.01;
-    camera.far = 100;
-    camera.lookAt(0, height * 0.45, 0);
+    camera.lookAt(0, height * 0.42, 0);
     camera.updateProjectionMatrix();
   }
 
@@ -98,7 +97,6 @@ if (canvas) {
       // authored with a T-pose; there is no safe generic way to infer a
       // natural idle arm pose without editing the actual skeleton animation.
       vrm.scene.position.set(0, 0, 0);
-      // Normalize arbitrary VRM authoring scales, then re-frame the camera.
       frameAvatar(vrm);
 
       // Natural idle pose for the bundled humanoid VRM.
@@ -153,7 +151,6 @@ if (canvas) {
         });
       } catch (_) {}
 
-      // Re-frame after idle bone pose so bounds match the relaxed stance.
       frameAvatar(vrm);
       premiumGroup = buildPremiumEnvironment(vrm);
       scene.add(premiumGroup);
@@ -262,9 +259,8 @@ if (canvas) {
       else if (targetEmotion === "focused") setExpression("relaxed", 0.18);
     }
     if (vrm) {
-      // Subtle idle motion on top of the framed base pose (do not overwrite scale).
-      vrm.scene.position.y = avatarBaseY + Math.sin(performance.now() * 0.0012) * 0.008;
-      vrm.scene.rotation.y = Math.sin(performance.now() * 0.0004) * 0.03;
+      vrm.scene.position.y = avatarBaseY + Math.sin(performance.now() * 0.0012) * 0.006;
+      vrm.scene.rotation.y = Math.sin(performance.now() * 0.0004) * 0.025;
       vrm.update(1 / 60);
     }
     if (premiumGroup) {
