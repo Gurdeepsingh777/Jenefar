@@ -212,3 +212,64 @@ def test_automatic_skill_learning_skips_sensitive_and_security_workflows(tmp_pat
 
     assert orchestrator.memory_engine.saved == []
     assert not list(root.glob("*/SKILL.md"))
+
+
+
+def test_realtime_session_includes_enabled_persistent_skills(monkeypatch):
+    import json
+    from urllib import request
+    from jenefar.realtime.server import create_ephemeral_session
+
+    class FakeSkills:
+        def list(self):
+            return [{
+                "name": "learned_python_tests",
+                "description": "Verify a local Python test suite.",
+                "keywords": ["python", "pytest"],
+                "system_prompt": "Check the current checkout before running tests.",
+                "enabled": True,
+            }]
+
+    class FakeMemory:
+        def find_procedures(self, query, limit=5):
+            return [{
+                "name": "auto_python_test",
+                "source": "auto_verified_workflow",
+                "steps": ["Use workspace_list_files", "Use workspace_run_tests"],
+                "constraints": ["Re-check current project state"],
+            }]
+
+    class FakeBroker:
+        skills = FakeSkills()
+        memory = FakeMemory()
+
+        def schemas(self, **kwargs):
+            return []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"value": "ephemeral-test-secret"}).encode("utf-8")
+
+    captured = {}
+
+    def fake_urlopen(req, timeout=20):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only-key")
+    monkeypatch.setattr(request, "urlopen", fake_urlopen)
+    result = create_ephemeral_session(FakeBroker())
+
+    instructions = captured["payload"]["session"]["instructions"]
+    assert result["value"] == "ephemeral-test-secret"
+    assert "female-presenting conversational assistant" in instructions
+    assert "learned_python_tests" in instructions
+    assert "Check the current checkout before running tests." in instructions
+    assert "auto_python_test" in instructions
+    assert "approval_required" in instructions
