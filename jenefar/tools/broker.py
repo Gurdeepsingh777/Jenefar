@@ -96,6 +96,7 @@ class ToolBroker:
         )
         self.pending: dict[str, PendingToolCall] = {}
         self._task_context: dict[str, str] = {"agent": "", "task": ""}
+        self._task_action_log: list[dict[str, str]] = []
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
         self._apply_critical_tool_policy()
@@ -208,9 +209,17 @@ class ToolBroker:
             "agent": str(agent or ""),
             "task": str(task or ""),
         }
+        self._task_action_log = []
+
+    def consume_task_actions(self) -> list[dict[str, str]]:
+        """Return successful tool names only; arguments/results are never retained."""
+        actions = list(self._task_action_log)
+        self._task_action_log = []
+        return actions
 
     def clear_task_context(self) -> None:
         self._task_context = {"agent": "", "task": ""}
+        self._task_action_log = []
 
     @staticmethod
     def _explicit_screenshot_request(task: str) -> bool:
@@ -345,6 +354,30 @@ class ToolBroker:
             name="skill_catalog",
             description="List available declarative Jenefar skills and whether each skill is enabled.",
             handler=lambda _args: self.skills.list(),
+        ))
+        self.registry.register(ToolSpec(
+            name="skill_learn",
+            description=(
+                "Permanently learn a reusable, verified workflow as a declarative local SKILL.md. "
+                "Use this when the user explicitly asks to learn/save a skill, or after a successful "
+                "multi-step workflow that is genuinely reusable. Save concise general instructions only: "
+                "never store passwords, API keys, personal data, raw security targets, or executable code. "
+                "The skill is automatically enabled, but it cannot grant permissions or bypass tool approval/scope policy."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "maxLength": 100},
+                    "description": {"type": "string", "maxLength": 1000},
+                    "keywords": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 50},
+                    "system_prompt": {"type": "string", "maxLength": 6000},
+                    "connectors": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+                    "permissions": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+                },
+                "required": ["name", "description", "keywords", "system_prompt", "connectors", "permissions"],
+                "additionalProperties": False,
+            },
+            handler=self._skill_learn,
         ))
         self.registry.register(ToolSpec(
             name="skill_enable",
@@ -1229,6 +1262,17 @@ class ToolBroker:
             action=True,
         ))
 
+    def _skill_learn(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Save a prompt-only learned skill inside configured local skill roots."""
+        return self.skills.save_learned_skill(
+            name=str(args.get("name") or ""),
+            description=str(args.get("description") or ""),
+            keywords=[str(item) for item in (args.get("keywords") or [])],
+            system_prompt=str(args.get("system_prompt") or ""),
+            connectors=[str(item) for item in (args.get("connectors") or [])],
+            permissions=[str(item) for item in (args.get("permissions") or [])],
+        )
+
     def _memory_remember(self, args: dict[str, Any]) -> dict[str, Any]:
         layer = str(args["layer"]).strip().lower()
         title = str(args["title"])
@@ -1613,6 +1657,19 @@ class ToolBroker:
         try:
             self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
+            if (
+                self._task_context.get("task")
+                and name not in {
+                    "memory_recall", "memory_remember", "skill_catalog", "skill_learn",
+                    "skill_enable", "skill_disable", "skill_install_manifest",
+                    "connector_catalog",
+                }
+            ):
+                result_status = str(value.get("status", "")).lower() if isinstance(value, dict) else ""
+                if result_status not in {"error", "denied", "approval_required", "failed"}:
+                    # Keep only the registered tool name, never raw arguments or results.
+                    self._task_action_log.append({"tool": name})
+                    self._task_action_log = self._task_action_log[-30:]
             self.audit.record("tool_executed", tool=name, arguments=arguments, result=value)
             self._activity("thinking", f"Tool result: {name} -> {str(value)[:6000]}")
             return json.dumps({"status": "ok", "result": value}, ensure_ascii=False, default=str)
