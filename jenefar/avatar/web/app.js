@@ -659,7 +659,12 @@ async function transcribeCapturedAudio(blob,durationMs){
     if(result?.ignored){
       fallbackSubmitting=false;
       voiceLocked=false;
-      setVoiceInputStatus("MIC ON — LISTENING FOR SPEECH",true);
+      if(result?.reason==="empty_transcript"){
+        setVoiceInputStatus("NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL",false);
+        addActivity({state:"error",text:"Audio was captured but speech-to-text returned an empty transcript."});
+      }else{
+        setVoiceInputStatus("MIC ON — LISTENING FOR SPEECH",true);
+      }
       setMicButton(true,false);
       resumeBrowserVoice();
       return;
@@ -688,9 +693,21 @@ async function transcribeCapturedAudio(blob,durationMs){
     resumeBrowserVoice();
   }catch(error){
     fallbackSubmitting=false;
+    const errorText=String(error?.message||error);
+    const providerUnavailable=/Speech-to-text unavailable|No speech-to-text provider is configured|No currently available STT provider|All configured STT providers failed|Browser microphone audio transcription is unavailable|HTTP 503/i.test(errorText);
+    if(providerUnavailable&&fallbackMode&&voiceSupported&&recognition){
+      stopFallbackMonitor(true);
+      fallbackMode=false;
+      voiceLocked=false;
+      addActivity({state:"error",text:"Server STT is unavailable; switching to browser speech recognition: "+errorText});
+      setVoiceInputStatus("SERVER STT UNAVAILABLE — TRYING BROWSER SPEECH",true);
+      setMicButton(true,true);
+      resumeBrowserVoice();
+      return;
+    }
     voiceLocked=false;
-    addActivity({state:"error",text:"Audio STT failed: "+(error?.message||error)});
-    setVoiceInputStatus("VOICE STT ERROR — "+String(error?.message||error).slice(0,90),false);
+    addActivity({state:"error",text:"Audio STT failed: "+errorText});
+    setVoiceInputStatus("VOICE STT ERROR — "+errorText.slice(0,90),false);
     setMicButton(true,false);
     resumeBrowserVoice();
   }
@@ -725,6 +742,7 @@ function startFallbackMonitor(){
       fallbackRecordStartedAt=now;
       fallbackLastSpeechAt=now;
       fallbackStopping=false;
+      setVoiceInputStatus("SPEECH DETECTED — RECORDING UTTERANCE",true);
       recorder.ondataavailable=(event)=>{if(event.data&&event.data.size) chunks.push(event.data);};
       recorder.onerror=(event)=>{
         addActivity({state:"error",text:"Audio recorder: "+(event.error?.name||"recording error")});
@@ -759,7 +777,9 @@ function startFallbackMonitor(){
     }
     const rms=Math.sqrt(energy/fallbackData.length)/128;
     const now=performance.now();
-    if(rms>0.020){
+    // 0.020 misses quiet speech on some Linux microphone/USB levels.
+    const speechThreshold=0.010;
+    if(rms>speechThreshold){
       fallbackLastSpeechAt=now;
       if(!fallbackRecorder&&!fallbackStopping) beginSegment(now);
     }
@@ -896,18 +916,19 @@ function setupBrowserVoice(){
       if(!stream) return;
       micEnabled=true;
       voiceLocked=false;
-      if(voiceSupported&&recognition){
+      if(canRecord){
+        // Prefer server-side STT to Chromium's built-in recognizer for Hinglish.
+        fallbackMode=true;
+        fallbackStream=stream;
+        setVoiceInputStatus("MIC ON — SERVER STT READY; SPEAK NATURALLY",true);
+        setMicButton(true,false);
+        startFallbackMonitor();
+      }else if(voiceSupported&&recognition){
         stream.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
         fallbackMode=false;
         setVoiceInputStatus("BROWSER MIC: STARTING",true);
         setMicButton(true,false);
         resumeBrowserVoice();
-      }else if(canRecord){
-        fallbackMode=true;
-        fallbackStream=stream;
-        setVoiceInputStatus("MIC ON — SPEAK NATURALLY; AUTO TRANSCRIBE ENABLED",true);
-        setMicButton(true,false);
-        startFallbackMonitor();
       }else{
         stream.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
         micEnabled=false;
@@ -968,16 +989,16 @@ function setupBrowserVoice(){
   // SpeechRecognition use MediaRecorder + server-side OpenAI/Groq STT.
   micEnabled=false;
   voiceLocked=true;
-  if(voiceSupported){
-    setVoiceInputStatus("CLICK MIC ON TO START",false);
-    if(micButton) micButton.title="Click to enable browser speech recognition.";
-  }else if(canRecord){
-    setVoiceInputStatus("CLICK MIC ON — AUDIO STT FALLBACK READY",false);
+  if(canRecord){
+    setVoiceInputStatus("CLICK MIC ON — SERVER STT READY",false);
     if(micButton){
       const label=micButton.querySelector(".mic-label");
       if(label) label.textContent="MIC OFF";
-      micButton.title="Click to enable microphone recording and automatic transcription.";
+      micButton.title="Click to enable microphone recording and server-side OpenAI/Groq transcription.";
     }
+  }else if(voiceSupported){
+    setVoiceInputStatus("CLICK MIC ON TO START",false);
+    if(micButton) micButton.title="Click to enable browser speech recognition.";
   }else{
     setVoiceInputStatus("MIC UNSUPPORTED — TYPE IN CHAT",false);
     if(micButton){
