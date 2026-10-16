@@ -7,12 +7,12 @@ WEB = ROOT / "jenefar" / "avatar" / "web"
 def test_premium_dashboard_has_single_workspace_markup():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert html.count('id="activity-panel"') == 1
-    assert html.count('id="activity-connection"') == 1
     assert html.count('id="clear-workspace"') == 1
-    assert html.count('id="activity-running"') == 1
-    assert html.count('id="activity-queued"') == 1
-    assert html.count('id="activity-done"') == 1
-    assert html.count('id="activity-errors"') == 1
+    assert html.count('id="stat-running"') == 1
+    assert html.count('id="stat-queue"') == 1
+    assert html.count('id="stat-done"') == 1
+    assert html.count('id="stat-error"') == 1
+    assert html.count('id="workspace-log"') == 1
 
 
 def test_browser_mic_starts_only_after_explicit_user_action():
@@ -44,7 +44,7 @@ def test_premium_ui_has_reference_dashboard_sections():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     for marker in (
         "side-nav", "chat-glass", "system-card", "quick-apps",
-        "command-stack", "bottom-dock", "realtime-controls",
+        "command-stack", "bottom-dock", "status-strip",
     ):
         assert marker in html
 
@@ -68,7 +68,7 @@ def test_cinematic_scene_has_holographic_environment():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert 'id="holo-earth"' in html
-    assert 'id="earth-canvas"' in html
+    assert 'id="holo-earth"' in html and 'id="earth-canvas"' not in html
     assert 'id="holo-particles"' in html
     assert 'function setupHolographicEnvironment' in js
     assert 'earth-canvas' in js
@@ -96,9 +96,9 @@ def test_ui_js_has_balanced_basic_delimiters():
 
 def test_index_has_valid_script_tags_for_runtime():
     html = (WEB / "index.html").read_text(encoding="utf-8")
-    assert '<script src="/app.js"></script>' in html
+    assert '<script type="module" src="/app.js"></script>' in html
     assert '<script type="module" src="/vrm.js"></script>' in html
-    assert '<script src="/realtime.js"></script>' in html
+    assert '<script src="/realtime.js"></script>' not in html
 
 
 def test_browser_runtime_has_single_voice_path():
@@ -331,12 +331,12 @@ def test_live_task_monitor_markup_and_runtime_mirroring():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     js = (WEB / "app.js").read_text(encoding="utf-8")
     css = (WEB / "style.css").read_text(encoding="utf-8")
-    assert 'id="task-screen"' in html
-    assert 'id="task-screen-log"' in html
-    assert "function updateTaskScreen(event)" in js
-    assert "updateTaskScreen(event);" in js
-    assert "LIVE TASK MONITOR / ENLARGED HOLOGRAPHIC SCREEN" in css
-    assert "#task-screen{" in css
+    assert 'id="activity-panel"' in html
+    assert 'id="workspace-log"' in html
+    assert "function addActivity(event)" in js
+    assert "addActivity(event);" in js
+    assert "LIVE WORKSPACE" in html
+    assert ".workspace-log" in css
 
 
 def test_workspace_create_tool_and_workspace_scope_include_documents():
@@ -435,9 +435,10 @@ def test_holographic_window_mirror_integration():
     css = (WEB / "style.css").read_text(encoding="utf-8")
     server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
     broker = (ROOT / "jenefar" / "tools" / "broker.py").read_text(encoding="utf-8")
-    assert 'id="desktop-mirror"' in html
+    # The current HUD uses the embedded avatar window; desktop mirror is an
+    # optional backend feature and is not rendered in this dashboard markup.
+    assert 'id="hud-avatar-frame"' in html
     assert '"/desktop/mirror.jpg' in app
-    assert "Phase 9: clear avatar + real live-window mirror" in css
     assert 'path == "/desktop/mirror.jpg"' in server
     assert 'name="desktop_mirror_start"' in broker
 
