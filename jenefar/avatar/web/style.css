@@ -1132,17 +1132,17 @@ body.vrm-loaded #photo-avatar{display:none}
 #task-screen-progress{height:1px!important}
 
 #vrm-canvas{
-  left:calc(50% - 140px)!important;
+  left:calc(50% - 150px)!important;
   bottom:88px!important;
-  width:280px!important;
-  height:380px!important;
+  width:300px!important;
+  height:430px!important;
   z-index:45!important;
 }
 .avatar-shell{
-  left:calc(50% - 120px)!important;
+  left:calc(50% - 130px)!important;
   bottom:84px!important;
-  width:240px!important;
-  height:340px!important;
+  width:260px!important;
+  height:390px!important;
   z-index:46!important;
 }
 .status-card{display:none!important}
