@@ -105,7 +105,7 @@
       <canvas id="vrm-canvas" aria-hidden="true"></canvas>
     </div>
     <section id="hud-avatar" aria-label="Jenefar HUD visual">
-      <iframe id="hud-avatar-frame" src="/hud_avatar.html" title="Jenefar HUD" loading="eager"></iframe>
+      <iframe id="hud-avatar-frame" src="/hud_avatar.html" title="Jenefar HUD" loading="eager" allowtransparency="true"></iframe>
     </section>
     <div id="holo-earth" class="holo-earth" aria-hidden="true"></div>
     <div class="holo-particles" id="holo-particles" aria-hidden="true"></div>
@@ -143,6 +143,38 @@
       <span id="vrm-status">HUD</span>
     </div>
   </main>
+  <script>
+  (function(){
+    const frame=document.getElementById("hud-avatar-frame");
+    function clearHudPlate(){
+      try{
+        const doc=frame&&frame.contentDocument;
+        if(!doc) return;
+        let tag=doc.getElementById("jenefar-hud-clear");
+        if(!tag){
+          tag=doc.createElement("style");
+          tag.id="jenefar-hud-clear";
+          (doc.head||doc.documentElement).appendChild(tag);
+        }
+        tag.textContent="html,body,#stage,canvas,#hud{background:transparent!important;background-color:rgba(0,0,0,0)!important}#vignette{display:none!important}";
+        doc.documentElement.style.colorScheme="light";
+        doc.documentElement.style.background="transparent";
+        if(doc.body) doc.body.style.background="transparent";
+      }catch(_){}
+    }
+    if(frame){
+      frame.addEventListener("load", clearHudPlate);
+      setTimeout(clearHudPlate, 400);
+    }
+    const mic=document.getElementById("mic-button");
+    const strip=document.getElementById("mic-status");
+    if(mic&&strip){
+      mic.addEventListener("click",()=>{
+        strip.textContent = mic.getAttribute("aria-pressed")==="true" ? "MIC OFF" : "MIC LISTENING — allow the prompt";
+      });
+    }
+  })();
+  </script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/vrm.js"></script>
 </body>
