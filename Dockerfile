@@ -14,7 +14,7 @@ COPY agent/ ./agent/
 COPY tools/ ./tools/
 
 RUN useradd --create-home --shell /usr/sbin/nologin jenefar \
-    && mkdir -p /app/data/scratchpad \
+    && mkdir -p /app/data/scratchpad /app/data/skills \
     && chown -R jenefar:jenefar /app
 
 USER jenefar
