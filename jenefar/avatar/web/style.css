@@ -1,8 +1,60 @@
-@import url("/style-part-00.css");
-@import url("/style-part-01.css");
-@import url("/style-part-02.css");
-@import url("/style-part-03.css");
-@import url("/style-part-04.css");
-@import url("/style-part-05.css");
-@import url("/style-part-06.css");
-@import url("/style-part-07.css");
+/* Jenefar UI + enlarged VRM center stage recovery */
+:root{--bg:#05050b;--cyan:#67e8ff;--violet:#a78bfa;--text:#eef2ff;--muted:#8e99b8;--line:rgba(123,210,255,.22)}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#020710;font-family:Inter,system-ui,sans-serif;color:var(--text)}
+#stage{position:relative;width:100%;height:100%;isolation:isolate}
+.backdrop{position:absolute;inset:0;background:radial-gradient(circle at 49% 46%,rgba(24,125,255,.16),transparent 26%),linear-gradient(135deg,#01040a,#041020 45%,#020712)}
+#particles{position:absolute;inset:0;z-index:1;pointer-events:none}
+.avatar-shell .avatar,.photo-avatar,.status-card,.mode-pill,.halo{display:none!important}
+
+/* LARGE VRM — was 210x235 which made avatar tiny */
+#vrm-canvas{position:absolute!important;left:calc(50% - 200px)!important;bottom:78px!important;width:400px!important;height:560px!important;z-index:45!important;pointer-events:none!important;top:auto!important;right:auto!important}
+.avatar-shell{position:absolute!important;left:calc(50% - 170px)!important;bottom:74px!important;width:340px!important;height:520px!important;z-index:46!important;display:grid;place-items:center;pointer-events:none}
+
+.side-nav{position:absolute;left:18px;top:82px;width:170px;z-index:80;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:20px;background:rgba(4,13,25,.74)}
+.nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid transparent;border-radius:12px;background:transparent;color:#adc0d9;font-size:12px;cursor:pointer;text-align:left}
+.nav-item.active,.nav-item:hover{border-color:rgba(71,206,255,.28);background:linear-gradient(90deg,rgba(36,144,255,.3),rgba(68,78,255,.1));color:#fff}
+.hero-copy{position:absolute;left:195px;top:88px;width:240px;z-index:20}
+.hero-kicker{font-size:8px;letter-spacing:.28em;color:#67dfff}
+.hero-copy h1{font-size:28px;line-height:1.1;margin:7px 0 9px}
+.hero-copy p{color:#9aaec9;font-size:12px;line-height:1.5;margin:0}
+.chat-glass{position:absolute;left:195px;top:228px;width:270px;height:282px;z-index:25;padding:12px;border:1px solid var(--line);border-radius:18px;background:rgba(5,12,24,.78);backdrop-filter:blur(16px);display:flex;flex-direction:column}
+.chat-header{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.14em;color:#aeb8d7;margin-bottom:8px}
+#chat-log{flex:1;overflow:auto;font-size:12px;line-height:1.4}
+.chat-input-row{display:flex;gap:8px;margin-top:8px}
+.chat-input-row input{flex:1;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 12px;background:rgba(0,0,0,.35);color:#eef2ff}
+.chat-input-row button{border:none;border-radius:12px;padding:10px 14px;background:linear-gradient(135deg,#2ec7ff,#4a6bff);color:#fff;cursor:pointer}
+.system-card{position:absolute;right:18px;top:74px;width:315px;z-index:62;padding:15px;border:1px solid var(--line);border-radius:18px;background:rgba(6,16,29,.76)}
+.card-title{font-size:8px;letter-spacing:.18em;color:#aec6df}
+.status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;text-align:center}
+.ring-meter{width:64px;height:64px;margin:auto;display:grid;place-items:center;border-radius:50%;font-size:13px;font-weight:700;border:5px solid rgba(255,255,255,.06)}
+.command-stack{position:absolute;right:18px;top:266px;width:275px;z-index:60;display:flex;flex-direction:column;gap:8px}
+.command-chip{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:rgba(6,16,29,.7);color:#d7e8f8;cursor:pointer;text-align:left;font-size:12px}
+#activity-panel{position:absolute;right:18px;top:420px;width:315px;height:285px;z-index:55;padding:12px;border:1px solid var(--line);border-radius:18px;background:rgba(5,7,16,.78);overflow:auto}
+.activity-header{font-size:9px;letter-spacing:.16em;color:#aeb8d7;margin-bottom:8px}
+.siri-topbar{position:absolute;left:22px;right:22px;top:16px;height:56px;z-index:80;display:flex;align-items:center;justify-content:space-between}
+.brand-lockup{display:flex;gap:10px;align-items:center;padding:8px 14px;border:1px solid var(--line);border-radius:16px;background:rgba(5,17,33,.72)}
+.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:linear-gradient(145deg,#8be9ff,#167bff 52%,#693cff);color:#fff;font-weight:900;font-size:22px}
+.brand-name{font-weight:800;letter-spacing:.18em;font-size:14px}
+.brand-sub{font-size:6px;letter-spacing:.26em;color:#7ea4c9}
+.top-clock{font-size:28px}
+.top-status{display:flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid rgba(85,243,223,.22);border-radius:14px;background:rgba(6,28,31,.48);font-size:9px;letter-spacing:.18em}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#58ffd4;box-shadow:0 0 14px #58ffd4}
+.bottom-dock{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:80;display:flex;gap:10px;align-items:center;padding:10px 16px;border:1px solid var(--line);border-radius:24px;background:rgba(5,12,24,.85)}
+.dock-btn{border:none;background:transparent;color:#aeb8d7;cursor:pointer;font-size:11px;padding:8px 12px;border-radius:12px}
+.dock-center{background:linear-gradient(145deg,#2ec7ff,#4a6bff);color:#fff;border-radius:50%;width:52px;height:52px;display:grid;place-items:center;font-weight:800;border:none}
+#hud-avatar{position:absolute;left:455px;right:350px;top:100px;bottom:118px;opacity:.24;z-index:4;pointer-events:none}
+#hud-avatar iframe{width:100%;height:100%;border:0}
+#task-screen{position:absolute;left:480px;right:375px;bottom:122px;height:42px;z-index:35;background:rgba(3,10,18,.88);border-radius:10px;padding:6px 10px;font-size:10px;color:#9cc6df}
+#desktop-mirror{display:none}
+.quick-apps{position:absolute;left:16px;bottom:126px;z-index:40}
+.media-card{position:absolute;left:16px;bottom:16px;width:285px;z-index:40;padding:10px;border:1px solid var(--line);border-radius:14px;background:rgba(5,12,24,.8)}
+.realtime-controls{position:absolute;right:22px;bottom:22px;z-index:70;display:flex;gap:8px}
+.realtime-controls button{border:1px solid rgba(103,232,255,.3);border-radius:10px;padding:8px 10px;background:rgba(52,87,122,.28);color:#e9f8ff;cursor:pointer;font-size:9px}
+.approval-overlay{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:rgba(2,3,9,.72)}
+.approval-card{width:min(540px,calc(100vw - 32px));padding:24px;border:1px solid rgba(255,255,255,.12);border-radius:20px;background:rgba(13,16,32,.94)}
+body.vrm-loaded .avatar{opacity:0}
+.holo-earth,.holo-particles,.chair-silhouette{pointer-events:none}
+@media(max-width:1250px){#vrm-canvas{left:calc(50% - 170px)!important;width:340px!important;height:480px!important}.avatar-shell{left:calc(50% - 145px)!important;width:290px!important;height:440px!important}}
+@media(max-width:1000px){#vrm-canvas{left:calc(50% - 150px)!important;width:300px!important;height:420px!important}.avatar-shell{left:calc(50% - 125px)!important;width:250px!important;height:380px!important}}
+@media(max-width:800px){.hero-copy,.chat-glass,.system-card,.command-stack,.quick-apps,.media-card,#activity-panel,.side-nav{display:none!important}#vrm-canvas{left:calc(50% - 130px)!important;width:260px!important;height:360px!important;bottom:70px!important}.avatar-shell{left:calc(50% - 110px)!important;width:220px!important;height:320px!important;bottom:66px!important}}
