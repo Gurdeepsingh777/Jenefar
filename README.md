@@ -961,8 +961,10 @@ This is an additional, independent runtime for the Telegram-first agent describe
 - Bounded ReAct/function-calling loop: invoke registered tools, inspect observations, and continue until the task is complete or the configured tool-round limit is reached.
 - GitHub tools: list repositories, read files, create/update and commit files, create repositories, and list/create issues or pull requests.
 - Utility tools: public HTTP page text fetching plus read/write persistent scratchpad notes.
-- Async API calls, request timeouts, readable rate-limit errors, bounded tool output, and per-user short-term memory.
-- Docker Compose deployment with a non-root container, read-only application filesystem, dropped Linux capabilities, and a persistent scratchpad volume.
+- Persistent prompt-only `SKILL.md` storage: explicitly learn a reusable workflow with `skill_learn`, list saved skills with `skill_list`, and reuse matching guidance on future tasks.
+- After a successful multi-tool task using safe read-oriented tools, automatically save a redacted reusable playbook. Credentials, raw targets, GitHub writes, security actions and robotics workflows are excluded from automatic learning.
+- Async API calls, request timeouts, readable rate-limit errors, bounded tool output, per-user short-term memory, and persistent local skills.
+- Docker Compose deployment with a non-root container, read-only application filesystem, dropped Linux capabilities, and persistent scratchpad and skill volumes.
 
 ### Local setup (Linux/Kali)
 
