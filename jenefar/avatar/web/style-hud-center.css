@@ -8,7 +8,7 @@
   pointer-events:none!important;
 }
 
-/* Center the real hud_avatar.html iframe */
+/* Center the real hud_avatar.html iframe — no black plate behind it */
 #hud-avatar{
   position:absolute!important;
   left:calc(50% - 230px)!important;
@@ -22,6 +22,9 @@
   overflow:hidden!important;
   pointer-events:none!important;
   background:transparent!important;
+  background-color:transparent!important;
+  box-shadow:none!important;
+  border:0!important;
 }
 #hud-avatar iframe,
 #hud-avatar-frame{
@@ -30,10 +33,12 @@
   height:100%!important;
   border:0!important;
   background:transparent!important;
-  pointer-events:none!important;
+  background-color:rgba(0,0,0,0)!important;
+  box-shadow:none!important;
+  pointer-events:auto!important;
+  color-scheme:normal;
 }
 
-/* Original particle field stays full-screen behind the HUD */
 #particles{
   position:absolute!important;
   inset:0!important;
@@ -46,6 +51,11 @@
 .holo-particles{
   pointer-events:none!important;
   z-index:4!important;
+}
+
+.talk-button.is-active,
+#mic-button.is-active{
+  box-shadow:0 0 0 1px rgba(80,220,255,.7), 0 0 18px rgba(80,220,255,.35)!important;
 }
 
 @media(max-width:1250px){
