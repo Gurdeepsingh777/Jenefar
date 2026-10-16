@@ -222,7 +222,8 @@ def main() -> None:
     )
     # All handlers and API clients are asynchronous; python-telegram-bot manages
     # the polling lifecycle and graceful shutdown in its own event loop.
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+    # Avoid replaying stale queued owner commands after a deployment/restart.
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
