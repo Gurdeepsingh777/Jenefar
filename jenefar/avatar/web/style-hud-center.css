@@ -1,191 +1,34 @@
-/* =========================================================
-   Jenefar layout: NO VRM model — centered HUD only
-   Side panels stay; nothing overlaps the center stage
-   ========================================================= */
+/*
+ * Light layout helpers only — do NOT rebuild the whole UI here.
+ * Full design lives in style.css (Phase 12 polished layout).
+ */
 
-/* Hide 3D avatar completely */
-#vrm-canvas,
-.avatar-shell,
-#photo-avatar,
-.photo-avatar{
+/* Keep task strip / desktop mirror off the avatar face */
+#desktop-mirror{
   display:none!important;
-  visibility:hidden!important;
-  pointer-events:none!important;
-  width:0!important;
-  height:0!important;
-  opacity:0!important;
 }
 
-/* Center orbital HUD as the main visual */
-#hud-avatar{
-  position:fixed!important;
-  left:50%!important;
-  top:50%!important;
-  transform:translate(-50%,-52%)!important;
-  width:min(42vw,480px)!important;
-  height:min(42vw,480px)!important;
-  right:auto!important;
-  bottom:auto!important;
-  opacity:.85!important;
-  z-index:12!important;
-  pointer-events:none!important;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(60,236,255,.12) 0%, transparent 55%),
-    radial-gradient(circle at 50% 50%, transparent 38%, rgba(80,120,255,.08) 39%, transparent 42%),
-    radial-gradient(circle at 50% 50%, transparent 55%, rgba(60,236,255,.06) 56%, transparent 60%);
-  border-radius:50%!important;
-  box-shadow:
-    0 0 0 1px rgba(60,236,255,.15),
-    0 0 40px rgba(60,236,255,.12),
-    inset 0 0 60px rgba(40,100,255,.08);
-  animation:hudPulse 4.5s ease-in-out infinite;
-}
-
-#hud-avatar::before{
-  content:"";
-  position:absolute;
-  inset:12%;
-  border-radius:50%;
-  border:1px solid rgba(60,236,255,.22);
-  box-shadow:0 0 20px rgba(60,236,255,.1);
-  animation:hudSpin 28s linear infinite;
-}
-
-#hud-avatar::after{
-  content:"";
-  position:absolute;
-  inset:28%;
-  border-radius:50%;
-  border:1px dashed rgba(120,160,255,.25);
-  animation:hudSpin 18s linear infinite reverse;
-}
-
-@keyframes hudPulse{
-  0%,100%{opacity:.75; transform:translate(-50%,-52%) scale(1)}
-  50%{opacity:.95; transform:translate(-50%,-52%) scale(1.03)}
-}
-@keyframes hudSpin{
-  from{transform:rotate(0deg)}
-  to{transform:rotate(360deg)}
-}
-
-/* Ambient layers — soft full-stage, low opacity, no conflict */
+/* Soften ambient layers so they don't fight panels */
 .sci-fi-bg,
 .room-lights,
-.holo-particles,
-.backdrop{
-  left:0!important;
-  right:0!important;
-  top:0!important;
-  bottom:0!important;
-  opacity:.25!important;
-  pointer-events:none!important;
-  z-index:1!important;
-}
-
-/* Holo earth — right accent only, away from center HUD */
-.holo-earth{
-  position:fixed!important;
-  left:auto!important;
-  right:340px!important;
-  top:50%!important;
-  transform:translateY(-50%)!important;
-  width:min(14vw,160px)!important;
-  height:min(14vw,160px)!important;
-  opacity:.45!important;
-  z-index:8!important;
+.holo-particles{
   pointer-events:none!important;
 }
 
-/* Hide desktop mirror / task strip on avatar stage */
-#desktop-mirror,
-#task-screen{
-  display:none!important;
-}
-
-/* ---- Panel zones: no overlap with center HUD ----
-   Left column ~180–470px | Center free | Right ~320px
-*/
-.side-nav{
-  z-index:80!important;
-}
-.hero-copy{
-  left:188px!important;
-  top:88px!important;
-  width:min(260px,22vw)!important;
-  z-index:55!important;
-  pointer-events:none!important;
-}
-.chat-glass{
-  left:188px!important;
-  top:220px!important;
-  width:min(280px,24vw)!important;
-  height:min(300px,38vh)!important;
-  z-index:55!important;
-}
-.system-card{
-  right:18px!important;
-  top:74px!important;
-  width:300px!important;
-  z-index:55!important;
-}
-.command-stack{
-  right:18px!important;
-  top:250px!important;
-  width:300px!important;
-  z-index:55!important;
-}
+/* Ensure side UI stays above ambient */
+.side-nav{z-index:80!important}
+.hero-copy,
+.chat-glass,
+.system-card,
+.command-stack,
 #activity-panel,
-.workspace-card{
-  right:18px!important;
-  top:auto!important;
-  bottom:130px!important;
-  width:300px!important;
-  max-height:240px!important;
-  z-index:55!important;
-}
-.quick-apps{
-  left:16px!important;
-  bottom:120px!important;
-  z-index:55!important;
-}
+.workspace-card,
+.quick-apps,
 .media-card{
-  left:16px!important;
-  bottom:16px!important;
-  width:280px!important;
   z-index:55!important;
 }
-.bottom-dock{
-  z-index:70!important;
-}
-.status-strip{
-  z-index:70!important;
-}
+.bottom-dock,
+.status-strip,
 .siri-topbar{
-  z-index:75!important;
-}
-
-/* Narrow screens: simplify */
-@media(max-width:1250px){
-  .holo-earth{right:310px!important;width:120px!important;height:120px!important}
-  #hud-avatar{width:min(36vw,400px)!important;height:min(36vw,400px)!important}
-  .hero-copy,.chat-glass{left:170px!important;width:240px!important}
-}
-@media(max-width:1000px){
-  .holo-earth{display:none!important}
-  #hud-avatar{width:min(50vw,360px)!important;height:min(50vw,360px)!important}
-}
-@media(max-width:800px){
-  .hero-copy,.chat-glass,.system-card,.command-stack,
-  .quick-apps,.media-card,#activity-panel,.side-nav{
-    /* keep nav; hide heavy panels on small screens */
-  }
-  .hero-copy,.chat-glass,.system-card,.command-stack,
-  .quick-apps,.media-card,#activity-panel{
-    display:none!important;
-  }
-  #hud-avatar{
-    width:min(70vw,320px)!important;
-    height:min(70vw,320px)!important;
-  }
+  z-index:70!important;
 }
