@@ -94,6 +94,8 @@ def test_browser_hud_does_not_draw_an_opaque_horizon_plate():
     hud = (WEB / "hud_avatar.html").read_text(encoding="utf-8")
     assert "ctx.fillRect(0, horizonY - 40, W, 48)" not in hud
     assert "#vignette { display:none!important" in hud
+    assert "#top-telemetry, #caption-box {" in hud
+    assert "background:transparent!important;" in hud
 
 
 def test_terminal_safe_local_commands_auto_run_but_destructive_commands_wait():
