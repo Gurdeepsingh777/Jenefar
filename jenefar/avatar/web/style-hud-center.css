@@ -96,3 +96,15 @@
 .workspace-log pre{max-height:180px;overflow:auto;white-space:pre-wrap;font-size:9px;color:#b9cce5}
 #mic-status[data-active="true"]{color:#72ffd8}
 @media(max-width:800px){.workspace-stats b{font-size:15px}.workspace-log{max-height:240px}}
+
+
+/* Compact responsive polish for the bottom talk dock and live status */
+.bottom-dock .realtime-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#mic-status{display:inline-flex;align-items:center;gap:7px;max-width:min(54vw,330px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;letter-spacing:.07em}
+#mic-status::before{content:"";width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:#64748b;box-shadow:0 0 8px currentColor}
+#mic-status[data-active="true"]::before{background:#65fbd8;box-shadow:0 0 10px rgba(101,251,216,.8)}
+.talk-button{transition:transform .16s ease,box-shadow .2s ease,border-color .2s ease}
+.talk-button.pressed{transform:translateY(1px) scale(.98)}
+.talk-button.is-busy{animation:mic-pulse 1.4s ease-in-out infinite}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(103,232,255,.08)}50%{box-shadow:0 0 0 5px rgba(103,232,255,.11)}}
+@media(max-width:620px){#mic-status{max-width:42vw;font-size:8px}#mic-button{min-width:92px}}
