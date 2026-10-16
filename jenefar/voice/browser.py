@@ -33,6 +33,7 @@ class BrowserVoiceBridge:
         self._active_task = None
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._tts_lock = threading.Lock()
+        self._openai_tts_disabled = False
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -95,7 +96,7 @@ class BrowserVoiceBridge:
 
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
-        if not key:
+        if not key or self._openai_tts_disabled:
             return self._synthesize_edge_audio(text)
 
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
@@ -127,6 +128,10 @@ class BrowserVoiceBridge:
                 "audio/wav",
             )
         except Exception as exc:
+            error_text = str(exc).lower()
+            if any(marker in error_text for marker in ("insufficient_quota", "credit_balance_exhausted", "no credits remaining")):
+                self._openai_tts_disabled = True
+                print("[JENEFAR] OpenAI TTS quota exhausted; skipping further OpenAI TTS attempts this run.")
             print(
                 "[JENEFAR] Browser TTS generation failed; "
                 f"trying Edge TTS fallback: {type(exc).__name__}: {exc}"
