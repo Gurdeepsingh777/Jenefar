@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -195,6 +196,83 @@ class SkillManager:
             for item in enabled
         ]
         return "\n".join(lines)
+
+    def save_learned_skill(
+        self,
+        *,
+        name: str,
+        description: str,
+        keywords: list[str],
+        system_prompt: str,
+        connectors: list[str] | None = None,
+        permissions: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a learned, declarative skill; never install or execute code."""
+        raw = {
+            "name": name,
+            "version": "1.0",
+            "description": description,
+            "keywords": keywords,
+            "connectors": connectors or [],
+            "permissions": permissions or [],
+            "system_prompt": system_prompt,
+            "enabled_by_default": True,
+        }
+        manifest = SkillManifest.from_dict(raw, source="learned")
+        builtin_names = {item.name for item in BUILTIN_SKILLS}
+        if manifest.name in builtin_names:
+            raise ValueError("A learned skill cannot overwrite a built-in skill.")
+        if not manifest.keywords:
+            raise ValueError("A learned skill needs at least one keyword for automatic matching.")
+        if not manifest.system_prompt:
+            raise ValueError("A learned skill needs reusable guidance in system_prompt.")
+
+        slug = re.sub(r"[^a-z0-9]+", "-", manifest.name.lower()).strip("-")[:80]
+        if not slug:
+            raise ValueError("Skill name does not produce a valid folder name.")
+        root = self.skill_roots[0].resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        skill_dir = (root / slug).resolve()
+        try:
+            skill_dir.relative_to(root)
+        except ValueError as exc:
+            raise PermissionError("Skill destination escaped the configured skill root.") from exc
+
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        target = (skill_dir / "SKILL.md").resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise PermissionError("Skill file escaped the configured skill root.") from exc
+
+        import yaml
+
+        front_matter = {
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+            "keywords": list(manifest.keywords),
+            "connectors": list(manifest.connectors),
+            "permissions": list(manifest.permissions),
+            "enabled_by_default": True,
+        }
+        encoded = yaml.safe_dump(front_matter, sort_keys=False, allow_unicode=True)
+        target.write_text(
+            "---\n" + encoded + "---\n" + manifest.system_prompt.strip() + "\n",
+            encoding="utf-8",
+        )
+
+        # Reload through the same bounded declarative parser used at startup,
+        # then enable it in persistent skills state.
+        self._load_installed(auto_enable_new=True)
+        self.enable(manifest.name)
+        return {
+            "saved": True,
+            "enabled": True,
+            "name": manifest.name,
+            "path": str(target),
+            "executable_code_installed": False,
+        }
 
     def connectors_for(self, name: str) -> list[str]:
         return list(self.get(name).connectors)
