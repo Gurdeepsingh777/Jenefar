@@ -136,6 +136,18 @@ class BaseLLMAgent(BaseAgent):
                 f"- {item.get('name', '')}: {item.get('description', '')}"
                 for item in skill_text[-30:]
             )
+        if skill_text:
+            task_lower = str(context.task).lower()
+            matched_skills = []
+            for item in skill_text:
+                keywords = [str(word).lower() for word in (item.get("keywords") or []) if str(word).strip()]
+                if keywords and any(word in task_lower for word in keywords):
+                    matched_skills.append(item)
+            if matched_skills:
+                instructions += "\nTask-matched skill guidance (declarative metadata only):\n" + "\n".join(
+                    f"- {item.get('name', '')}: {item.get('description', '')}\n  Guidance: {str(item.get('system_prompt') or '')[:1500]}"
+                    for item in matched_skills[:6]
+                )
         if task_plan:
             plan_text = str(task_plan.get("prompt_text") or "").strip()
             if plan_text:
