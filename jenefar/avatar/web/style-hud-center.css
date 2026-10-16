@@ -64,3 +64,35 @@
 @media(max-width:800px){
   #hud-avatar{left:8vw!important;width:84vw!important;top:90px!important;bottom:150px!important}
 }
+
+
+/* Phase 13: functional workspace + accessible mic controls */
+#mic-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:112px;white-space:nowrap}
+#mic-button .mic-label{font-size:9px;letter-spacing:.07em;font-weight:700}
+#mic-button[aria-pressed="true"]{border-color:rgba(82,255,210,.7)!important}
+#mic-button:focus-visible,.workspace-tabs button:focus-visible,.command-chip:focus-visible{outline:2px solid #67e8ff;outline-offset:2px}
+.workspace-card .card-title{display:flex;align-items:center;gap:8px;justify-content:space-between;min-height:25px}
+.workspace-card .card-title span{margin-left:auto;color:#67dfff;font-size:7px}
+#clear-workspace{border:1px solid rgba(123,210,255,.22);background:rgba(255,255,255,.04);color:#b8d8ee;padding:5px 8px;border-radius:8px;cursor:pointer;font-size:8px}
+.workspace-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0}
+.workspace-stats>div{border:1px solid rgba(123,210,255,.12);border-radius:10px;padding:8px;background:rgba(20,42,67,.28)}
+.workspace-stats b{display:block;color:#eaf8ff;font-size:18px;font-variant-numeric:tabular-nums}
+.workspace-stats small{display:block;margin-top:2px;color:#7f9bb8;font-size:7px;letter-spacing:.14em}
+.workspace-tabs{display:flex;gap:5px;margin:3px 0 8px;flex-wrap:wrap}
+.workspace-tabs button{border:1px solid rgba(123,210,255,.16);background:rgba(255,255,255,.035);color:#8aa9c7;border-radius:8px;padding:6px 9px;font-size:8px;letter-spacing:.1em;cursor:pointer}
+.workspace-tabs button.active,.workspace-tabs button[data-active="true"]{color:#eafaff;background:rgba(42,161,255,.16);border-color:rgba(103,232,255,.42);box-shadow:0 0 14px rgba(43,178,255,.08)}
+.workspace-log{flex:1;min-height:90px;overflow:auto;padding:4px 2px 8px;display:flex;flex-direction:column;gap:7px}
+.workspace-idle{color:#738aa6;font-size:11px;padding:12px 8px}
+.workspace-log .activity-item{display:block;flex:0 0 auto;border:1px solid rgba(123,210,255,.10);border-left:2px solid rgba(103,232,255,.42);background:rgba(255,255,255,.035);border-radius:10px;padding:8px 9px}
+.workspace-log .activity-meta{display:flex;align-items:center;gap:8px;color:#7f9bb8;font-size:8px;flex-wrap:wrap}
+.workspace-log .activity-state{color:#67dfff;font-size:8px;letter-spacing:.12em}
+.workspace-log .activity-task{margin-left:auto;color:#8796bb;font-size:8px}
+.workspace-log .activity-text{margin-top:4px;font-size:10px;line-height:1.4;color:#d9e8fb;overflow-wrap:anywhere;white-space:pre-wrap}
+.workspace-log .activity-error{border-left-color:#ff687e;background:rgba(255,76,102,.07)}
+.workspace-log .activity-waiting_approval{border-left-color:#ffbd5d;background:rgba(255,189,93,.07)}
+.workspace-log .activity-item[hidden]{display:none!important}
+.workspace-log details{margin-top:6px}
+.workspace-log summary{font-size:8px;color:#67dfff;cursor:pointer}
+.workspace-log pre{max-height:180px;overflow:auto;white-space:pre-wrap;font-size:9px;color:#b9cce5}
+#mic-status[data-active="true"]{color:#72ffd8}
+@media(max-width:800px){.workspace-stats b{font-size:15px}.workspace-log{max-height:240px}}
