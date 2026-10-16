@@ -51,8 +51,8 @@ def load_config() -> Config:
         require_wake_phrase=bool(assistant.get("require_wake_phrase", True)),
         single_turn_sleep=bool(assistant.get("single_turn_sleep", True)),
         require_confirmation_for_tools=(
-            str(os.getenv("JENEFAR_REQUIRE_CONFIRMATION", runtime.get("require_confirmation_for_tools", False))).strip().lower()
-            in {"1", "true", "yes", "on"}
+            str(os.getenv("JENEFAR_CONFIRMATION_MODE", runtime.get("confirmation_mode", "critical")))
+            .strip().lower() in {"all", "strict", "always"}
         ),
         command_timeout_seconds=int(runtime.get("command_timeout_seconds", 30)),
         authorized_targets=[str(x).strip().lower() for x in targets if str(x).strip()],
