@@ -971,7 +971,7 @@ This is an additional, independent runtime for the Telegram-first agent describe
 1. Create a Telegram bot with [BotFather](https://t.me/BotFather) and copy the bot token. Do not publish the token.
 2. Get your numeric Telegram user ID from a trusted Telegram ID helper and put it in `ALLOWED_TELEGRAM_USER_IDS`. Use comma-separated numeric IDs only; anyone not listed is blocked before command/tool handlers run.
 3. Create a fine-grained GitHub PAT for the repositories you need. Grant only the permissions required for your work (Metadata read; Contents read/write for file edits; Issues read/write for issues; Pull requests read/write for PRs). Add it to `GITHUB_PAT`. GitHub tools remain disabled until a PAT is configured.
-4. Choose an OpenAI-compatible provider. Example defaults target Groq-compatible APIs; providers/models and their free quotas can change. Put the provider key in `LLM_API_KEY`, and adjust `LLM_BASE_URL` and `LLM_MODEL_NAME` for the selected API.
+4. Choose an OpenAI-compatible provider. The example defaults to Google's Gemini OpenAI-compatible API, with a free tier subject to current account eligibility and rate limits ([Google API compatibility](https://ai.google.dev/gemini-api/docs/openai), [current pricing](https://ai.google.dev/gemini-api/docs/pricing)). Get a key from [Google AI Studio](https://aistudio.google.com/apikey). Put it in `LLM_API_KEY`; for Groq or OpenRouter, set `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_NAME` to match that provider.
 5. Configure and run:
 
 ```bash
