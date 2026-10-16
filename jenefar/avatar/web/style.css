@@ -1131,19 +1131,37 @@ body.vrm-loaded #photo-avatar{display:none}
 #task-screen-state{padding:4px 7px!important;font-size:6px!important}
 #task-screen-progress{height:1px!important}
 
+/* Prominent center-stage avatar — fills focus without eating side panels */
 #vrm-canvas{
-  left:calc(50% - 150px)!important;
-  bottom:88px!important;
-  width:300px!important;
-  height:430px!important;
+  left:calc(50% - 190px)!important;
+  bottom:72px!important;
+  width:380px!important;
+  height:520px!important;
   z-index:45!important;
 }
 .avatar-shell{
-  left:calc(50% - 130px)!important;
-  bottom:84px!important;
-  width:260px!important;
-  height:390px!important;
+  left:calc(50% - 170px)!important;
+  bottom:68px!important;
+  width:340px!important;
+  height:480px!important;
   z-index:46!important;
+}
+/* Keep live task strip off the avatar face */
+#task-screen{
+  left:auto!important;
+  right:18px!important;
+  width:315px!important;
+  bottom:122px!important;
+}
+#desktop-mirror{
+  display:none!important;
+}
+#hud-avatar{
+  left:calc(50% - 220px)!important;
+  right:calc(50% - 220px)!important;
+  top:90px!important;
+  bottom:100px!important;
+  opacity:.18!important;
 }
 .status-card{display:none!important}
 
@@ -1159,8 +1177,8 @@ body.vrm-loaded #photo-avatar{display:none}
 @media(max-width:1250px){
   #hud-avatar{left:400px!important;right:310px!important}
   #desktop-mirror,#task-screen{left:425px!important;right:330px!important}
-  #vrm-canvas{left:calc(50% - 125px)!important;width:250px!important;height:340px!important}
-  .avatar-shell{left:calc(50% - 105px)!important;width:210px!important;height:300px!important}
+  #vrm-canvas{left:calc(50% - 160px)!important;width:320px!important;height:440px!important}
+  .avatar-shell{left:calc(50% - 140px)!important;width:280px!important;height:400px!important}
 }
 @media(max-width:1000px){
   #hud-avatar{left:82px!important;right:280px!important}
@@ -1171,6 +1189,6 @@ body.vrm-loaded #photo-avatar{display:none}
   #desktop-mirror{left:15px!important;right:15px!important;top:128px!important;bottom:198px!important}
   #task-screen{left:15px!important;right:15px!important;bottom:134px!important}
   .hero-copy,.chat-glass,.system-card,.command-stack,.quick-apps,.media-card,#activity-panel,.side-nav{display:none!important}
-  #vrm-canvas{left:calc(50% - 110px)!important;width:220px!important;height:300px!important;bottom:70px!important}
-  .avatar-shell{left:calc(50% - 95px)!important;width:190px!important;height:270px!important;bottom:66px!important}
+  #vrm-canvas{left:calc(50% - 140px)!important;width:280px!important;height:380px!important;bottom:64px!important}
+  .avatar-shell{left:calc(50% - 125px)!important;width:250px!important;height:350px!important;bottom:60px!important}
 }
