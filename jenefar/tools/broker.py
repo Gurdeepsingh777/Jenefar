@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -97,6 +99,90 @@ class ToolBroker:
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
         self._apply_critical_tool_policy()
+
+    @staticmethod
+    def _terminal_command_is_critical(command: str) -> bool:
+        """Permit bounded, low-risk local inspection/test commands without prompts."""
+        raw = str(command or "").strip()
+        if not raw or any(char in raw for char in ("\n", "\r", chr(96), "$", ">", "<")):
+            return True
+        segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", raw)
+        if not segments or any(not segment.strip() for segment in segments):
+            return True
+        forbidden = {
+            "sudo", "su", "doas", "rm", "rmdir", "shred", "wipe", "wipefs",
+            "dd", "mkfs", "fdisk", "parted", "mount", "umount", "reboot",
+            "shutdown", "poweroff", "systemctl", "service", "kill", "pkill",
+            "chmod", "chown", "chattr", "setfacl", "iptables", "nft", "ufw",
+            "curl", "wget", "nc", "netcat", "nmap", "masscan", "nikto",
+            "sqlmap", "hydra", "aircrack-ng", "hashcat", "responder",
+        }
+        read_only = {
+            "pwd", "ls", "tree", "cat", "head", "tail", "less", "more",
+            "file", "stat", "du", "df", "grep", "rg", "wc", "cut",
+            "sort", "uniq", "tr", "printf", "echo", "date", "whoami", "id",
+            "uname", "hostname", "which", "whereis", "free", "ps", "uptime",
+        }
+        for segment in segments:
+            try:
+                tokens = shlex.split(segment)
+            except ValueError:
+                return True
+            if not tokens:
+                return True
+            executable = tokens[0].rsplit("/", 1)[-1].lower()
+            args = tokens[1:]
+            if executable in forbidden:
+                return True
+            if executable == "find":
+                if any(arg in {"-exec", "-execdir", "-delete", "-ok"} for arg in args):
+                    return True
+                continue
+            if executable == "cd":
+                if len(args) > 1:
+                    return True
+                continue
+            if executable in read_only:
+                continue
+            if executable == "ip":
+                normalized = [arg.lower() for arg in args if not arg.startswith("-")]
+                if normalized and normalized[0] in {"addr", "address", "route", "link", "neigh"}:
+                    if any(arg in {"flush", "del", "delete", "add", "replace", "set"} for arg in normalized):
+                        return True
+                    continue
+                return True
+            if executable == "git":
+                if not args:
+                    return True
+                subcommand = args[0].lower()
+                safe_git = {
+                    "status", "diff", "log", "show", "branch", "rev-parse",
+                    "ls-files", "grep", "blame", "describe", "tag", "remote",
+                    "shortlog", "version", "fetch",
+                }
+                if subcommand not in safe_git:
+                    return True
+                if subcommand == "branch" and any(arg in {"-D", "--delete"} for arg in args):
+                    return True
+                if subcommand == "remote" and any(arg in {"add", "remove", "set-url"} for arg in args):
+                    return True
+                continue
+            if executable in {"python", "python3"}:
+                if not args or args[0] in {"--version", "-V"}:
+                    continue
+                if len(args) >= 2 and args[0] == "-m" and args[1] in {"pytest", "unittest", "compileall"}:
+                    continue
+                if args[0] in {"run.py", "./run.py"} and len(args) >= 2 and args[1] in {"--doctor", "--gui-smoke-test"}:
+                    continue
+                return True
+            if executable in {"pytest", "py.test"}:
+                continue
+            if executable == "node" and args[:1] == ["--check"]:
+                continue
+            if executable == "npm" and args[:1] == ["test"]:
+                continue
+            return True
+        return False
 
     def _apply_critical_tool_policy(self) -> None:
         critical_names = {
@@ -1484,9 +1570,11 @@ class ToolBroker:
 
         # Critical tools always pause. Routine tools only use the legacy strict
         # confirmation mode when it is explicitly enabled.
+        is_critical = bool(spec.critical)
+        if name == "terminal_execute":
+            is_critical = self._terminal_command_is_critical(str(arguments.get("command") or ""))
         needs_confirmation = bool(
-            spec.critical
-            or (spec.requires_confirmation and self.require_confirmation)
+            is_critical or (spec.requires_confirmation and self.require_confirmation)
         )
         if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
@@ -1494,7 +1582,7 @@ class ToolBroker:
             user_prompt = (
                 f"Kya main {name.replace('_', ' ')} kar doon? "
                 "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
-                if spec.critical
+                if is_critical
                 else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
             )
             self.audit.record(
@@ -1513,11 +1601,11 @@ class ToolBroker:
                 "tool": name,
                 "message": (
                     "This action is marked critical and needs your confirmation before I execute it."
-                    if spec.critical
+                    if is_critical
                     else "This action needs your confirmation before I execute it."
                 ),
                 "user_prompt": user_prompt,
-                "critical": bool(spec.critical),
+                "critical": is_critical,
             })
 
         try:
