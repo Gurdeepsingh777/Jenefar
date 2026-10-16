@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jenefar Avatar</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style-hud-center.css">
   <script type="importmap">
   {
     "imports": {
@@ -79,163 +80,67 @@
       <div class="app-grid">
         <button type="button" data-command="open youtube">▶<small>YouTube</small></button>
         <button type="button" data-command="open gmail">✉<small>Gmail</small></button>
-        <button type="button" data-command="open maps">⌖<small>Maps</small></button>
+        <button type="button" data-command="open maps">➤<small>Maps</small></button>
         <button type="button" data-command="open whatsapp">◉<small>WhatsApp</small></button>
-        <button type="button" data-command="open vscode">⌘<small>VS Code</small></button>
-        <button type="button" data-command="open terminal">▣<small>Terminal</small></button>
-        <button type="button" data-command="open browser">◌<small>Browser</small></button>
-        <button type="button" data-command="open files">▱<small>Files</small></button>
+        <button type="button" data-command="open vscode">▦<small>VS Code</small></button>
+        <button type="button" data-command="open terminal">□<small>Terminal</small></button>
+        <button type="button" data-command="open browser">◎<small>Browser</small></button>
+        <button type="button" data-command="open files">▤<small>Files</small></button>
       </div>
     </section>
-    <section class="media-card">
+    <section class="media-card" id="now-playing">
       <div class="card-title">NOW PLAYING</div>
-      <div class="media-main"><div class="cover-art">♪</div><div class="media-meta"><strong id="now-playing-title">Jenefar Voice</strong><span>Workspace audio</span><div class="media-wave"></div></div><button type="button" id="media-pause">Ⅱ</button></div>
-    </section>
-    <div class="backdrop"></div>
-    <div id="holo-earth" class="holo-earth" aria-hidden="true">
-      <div class="earth-glow"></div>
-      <canvas id="earth-canvas"></canvas>
-      <div class="earth-orbit orbit-a"></div>
-      <div class="earth-orbit orbit-b"></div>
-      <div class="earth-data-ring ring-a"></div>
-      <div class="earth-data-ring ring-b"></div>
-    </div>
-    <div class="holo-particles" id="holo-particles" aria-hidden="true"></div>
-    <div class="chair-silhouette chair-left" aria-hidden="true"></div>
-    <div class="chair-silhouette chair-right" aria-hidden="true"></div>
-    <canvas id="particles" aria-hidden="true"></canvas>
-    <section id="hud-avatar" aria-label="Jenefar HUD visual">
-      <iframe id="hud-avatar-frame" src="/hud_avatar.html" title="Jenefar HUD" loading="eager"></iframe>
-    </section>
-    <section id="desktop-mirror" aria-label="Live mirrored desktop window" hidden>
-      <div class="desktop-mirror-frame">
-        <div class="desktop-mirror-header">
-          <span id="desktop-mirror-title">LIVE WINDOW</span>
-          <span id="desktop-mirror-status">MIRROR</span>
-        </div>
-        <img id="desktop-mirror-image" alt="" />
-      </div>
-    </section>
-    <canvas id="vrm-canvas" aria-hidden="true"></canvas>
-    <div id="photo-avatar" class="photo-avatar" aria-hidden="true">
-      <div class="photo-avatar__ring"></div>
-      <img class="photo-avatar__portrait" src="/avatar-photo.svg" alt="">
-      <div class="photo-avatar__name">JENEFAR</div>
-    </div>
-
-    <section id="task-screen" aria-label="Current task monitor">
-      <div class="task-screen-header">
+      <div class="media-row">
+        <div class="media-art">♫</div>
         <div>
-          <span class="task-screen-kicker">JENEFAR • LIVE TASK CONSOLE</span>
-          <strong id="task-screen-title">READY — awaiting your instruction</strong>
+          <div class="media-title" id="media-title">Jenefar Voice</div>
+          <div class="media-sub" id="media-sub">Workspace audio</div>
         </div>
-        <span id="task-screen-state">IDLE</span>
+        <button type="button" id="media-toggle">⏸</button>
       </div>
-      <div class="task-screen-progress"><span id="task-screen-progress-bar"></span></div>
-      <div id="task-screen-log" class="task-screen-log">
-        <div class="task-log-line"><span class="task-log-dot"></span><span>System ready. Current task output will appear here.</span></div>
-      </div>
-      <div class="task-screen-footer">
-        <span id="task-screen-task-id">TASK —</span>
-        <span id="task-screen-summary">No active task</span>
-      </div>
+      <div class="media-meter" id="media-meter"></div>
     </section>
-
-    <section class="avatar-shell">
-      <div class="halo halo-a"></div>
-      <div class="halo halo-b"></div>
-      <div class="avatar-glow"></div>
-      <div class="avatar-backlight" aria-hidden="true"></div>
-
-      <div class="avatar">
-        <svg viewBox="0 0 420 520" role="img" aria-label="Jenefar AI avatar">
-          <defs>
-            <radialGradient id="skin" cx="50%" cy="35%" r="80%">
-              <stop offset="0%" stop-color="#ffe9e0"/>
-              <stop offset="100%" stop-color="#c99ea9"/>
-            </radialGradient>
-            <linearGradient id="hair" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stop-color="#120d20"/>
-              <stop offset="55%" stop-color="#302054"/>
-              <stop offset="100%" stop-color="#09080f"/>
-            </linearGradient>
-            <linearGradient id="suit" x1="0" x2="1">
-              <stop offset="0%" stop-color="#090d16"/>
-              <stop offset="50%" stop-color="#182033"/>
-              <stop offset="100%" stop-color="#090d16"/>
-            </linearGradient>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="6" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
-
-          <path class="hair" d="M84 232C44 72 114 5 210 13c104-7 174 70 126 216-16 48-33 84-62 119H144c-29-35-47-71-60-116Z"/>
-          <path class="hair-light" d="M110 198C84 90 143 36 211 36c76 0 126 73 96 168-24-31-47-42-74-47-38-8-76 1-123 41Z"/>
-
-          <ellipse cx="210" cy="205" rx="104" ry="125" fill="url(#skin)"/>
-          <path class="ear" d="M106 194c-24-2-30 16-20 40 7 17 19 24 29 17zM314 194c24-2 30 16 20 40-7 17-19 24-29 17z"/>
-
-          <path class="brow" d="M142 167c19-14 39-15 55-4M223 163c16-10 38-10 55 4"/>
-          <ellipse class="eye" cx="171" cy="186" rx="18" ry="11"/>
-          <ellipse class="eye" cx="249" cy="186" rx="18" ry="11"/>
-          <circle class="iris" cx="171" cy="186" r="6"/>
-          <circle class="iris" cx="249" cy="186" r="6"/>
-
-          <path class="nose" d="M206 184c-2 18-8 31-15 42 7 5 16 7 27 3"/>
-          <path class="mouth" d="M173 255c22 15 53 15 75 0-16 26-59 30-75 0Z"/>
-
-          <path class="mark mark-a" d="M118 220l24-28"/>
-          <path class="mark mark-b" d="M302 220l-24-28"/>
-
-          <path class="neck" d="M167 308v63h86v-63"/>
-          <path class="suit" d="M167 354c-52 4-99 38-122 105v51h330v-51c-23-67-70-101-122-105z" fill="url(#suit)"/>
-          <path class="core" d="M210 364l30 34-30 50-30-50z" filter="url(#glow)"/>
-
-          <path class="collar" d="M166 350l44 45 44-45 10 50-54 58-54-58z"/>
-          <path class="accent" d="M124 392l54 64M296 392l-54 64"/>
-          <circle class="core-dot" cx="210" cy="397" r="8" filter="url(#glow)"/>
-        </svg>
+    <div class="avatar-shell">
+      <canvas id="vrm-canvas"></canvas>
+    </div>
+    <div id="hud-avatar" aria-hidden="true"></div>
+    <div class="holo-earth" aria-hidden="true"></div>
+    <div class="holo-particles" aria-hidden="true"></div>
+    <aside class="workspace-card" id="activity-panel">
+      <div class="card-title">LIVE WORKSPACE <span>ONLINE • TASK STREAM</span>
+        <button type="button" id="clear-workspace">CLEAR</button>
       </div>
-
-      <div class="status-card">
-        <div class="pulse-dot"></div>
-        <div>
-          <div id="state">IDLE</div>
-          <div id="caption">Jenefar is ready</div>
-        </div>
+      <div class="workspace-stats">
+        <div><b id="stat-running">0</b><small>RUNNING</small></div>
+        <div><b id="stat-queue">0</b><small>QUEUE</small></div>
+        <div><b id="stat-done">0</b><small>DONE</small></div>
+        <div><b id="stat-error">0</b><small>ERROR</small></div>
       </div>
-    </section>
-
-    <aside id="activity-panel" aria-label="Jenefar live workflow" class="workspace-card">
-      <div class="activity-header">
-        <div><strong>LIVE WORKSPACE</strong><span id="activity-connection">ONLINE • TASK STREAM</span></div>
-        <button id="clear-workspace" type="button">CLEAR</button>
+      <div class="workspace-tabs">
+        <button type="button" class="active" data-tab="all">ALL</button>
+        <button type="button" data-tab="running">RUNNING</button>
+        <button type="button" data-tab="results">RESULTS</button>
+        <button type="button" data-tab="errors">ERRORS</button>
       </div>
-      <div class="activity-stats">
-        <div><span>RUNNING</span><b id="activity-running">0</b></div>
-        <div><span>QUEUE</span><b id="activity-queued">0</b></div>
-        <div><span>DONE</span><b id="activity-done">0</b></div>
-        <div><span>ERROR</span><b id="activity-errors">0</b></div>
+      <div class="workspace-log" id="workspace-log">
+        <div class="workspace-idle" id="workspace-idle">Ready</div>
       </div>
-      <div class="activity-filters" role="tablist" aria-label="Workflow filters">
-        <button type="button" data-activity-filter="all" data-active="true">ALL</button>
-        <button type="button" data-activity-filter="running">RUNNING</button>
-        <button type="button" data-activity-filter="results">RESULTS</button>
-        <button type="button" data-activity-filter="errors">ERRORS</button>
-      </div>
-      <div id="activity-list"></div>
     </aside>
-    <div class="realtime-controls premium-controls">
-      <button id="mic-button" type="button" class="talk-button" aria-pressed="false">● MIC OFF</button>
-      <span id="voice-input-status">BROWSER MIC: STARTING</span>
-      <span id="realtime-state">BROWSER VOICE</span>
-      <span id="vrm-status">AVATAR CHECKING</span>
+    <div class="bottom-dock">
+      <button type="button" class="talk-button" id="talk-button" data-command="talk"><span>●</span>Talk</button>
+      <button type="button" data-command="vision"><span>◈</span>Vision</button>
+      <button type="button" class="dock-core" id="dock-core">J</button>
+      <button type="button" data-command="chat"><span>□</span>Chat</button>
+      <button type="button" data-command="more"><span>▦</span>More</button>
     </div>
-    <div class="bottom-dock"><button type="button" class="dock-btn" id="dock-talk">◉<span>Talk</span></button><button type="button" class="dock-btn" id="dock-vision">◈<span>Vision</span></button><button type="button" class="orb-button" id="dock-orb"><span>J</span></button><button type="button" class="dock-btn" id="dock-chat">▢<span>Chat</span></button><button type="button" class="dock-btn" id="dock-more">▦<span>More</span></button></div>
+    <div class="status-strip">
+      <span id="mic-status">MIC UNSUPPORTED</span>
+      <span id="speech-status">BROWSER SPEECH UNSUPPORTED</span>
+      <span id="voice-status">BROWSER VOICE</span>
+      <span id="vrm-status">VRM AVATAR</span>
+    </div>
   </main>
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
   <script type="module" src="/vrm.js"></script>
-  <script src="/realtime.js"></script>
 </body>
 </html>

@@ -1,0 +1,81 @@
+/* Managed centered HUD — orbital rings frame the avatar, not corners */
+#hud-avatar{
+  left:calc(50% - 260px)!important;
+  right:calc(50% - 260px)!important;
+  top:70px!important;
+  bottom:90px!important;
+  width:auto!important;
+  height:auto!important;
+  opacity:.22!important;
+  z-index:4!important;
+  pointer-events:none!important;
+  transform:none!important;
+}
+
+/* Keep sci-fi ambient layers centered on the avatar stage */
+.sci-fi-bg,
+.room-lights,
+.holo-particles,
+.backdrop{
+  left:calc(50% - 300px)!important;
+  right:calc(50% - 300px)!important;
+  top:50px!important;
+  bottom:70px!important;
+  opacity:.3!important;
+  pointer-events:none!important;
+}
+
+/* Holo earth stays as a right-side accent, not a corner clutter */
+.holo-earth{
+  position:absolute!important;
+  left:auto!important;
+  right:22px!important;
+  top:38%!important;
+  width:min(16vw,200px)!important;
+  height:min(16vw,200px)!important;
+  opacity:.5!important;
+  z-index:6!important;
+  pointer-events:none!important;
+}
+
+#desktop-mirror{display:none!important}
+
+#task-screen{
+  left:auto!important;
+  right:18px!important;
+  width:315px!important;
+  bottom:122px!important;
+  z-index:50!important;
+}
+
+/* Side UI above ambient layers */
+.hero-copy,.chat-glass,.system-card,.command-stack{z-index:55!important}
+.side-nav{z-index:80!important}
+
+/* Ensure VRM stage stays the visual focus (matches apply_prominent_stage) */
+#vrm-canvas{
+  left:calc(50% - 190px)!important;
+  bottom:72px!important;
+  width:380px!important;
+  height:520px!important;
+  z-index:45!important;
+}
+.avatar-shell{
+  left:calc(50% - 170px)!important;
+  bottom:68px!important;
+  width:340px!important;
+  height:480px!important;
+  z-index:46!important;
+}
+
+@media(max-width:1250px){
+  #vrm-canvas{left:calc(50% - 160px)!important;width:320px!important;height:440px!important}
+  .avatar-shell{left:calc(50% - 140px)!important;width:280px!important;height:400px!important}
+  #hud-avatar{left:calc(50% - 200px)!important;right:calc(50% - 200px)!important}
+}
+@media(max-width:800px){
+  #vrm-canvas{left:calc(50% - 140px)!important;width:280px!important;height:380px!important;bottom:64px!important}
+  .avatar-shell{left:calc(50% - 125px)!important;width:250px!important;height:350px!important;bottom:60px!important}
+  #hud-avatar{left:10px!important;right:10px!important}
+  .holo-earth{display:none!important}
+}
