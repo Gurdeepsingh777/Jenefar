@@ -76,9 +76,9 @@ class Settings:
         api_key = _first_env(
             "LLM_API_KEY",
             "API_KEY",
+            "GEMINI_API_KEY",
             "GROQ_API_KEY",
             "OPENROUTER_API_KEY",
-            "GEMINI_API_KEY",
             "OPENAI_API_KEY",
         )
         if not api_key:
@@ -89,7 +89,7 @@ class Settings:
         base_url = _first_env(
             "LLM_BASE_URL",
             "BASE_URL",
-            default="https://api.groq.com/openai/v1",
+            default="https://generativelanguage.googleapis.com/v1beta/openai",
         ).rstrip("/")
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -100,11 +100,11 @@ class Settings:
         model = _first_env(
             "LLM_MODEL_NAME",
             "MODEL_NAME",
+            "GEMINI_MODEL",
             "GROQ_MODEL",
             "OPENROUTER_MODEL",
-            "GEMINI_MODEL",
             "OPENAI_MODEL",
-            default="openai/gpt-oss-120b",
+            default="gemini-3.8-flash",
         )
         github_pat = _first_env("GITHUB_PAT", "GITHUB_TOKEN")
         github_api_url = _first_env("GITHUB_API_URL", default="https://api.github.com").rstrip("/")
