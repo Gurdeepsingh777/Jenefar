@@ -18,12 +18,12 @@ if (canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
-  camera.position.set(0, 1.2, 4.2);
-  camera.lookAt(0, 1.0, 0);
+  const camera = new THREE.PerspectiveCamera(28, 1, 0.01, 100);
+  camera.position.set(0, 1.15, 3.6);
+  camera.lookAt(0, 0.95, 0);
   let avatarBaseY = 0;
-  // Fit full body (head to feet) inside the moderate canvas with headroom.
-  const TARGET_HEIGHT = 1.7;
+  // Fill the 380x520 stage: full body visible, not tiny in empty space.
+  const TARGET_HEIGHT = 1.95;
 
   function frameAvatar(model) {
     if (!model?.scene) return;
@@ -42,20 +42,19 @@ if (canvas) {
     box.getSize(size);
     box.getCenter(center);
 
-    // Center on X/Z; put feet near bottom with extra headroom above.
     model.scene.position.x = -center.x;
-    model.scene.position.y = -box.min.y - size.y * 0.02;
+    model.scene.position.y = -box.min.y;
     model.scene.position.z = -center.z;
     model.scene.updateMatrixWorld(true);
     avatarBaseY = model.scene.position.y;
 
     const height = Math.max(size.y, 0.5);
-    // Wider FOV + farther camera so head is never clipped.
-    camera.fov = 30;
-    const camY = height * 0.52;
-    const camZ = Math.max(height * 2.15, 4.0);
+    camera.fov = 28;
+    // Close enough to fill stage, far enough that head is not clipped.
+    const camY = height * 0.50;
+    const camZ = Math.max(height * 1.85, 3.4);
     camera.position.set(0, camY, camZ);
-    camera.lookAt(0, height * 0.48, 0);
+    camera.lookAt(0, height * 0.46, 0);
     camera.updateProjectionMatrix();
   }
 
