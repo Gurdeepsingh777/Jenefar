@@ -131,6 +131,7 @@
     </aside>
     <div class="bottom-dock">
       <button type="button" class="talk-button" id="mic-button" aria-pressed="false" aria-label="Turn microphone on"><span aria-hidden="true">●</span><span class="mic-label">MIC OFF</span></button>
+      <button type="button" class="live-voice-button" id="realtime-button" aria-pressed="false" aria-label="Start live conversational voice"><span aria-hidden="true">◉</span><span id="realtime-button-label">LIVE VOICE</span></button>
       <button type="button" data-command="vision"><span>◈</span>Vision</button>
       <button type="button" class="dock-core" id="dock-core">J</button>
       <button type="button" data-command="chat"><span>□</span>Chat</button>
@@ -140,6 +141,7 @@
       <span id="mic-status">CLICK TALK TO LISTEN</span>
       <span id="speech-status">BROWSER SPEECH</span>
       <span id="voice-status">BROWSER VOICE</span>
+      <span id="realtime-state" role="status" aria-live="polite">STANDARD VOICE</span>
       <span id="vrm-status">HUD</span>
     </div>
   </main>
@@ -170,5 +172,6 @@
   </script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/vrm.js"></script>
+  <script src="/realtime.js"></script>
 </body>
 </html>
