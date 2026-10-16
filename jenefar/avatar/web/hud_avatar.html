@@ -65,14 +65,9 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     transition: border-color 0.4s ease, box-shadow 0.4s ease;
   }
-  #vignette {
-    position:absolute; inset:0;
-    background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 0%, rgba(0,0,0,0) 55%,
-      rgba(0,0,0,0.35) 100%);
-    pointer-events:none;
-    z-index:5;
-  }
+  #vignette { display:none!important; background:transparent!important; box-shadow:none!important; pointer-events:none; z-index:5; }
+  #hud { background:transparent!important; box-shadow:none!important; }
+  #top-telemetry, #caption-box { backdrop-filter:none!important; box-shadow:none!important; }
 </style>
 </head>
 <body>
@@ -226,12 +221,7 @@
       ctx.stroke();
     }
 
-    // Horizon glow
-    const grad = ctx.createLinearGradient(0, horizonY - 40, 0, horizonY + 8);
-    grad.addColorStop(0, `rgba(${rgb}, 0)`);
-    grad.addColorStop(1, `rgba(${rgb}, 0.14)`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, horizonY - 40, W, 48);
+    // Keep the canvas transparent; a filled horizon plate creates a visible rectangle.
   }
 
   // ═══════════════════════════════════════════════════════════════
