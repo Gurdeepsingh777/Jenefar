@@ -204,6 +204,64 @@ class BrowserVoiceBridge:
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
 
+    def handle_audio(self, audio: bytes, content_type: str = "audio/webm") -> dict[str, Any]:
+        """Transcribe a browser MediaRecorder blob, then enqueue it as normal user text."""
+        if not audio:
+            return {"ok": False, "error": "No microphone audio was received."}
+        if len(audio) > 12 * 1024 * 1024:
+            return {"ok": False, "error": "Audio recording is too large (limit: 12 MiB)."}
+        if content_type and not str(content_type).lower().startswith("audio/"):
+            return {"ok": False, "error": "Expected an audio recording from the browser microphone."}
+
+        import shutil
+        import subprocess
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            return {
+                "ok": False,
+                "error": "Browser mic fallback needs ffmpeg. Install it with: sudo apt install ffmpeg",
+            }
+        try:
+            converted = subprocess.run(
+                [
+                    ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
+                    "-i", "pipe:0", "-f", "s16le", "-acodec", "pcm_s16le",
+                    "-ac", "1", "-ar", "16000", "pipe:1",
+                ],
+                input=audio,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=20,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "Audio conversion timed out; please try a shorter utterance."}
+        except Exception as exc:
+            return {"ok": False, "error": f"Audio conversion failed: {type(exc).__name__}: {exc}"}
+
+        if converted.returncode != 0 or len(converted.stdout) < 3200:
+            detail = converted.stderr.decode("utf-8", errors="replace").strip()[-400:]
+            return {
+                "ok": False,
+                "error": "Could not decode microphone audio." + (f" {detail}" if detail else ""),
+            }
+        try:
+            from jenefar.voice.provider import ProviderVoiceRuntime
+            transcript = asyncio.run(
+                ProviderVoiceRuntime(self.orchestrator).transcribe_pcm(converted.stdout)
+            )
+        except Exception as exc:
+            return {"ok": False, "error": f"Speech-to-text unavailable: {type(exc).__name__}: {exc}"}
+
+        transcript = " ".join(str(transcript or "").split()).strip()
+        if not transcript:
+            return {"ok": True, "ignored": True, "reason": "empty_transcript"}
+        result = self.submit_text(transcript)
+        result["transcript"] = self._display_text(transcript)
+        return result
+
+
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
 
