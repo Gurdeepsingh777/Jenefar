@@ -100,12 +100,15 @@
       </div>
       <div class="media-meter" id="media-meter"></div>
     </section>
+    <canvas id="particles" aria-hidden="true"></canvas>
     <div class="avatar-shell">
-      <canvas id="vrm-canvas"></canvas>
+      <canvas id="vrm-canvas" aria-hidden="true"></canvas>
     </div>
-    <div id="hud-avatar" aria-hidden="true"></div>
-    <div class="holo-earth" aria-hidden="true"></div>
-    <div class="holo-particles" aria-hidden="true"></div>
+    <section id="hud-avatar" aria-label="Jenefar HUD visual">
+      <iframe id="hud-avatar-frame" src="/hud_avatar.html" title="Jenefar HUD" loading="eager"></iframe>
+    </section>
+    <div id="holo-earth" class="holo-earth" aria-hidden="true"></div>
+    <div class="holo-particles" id="holo-particles" aria-hidden="true"></div>
     <aside class="workspace-card" id="activity-panel">
       <div class="card-title">LIVE WORKSPACE <span>ONLINE • TASK STREAM</span>
         <button type="button" id="clear-workspace">CLEAR</button>
