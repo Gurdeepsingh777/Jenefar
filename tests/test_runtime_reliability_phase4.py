@@ -34,3 +34,44 @@ def test_desktop_capture_dependency_health_is_reported():
     source = (ROOT / "jenefar" / "automation" / "desktop.py").read_text(encoding="utf-8")
     assert 'status["screenshot_capture"] = True' in source
     assert 'status["screenshot_capture"] = False' in source
+
+def test_task_matched_skills_are_added_to_agent_instructions():
+    from jenefar.agents.llm_agent import BaseLLMAgent
+    from jenefar.core.agent import AgentContext
+
+    class CaptureLLM:
+        def complete(self, prompt, **kwargs):
+            self.instructions = kwargs["instructions"]
+            return type("Response", (), {
+                "text": "Done",
+                "provider": "test",
+                "response_id": "test",
+                "pending_tools": [],
+                "model": "test",
+                "model_role": "test",
+            })()
+
+    agent = BaseLLMAgent.__new__(BaseLLMAgent)
+    agent.system_prompt = "Test agent."
+    agent.model_role = "test"
+    agent.use_web_search = False
+    agent.use_tools = False
+    agent.allow_action_tools = False
+    agent.max_tool_rounds = 1
+    agent.tool_broker = None
+    agent.llm = CaptureLLM()
+    ctx = AgentContext(
+        task="Create a blender render",
+        metadata={
+            "skills": [{
+                "name": "blender",
+                "description": "Blender helper",
+                "keywords": ["blender", "render"],
+                "system_prompt": "Prefer cycles render engine.",
+            }],
+            "response_language": "English",
+        },
+    )
+    agent.run(ctx)
+    assert "Task-matched skill guidance" in agent.llm.instructions
+    assert "Prefer cycles render engine." in agent.llm.instructions
