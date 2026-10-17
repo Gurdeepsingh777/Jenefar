@@ -105,3 +105,79 @@ def test_generic_telegram_gemini_key_is_usable_by_avatar_llm(monkeypatch):
     assert pool.configured("gemini")
     assert pool.api_key("gemini") == "generic-gemini-key"
     assert pool.model("gemini", "fast") == "gemini-3.8-flash"
+
+
+
+def test_default_provider_order_prioritizes_free_friendly_providers(monkeypatch):
+    monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
+    assert ProviderPool().order() == ["groq", "gemini", "openrouter", "openai"]
+
+
+def test_legacy_example_orders_migrate_but_custom_order_is_preserved(monkeypatch):
+    pool = ProviderPool()
+    for old_order in (
+        "openai,openrouter,gemini,groq",
+        "gemini,openrouter,groq,openai",
+    ):
+        monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", old_order)
+        assert pool.order() == ["groq", "gemini", "openrouter", "openai"]
+
+    monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", "openrouter,groq")
+    assert pool.order() == ["openrouter", "groq"]
+
+
+def test_daily_and_free_tier_quota_errors_get_long_cooldown_classification():
+    from jenefar.core.provider_pool import is_quota_exhausted_provider_error
+
+    assert is_quota_exhausted_provider_error(
+        RuntimeError("Daily limit reached; try again tomorrow")
+    )
+    assert is_quota_exhausted_provider_error(
+        RuntimeError("Free tier requests per day quota exhausted")
+    )
+    assert not is_quota_exhausted_provider_error(
+        RuntimeError("429 rate limit reached; retry in 5 seconds")
+    )
+
+
+def test_default_route_fails_over_groq_gemini_to_openrouter_before_local(monkeypatch):
+    from jenefar.core.llm import LLMClient, LLMResponse
+
+    monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("JENEFAR_PROVIDER_QUOTA_COOLDOWN_SECONDS", "3600")
+    monkeypatch.setattr("jenefar.core.llm.internet_available", lambda: True)
+
+    client = LLMClient()
+    attempted = []
+
+    def fake_online(provider, *_args, **kwargs):
+        attempted.append(provider)
+        if provider in {"groq", "gemini"}:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED: daily quota exceeded")
+        if provider == "openrouter":
+            return LLMResponse(
+                "OpenRouter free route response",
+                provider,
+                model=kwargs["model"],
+                model_role=kwargs["model_role"],
+            )
+        raise AssertionError(f"Unexpected provider was attempted: {provider}")
+
+    monkeypatch.setattr(client, "_complete_online", fake_online)
+    monkeypatch.setattr(
+        client,
+        "_complete_local",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Local fallback should not run while OpenRouter succeeds")
+        ),
+    )
+
+    result = client.complete("Reply with a simple test response.")
+
+    assert attempted == ["groq", "gemini", "openrouter"]
+    assert result.provider == "openrouter"
+    assert result.text == "OpenRouter free route response"
