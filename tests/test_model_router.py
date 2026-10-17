@@ -46,3 +46,19 @@ def test_role_environment_overrides_google_compatible_model(monkeypatch):
     selected = ModelRouter().resolve("fast")
     assert selected.model == "role-specific-model"
     assert selected.source == "JENEFAR_MODEL_FAST"
+
+def test_browser_runtime_model_override_wins_and_can_be_cleared(monkeypatch):
+    router = ModelRouter()
+    monkeypatch.setenv("JENEFAR_MODEL_FAST", "configured-fast-model")
+    try:
+        ModelRouter.set_runtime_override("custom/provider-model", "gemini")
+        selected = router.resolve("fast")
+        assert selected.model == "custom/provider-model"
+        assert selected.source == "browser-runtime"
+        assert selected.provider == "gemini"
+    finally:
+        ModelRouter.clear_runtime_override()
+
+    selected = router.resolve("fast")
+    assert selected.model == "configured-fast-model"
+    assert selected.source == "JENEFAR_MODEL_FAST"
