@@ -429,7 +429,7 @@ class LLMClient:
         runtime_override = ModelRouter.runtime_override()
         runtime_provider = (runtime_override or {}).get("provider", "")
         provider_order = self.providers.order()
-        if runtime_provider in provider_order:
+        if runtime_provider in self.providers.CONFIGS:
             provider_order = [runtime_provider] + [
                 name for name in provider_order if name != runtime_provider
             ]
