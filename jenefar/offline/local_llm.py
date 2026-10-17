@@ -252,6 +252,71 @@ class LocalLLMClient:
             raise RuntimeError(f"Local LLM endpoint error: {result['error']}")
         return result
 
+    @staticmethod
+    def _is_chat_route_not_found(exc: Exception) -> bool:
+        """Distinguish an unsupported chat URL from a missing model tag."""
+        message = str(exc).lower()
+        has_404 = any(marker in message for marker in (
+            "http 404 from local llm endpoint",
+            "http error 404",
+            "404 not found",
+            "404 page not found",
+        ))
+        if not has_404:
+            return False
+        return not any(marker in message for marker in (
+            "model not found",
+            "model does not exist",
+            "model is not found",
+            "no such model",
+        ))
+
+    def _request_chat_with_fallback(
+        self,
+        info: LocalModelInfo,
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> tuple[dict[str, Any], LocalModelInfo]:
+        """Try the detected chat endpoint, then the alternate local protocol on route 404."""
+        endpoint = (
+            f"{info.base_url}/api/chat"
+            if info.api == "ollama"
+            else f"{info.base_url}/chat/completions"
+        )
+        try:
+            return self._request_json(endpoint, payload, timeout=timeout), info
+        except RuntimeError as primary_error:
+            if self.api != "auto" or not self._is_chat_route_not_found(primary_error):
+                raise
+
+        origin = self._origin(info.base_url)
+        if info.api == "ollama":
+            alternate = LocalModelInfo(f"{origin}/v1", info.model, "openai")
+            alternate_endpoint = f"{alternate.base_url}/chat/completions"
+        else:
+            alternate = LocalModelInfo(origin, info.model, "ollama")
+            alternate_endpoint = f"{alternate.base_url}/api/chat"
+
+        try:
+            result = self._request_json(alternate_endpoint, payload, timeout=timeout)
+        except Exception as alternate_error:
+            raise RuntimeError(
+                "Local chat endpoint returned 404 and the alternate local protocol also failed. "
+                f"Detected protocol: {info.api}; primary endpoint: {endpoint}; "
+                f"alternate endpoint: {alternate_endpoint}; alternate error: "
+                f"{type(alternate_error).__name__}: {alternate_error}"
+            ) from alternate_error
+
+        info.api = alternate.api
+        info.base_url = alternate.base_url
+        self.model = info.model
+        print(
+            f"[JENEFAR] Local LLM endpoint returned 404; switched to "
+            f"{info.api} chat API at {info.base_url}."
+        )
+        return result, info
+
     def complete(
         self,
         *,
@@ -289,14 +354,10 @@ class LocalLLMClient:
                 if info.api == "openai":
                     payload["tool_choice"] = "auto"
 
-            endpoint = (
-                f"{info.base_url}/api/chat"
-                if info.api == "ollama"
-                else f"{info.base_url}/chat/completions"
+            timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "240"))
+            result, info = self._request_chat_with_fallback(
+                info, payload, timeout=timeout
             )
-            result = self._request_json(endpoint, payload, timeout=float(
-                os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "240")
-            ))
             if info.api == "ollama":
                 message = result.get("message") or {}
             else:
