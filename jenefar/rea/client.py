@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 
 class ReaMCPClient:
@@ -23,6 +24,8 @@ class ReaMCPClient:
         self.command = os.getenv("JENEFAR_REA_COMMAND", "npx").strip() or "npx"
         raw_args = os.getenv("JENEFAR_REA_ARGS", "-y,rea-agents@6.5.0,mcp")
         self.args = [item.strip() for item in raw_args.split(",") if item.strip()]
+        self.env = dict(os.environ)
+        self.cwd = os.getcwd()
         self.timeout = max(5.0, min(600.0, float(os.getenv("JENEFAR_REA_TIMEOUT_SECONDS", "120"))))
         self.max_result_chars = max(1000, min(100000, int(os.getenv("JENEFAR_REA_MAX_RESULT_CHARS", "20000"))))
         self._lock = threading.RLock()
@@ -190,6 +193,8 @@ class ReaMCPClient:
             raise RuntimeError(f"Could not resolve REA command: {self.command}")
         env = dict(os.environ)
         env["NO_COLOR"] = "1"
+        # MCP stdio uses Content-Length framed JSON-RPC messages in the current
+        # protocol, not newline-delimited JSON. Use the SDK framing for requests.
         try:
             self._process = subprocess.Popen(
                 [command_path, *self.args],
@@ -236,45 +241,85 @@ class ReaMCPClient:
                 catalog[name] = spec
         return catalog
 
+    def _read_exact(self, size: int, deadline: float) -> bytes:
+        import select
+
+        process = self._process
+        if process is None or process.stdout is None:
+            raise RuntimeError("REA MCP process is not running.")
+        result = bytearray()
+        fd = process.stdout.fileno()
+        while len(result) < size:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Timed out reading REA MCP response.")
+            ready, _, _ = select.select([fd], [], [], min(remaining, 0.25))
+            if not ready:
+                if process.poll() is not None:
+                    raise RuntimeError("REA MCP process exited while sending a response.")
+                continue
+            chunk = os.read(fd, size - len(result))
+            if not chunk:
+                raise RuntimeError("REA MCP closed stdout unexpectedly.")
+            result.extend(chunk)
+        return bytes(result)
+
+    def _read_message(self, deadline: float) -> dict[str, Any]:
+        headers: dict[str, str] = {}
+        while True:
+            line = bytearray()
+            # Read header byte-by-byte to avoid buffered reads hiding body bytes
+            # from select on later requests.
+            while True:
+                chunk = self._read_exact(1, deadline)
+                line.extend(chunk)
+                if line.endswith(b"\r\n"):
+                    break
+                if len(line) > 8192:
+                    raise RuntimeError("REA MCP header line is too long.")
+            if line == b"\r\n":
+                break
+            header = bytes(line[:-2]).decode("ascii", errors="replace")
+            if ":" not in header:
+                raise RuntimeError("REA MCP returned a malformed header.")
+            key, value = header.split(":", 1)
+            headers[key.strip().lower()] = value.strip()
+        try:
+            length = int(headers["content-length"])
+        except (KeyError, ValueError) as exc:
+            raise RuntimeError("REA MCP response has no valid Content-Length header.") from exc
+        if length < 0 or length > 32 * 1024 * 1024:
+            raise RuntimeError("REA MCP response length is outside the permitted bound.")
+        body = self._read_exact(length, deadline)
+        try:
+            message = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("REA MCP returned invalid JSON-RPC data.") from exc
+        if not isinstance(message, dict):
+            raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
+        return message
+
     def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         process = self._process
-        if process is None or process.poll() is not None or process.stdin is None or process.stdout is None:
+        if process is None or process.poll() is not None or process.stdin is None:
             raise RuntimeError("REA MCP process is not running.")
         request_id = self._next_id
         self._next_id += 1
         payload = json.dumps(
             {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
             ensure_ascii=False,
-        )
+        ).encode("utf-8")
+        frame = f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
         try:
-            process.stdin.write(payload + "\n")
+            process.stdin.buffer.write(frame)
             process.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("Could not write an MCP request to REA.") from exc
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
-            remaining = max(0.1, deadline - time.monotonic())
-            # MCP over stdio uses newline-delimited JSON-RPC in the current SDK.
-            ready, _, _ = __import__("select").select([process.stdout], [], [], min(remaining, 0.25))
-            if not ready:
-                if process.poll() is not None:
-                    stderr = ""
-                    if process.stderr:
-                        try:
-                            stderr = process.stderr.read(2000)
-                        except Exception:
-                            pass
-                    raise RuntimeError("REA MCP process exited." + (f" {stderr}" if stderr else ""))
-                continue
-            line = process.stdout.readline()
-            if not line:
-                continue
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                # Progress/log notifications may be emitted before a request result.
-                continue
+            message = self._read_message(deadline)
             if message.get("id") != request_id:
+                # Ignore notifications / progress messages not tied to this request.
                 continue
             if "error" in message:
                 error = message["error"]
@@ -282,18 +327,19 @@ class ReaMCPClient:
                     f"REA MCP {method} error {error.get('code', '')}: {error.get('message', 'unknown error')}"
                 )
             result = message.get("result", {})
-            if isinstance(result, dict):
-                return result
-            return {"result": result}
+            return result if isinstance(result, dict) else {"result": result}
         raise TimeoutError(f"REA MCP {method} timed out after {self.timeout:g}s.")
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         process = self._process
         if process is None or process.stdin is None:
             raise RuntimeError("REA MCP process is not running.")
-        process.stdin.write(json.dumps({
-            "jsonrpc": "2.0", "method": method, "params": params
-        }, ensure_ascii=False) + "\n")
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "method": method, "params": params},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        frame = f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
+        process.stdin.buffer.write(frame)
         process.stdin.flush()
 
     def _stop_process(self) -> None:
