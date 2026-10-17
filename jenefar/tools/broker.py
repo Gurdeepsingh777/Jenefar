@@ -281,7 +281,50 @@ class ToolBroker:
             "timezone": now.tzname() or "local",
         }
 
+    def _rea_status(self) -> dict[str, Any]:
+        """Report whether the optional REA MCP bridge can connect."""
+        return self.rea_connector.status()
+
+    def _rea_call(self, args: dict[str, Any]) -> dict[str, Any]:
+        name = str(args.get("tool", "")).strip()
+        tool_args = args.get("arguments", {})
+        if not isinstance(tool_args, dict):
+            raise ValueError("REA tool arguments must be a JSON object.")
+        return self.rea_connector.call(name, tool_args)
+
     def _register_builtin_tools(self) -> None:
+        self.registry.register(ToolSpec(
+            name="rea_status",
+            description="Check the optional REA (Reverse Engineer Anything) MCP server connection and its advertised tools.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self._rea_status(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_list_tools",
+            description="List REA MCP tools available for reverse engineering. Use before choosing a workflow if tool availability is unknown.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self.rea_connector.list_tools(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_call",
+            description=(
+                "Call an advertised REA MCP tool for static inspection/reverse engineering. "
+                "Choose an exact tool name from rea_list_tools and pass its schema-valid arguments. "
+                "Tool calls that mutate targets or cause external effects require user approval."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["tool", "arguments"],
+                "additionalProperties": False,
+            },
+            handler=self._rea_call,
+            requires_confirmation=True,
+            action=True,
+        ))
         self.registry.register(ToolSpec(
             name="discover_kali_tools",
             description="List common Kali/Linux security tools and whether each executable is installed. This never executes a security tool.",
