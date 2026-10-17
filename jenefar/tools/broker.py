@@ -1734,12 +1734,12 @@ class ToolBroker:
                 targets_text = ", ".join(tool_preview.get("targets") or []) or "local-only / no remote target detected"
                 plan_text = str(arguments.get("plan") or "").strip()[:1600]
                 user_prompt = (
-                    "Kali tool execution plan (nothing has run yet):\\n"
-                    f"Purpose/plan: {plan_text or 'Inspect the selected tool result and complete the requested task.'}\\n"
-                    f"Command: {tool_preview['command']}\\n"
-                    f"Target(s): {targets_text}\\n"
-                    f"Authorization scope: {'PASS' if tool_preview.get('scope_checked') else 'not applicable (local command)'}\\n"
-                    f"Timeout: {tool_preview['timeout_seconds']} seconds\\n"
+                    "Kali tool execution plan (nothing has run yet):\n"
+                    f"Purpose/plan: {plan_text or 'Inspect the selected tool result and complete the requested task.'}\n"
+                    f"Command: {tool_preview['command']}\n"
+                    f"Target(s): {targets_text}\n"
+                    f"Authorization scope: {'PASS' if tool_preview.get('scope_checked') else 'not applicable (local command)'}\n"
+                    f"Timeout: {tool_preview['timeout_seconds']} seconds\n"
                     "Review this exact command and its scope. Execute it? Reply yes or no."
                 )
             else:
