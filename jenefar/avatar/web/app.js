@@ -1031,7 +1031,7 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
       web:()=>dispatchDashboardCommand("web search karo"),
       notes:()=>document.getElementById("chat-input")?.focus(),
       automation:()=>dispatchDashboardCommand("automation dikhao"),
-      settings:()=>setVoiceInputStatus("Settings panel ready",true)
+      settings:()=>{toggleModelPanel(true);setVoiceInputStatus("Model settings open",true)}
     };
     targets[target]?.();
   });
@@ -1214,5 +1214,188 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
     browserSpeechActive=false;
     voiceLocked=false;
     resumeBrowserVoice();
+  }
+});
+
+
+/* Actual host telemetry: values are sampled by the local backend, never simulated. */
+function formatMetricBytes(value){
+  const bytes=Number(value);
+  if(!Number.isFinite(bytes)||bytes<0) return "N/A";
+  const units=["B","KB","MB","GB","TB"];
+  let size=bytes, unit=0;
+  while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
+  return size.toFixed(unit===0?0:1)+" "+units[unit];
+}
+function setMetricRing(name,value,detail){
+  const ring=document.getElementById("metric-"+name);
+  const valueEl=document.getElementById("metric-"+name+"-value");
+  const detailEl=document.getElementById("metric-"+name+"-detail");
+  const n=Number(value);
+  const valid=value!==null&&value!==undefined&&value!==""&&Number.isFinite(n)&&n>=0;
+  if(ring){
+    ring.classList.toggle("meter-unavailable",!valid);
+    ring.style.setProperty("--meter-value",valid?String(Math.min(100,n)):"0");
+    ring.title=valid?name.toUpperCase()+" usage: "+n+"%":String(detail||"Sensor unavailable");
+    if(valid){
+      ring.setAttribute("aria-valuenow",String(Math.round(n)));
+      ring.setAttribute("role","progressbar");
+      ring.setAttribute("aria-label",name.toUpperCase()+" usage "+n+" percent");
+    }else{
+      ring.removeAttribute("aria-valuenow");
+      ring.setAttribute("role","img");
+      ring.setAttribute("aria-label",name.toUpperCase()+" telemetry unavailable");
+    }
+  }
+  if(valueEl) valueEl.textContent=valid?Math.round(n)+"%":"N/A";
+  if(detailEl) detailEl.textContent=detail|| (valid?"Live sample":"Sensor unavailable");
+}
+function showMetricsUnavailable(message){
+  setMetricRing("cpu",null,message);
+  setMetricRing("ram",null,message);
+  setMetricRing("gpu",null,message);
+  const updated=document.getElementById("metrics-updated");
+  if(updated) updated.textContent="LIVE TELEMETRY UNAVAILABLE";
+}
+async function refreshSystemMetrics(){
+  try{
+    const response=await fetch("/system/metrics?ts="+Date.now(),{cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok||!data?.available) throw new Error(data?.error||"System metrics endpoint unavailable");
+    const cpu=data.cpu||{};
+    const ram=data.ram||{};
+    const process=data.process||{};
+    const gpu=data.gpu||{};
+    setMetricRing("cpu",cpu.usage_percent,
+      cpu.logical_cores?String(cpu.logical_cores)+" logical cores":"System CPU");
+    setMetricRing("ram",ram.usage_percent,
+      formatMetricBytes(ram.used_bytes)+" / "+formatMetricBytes(ram.total_bytes));
+    if(gpu.available&&Number.isFinite(Number(gpu.usage_percent))){
+      const vram=Number.isFinite(Number(gpu.memory_used_mb))&&Number.isFinite(Number(gpu.memory_total_mb))
+        ?Math.round(Number(gpu.memory_used_mb))+" / "+Math.round(Number(gpu.memory_total_mb))+" MB VRAM"
+        :"GPU detected";
+      setMetricRing("gpu",gpu.usage_percent,vram);
+    }else{
+      setMetricRing("gpu",null,gpu.reason||"No supported GPU telemetry");
+    }
+    const updated=document.getElementById("metrics-updated");
+    if(updated){
+      const stamp=data.sampled_at?new Date(data.sampled_at):new Date();
+      updated.textContent="LIVE · "+stamp.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})
+        +(Number.isFinite(Number(process.memory_percent))?" · JENEFAR RAM "+Number(process.memory_percent).toFixed(1)+"%":"");
+      updated.title="System values sampled by the local backend at "+stamp.toISOString();
+    }
+  }catch(error){
+    showMetricsUnavailable(String(error?.message||error));
+  }
+}
+refreshSystemMetrics();
+setInterval(refreshSystemMetrics,1500);
+
+/* Browser model controls apply to the live runtime for subsequent responses. */
+const modelPanel=document.getElementById("model-panel");
+const modelButton=document.getElementById("model-settings-button");
+const modelChoice=document.getElementById("model-choice");
+const modelIdInput=document.getElementById("model-id-input");
+const modelFeedback=document.getElementById("model-feedback");
+const applyModelButton=document.getElementById("apply-model-button");
+function setModelFeedback(message,state=""){
+  if(!modelFeedback) return;
+  modelFeedback.textContent=message;
+  modelFeedback.dataset.state=state;
+}
+function toggleModelPanel(force){
+  if(!modelPanel) return;
+  const shouldOpen=typeof force==="boolean"?force:modelPanel.hidden;
+  modelPanel.hidden=!shouldOpen;
+  modelButton?.setAttribute("aria-expanded",String(shouldOpen));
+  if(shouldOpen) refreshModelStatus();
+}
+async function refreshModelStatus(){
+  if(!modelChoice||!modelIdInput) return;
+  try{
+    const response=await fetch("/model/status?ts="+Date.now(),{cache:"no-store"});
+    const status=await response.json();
+    if(!response.ok) throw new Error(status?.error||"Model status request failed");
+    const active=status.active||{};
+    const providers=Array.isArray(status.providers)?status.providers:[];
+    modelChoice.replaceChildren();
+    if(!providers.length){
+      const option=document.createElement("option");
+      option.value="";
+      option.textContent="No configured cloud providers";
+      modelChoice.appendChild(option);
+      modelChoice.disabled=true;
+      applyModelButton && (applyModelButton.disabled=true);
+      if(modelIdInput) modelIdInput.value=active.model||"";
+      const label=document.getElementById("active-model-label");
+      if(label) label.textContent=active.model||"NOT CONFIGURED";
+      setModelFeedback("No cloud provider is configured. Add a provider API key in .env, then restart Jenefar.","error");
+      return;
+    }
+    modelChoice.disabled=false;
+    if(applyModelButton) applyModelButton.disabled=false;
+    for(const provider of providers){
+      const option=document.createElement("option");
+      option.value=provider.id;
+      option.dataset.model=provider.model||"";
+      option.textContent=(provider.label||provider.id)+" · "+(provider.model||"default model")
+        +(provider.available?"":" (cooldown)");
+      modelChoice.appendChild(option);
+    }
+    const chosen=providers.find(item=>item.id===active.provider)||providers[0];
+    modelChoice.value=chosen.id;
+    modelIdInput.value=active.model||chosen.model||"";
+    const label=document.getElementById("active-model-label");
+    if(label) label.textContent=active.model||chosen.model||"SELECT MODEL";
+    setModelFeedback("Active: "+(active.provider||chosen.id)+" / "+(active.model||chosen.model||"unknown")
+      +(status.runtime_override?" · browser override active":""),"success");
+  }catch(error){
+    const message=String(error?.message||error);
+    const label=document.getElementById("active-model-label");
+    if(label) label.textContent="STATUS ERROR";
+    setModelFeedback("Could not load model configuration: "+message,"error");
+  }
+}
+modelChoice?.addEventListener("change",()=>{
+  const option=modelChoice.selectedOptions?.[0];
+  if(option?.dataset?.model&&modelIdInput) modelIdInput.value=option.dataset.model;
+});
+modelButton?.addEventListener("click",()=>toggleModelPanel());
+document.getElementById("model-panel-close")?.addEventListener("click",()=>toggleModelPanel(false));
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&modelPanel&&!modelPanel.hidden) toggleModelPanel(false);
+});
+applyModelButton?.addEventListener("click",async()=>{
+  const provider=String(modelChoice?.value||"").trim();
+  const model=String(modelIdInput?.value||"").trim();
+  if(!provider||!model){
+    setModelFeedback("Select a configured provider and enter a model ID first.","error");
+    return;
+  }
+  applyModelButton.disabled=true;
+  applyModelButton.textContent="APPLYING…";
+  setModelFeedback("Applying "+provider+" / "+model+" to new requests…");
+  try{
+    const response=await fetch("/model/select",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({provider,model})
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error) throw new Error(result?.error||"Model selection failed");
+    const label=document.getElementById("active-model-label");
+    if(label) label.textContent=result.active?.model||model;
+    const option=modelChoice.selectedOptions?.[0];
+    if(option){
+      option.dataset.model=model;
+      option.textContent=(provider.charAt(0).toUpperCase()+provider.slice(1))+" · "+model;
+    }
+    setModelFeedback("Applied: "+provider+" / "+model+". New requests will use this selection; an unavailable provider may still fall back.","success");
+  }catch(error){
+    setModelFeedback(String(error?.message||error),"error");
+  }finally{
+    applyModelButton.disabled=false;
+    applyModelButton.textContent="APPLY MODEL";
   }
 });
