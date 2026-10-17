@@ -67,16 +67,13 @@ def test_rea_schema_call_requires_advertised_tool(monkeypatch):
 
 
 def test_rea_skill_is_available_in_jenefar_skill_manager(monkeypatch, tmp_path):
+    from pathlib import Path
     from jenefar.skills.manager import SkillManager
 
     monkeypatch.setenv("JENEFAR_REA_SKILL_ENABLED", "true")
-    skill = tmp_path / "rea" / "reverse-engineer-anything" / "SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text(
-        "---\nname: rea_reverse_engineering\ndescription: REA helper\nkeywords:\n  - decompile\nconnectors:\n  - rea\n---\nUse REA tools.",
-        encoding="utf-8",
-    )
-    manager = SkillManager(tmp_path / "state.json", skill_roots=[skill.parents[1]])
+    manager = SkillManager(tmp_path / "state.json")
     registered = manager.get("rea_reverse_engineering")
     assert registered.connectors == ("rea",)
-    assert "Use REA tools." in registered.system_prompt
+    assert Path(registered.source).name == "SKILL.md"
+    assert "Call" in registered.system_prompt
+    assert "rea_list_tools" in registered.system_prompt
