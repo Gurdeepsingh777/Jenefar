@@ -715,7 +715,7 @@ class ToolBroker:
                     "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
                     "plan": {"type": "string", "maxLength": 2000},
                 },
-                "required": ["tool", "args", "target", "timeout"],
+                "required": ["tool", "args", "target", "timeout", "plan"],
                 "additionalProperties": False,
             },
             handler=lambda args: self.kali.execute(
@@ -1697,6 +1697,15 @@ class ToolBroker:
 
         tool_preview = None
         if name == "kali_tool_execute":
+            plan_text = str(arguments.get("plan") or "").strip()
+            if not plan_text:
+                self._activity("error", "Kali execution blocked: a tool-help-based plan is required before approval.")
+                return json.dumps({
+                    "status": "error",
+                    "error": "Provide a brief plan based on kali_tool_help before requesting execution.",
+                    "stage": "preflight",
+                    "executed": False,
+                }, ensure_ascii=False)
             try:
                 tool_preview = self.kali.preview(
                     tool=str(arguments.get("tool") or ""),
