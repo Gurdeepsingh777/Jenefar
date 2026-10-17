@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from threading import RLock
 
 
 @dataclass(frozen=True)
@@ -9,9 +10,37 @@ class ModelSelection:
     role: str
     model: str
     source: str
+    provider: str | None = None
 
 
 class ModelRouter:
+    _runtime_override_state: dict[str, str] | None = None
+    _runtime_override_lock = RLock()
+
+    @classmethod
+    def set_runtime_override(cls, model: str | None = None, provider: str | None = None) -> None:
+        """Set or clear the browser-selected model for this running process."""
+        cleaned_model = (model or "").strip()
+        cleaned_provider = (provider or "").strip().lower()
+        with cls._runtime_override_lock:
+            if not cleaned_model:
+                cls._runtime_override_state = None
+                return
+            cls._runtime_override_state = {
+                "model": cleaned_model,
+                "provider": cleaned_provider,
+            }
+
+    @classmethod
+    def runtime_override(cls) -> dict[str, str] | None:
+        with cls._runtime_override_lock:
+            return dict(cls._runtime_override_state) if cls._runtime_override_state else None
+
+    @classmethod
+    def clear_runtime_override(cls) -> None:
+        cls.set_runtime_override()
+
+
     """Select a configured model profile without hard-coding provider-specific names."""
 
     ROLE_ENV = {
@@ -51,6 +80,13 @@ class ModelRouter:
         normalized = (role or "fast").strip().lower() or "fast"
         if explicit_model:
             return ModelSelection(normalized, explicit_model, "explicit-agent-model")
+
+        runtime = self.runtime_override()
+        if runtime:
+            return ModelSelection(
+                normalized, runtime["model"], "browser-runtime", runtime.get("provider") or None
+            )
+
         role_env = self.ROLE_ENV.get(normalized)
         if role_env:
             configured = os.getenv(role_env, "").strip()
