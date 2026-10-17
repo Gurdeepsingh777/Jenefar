@@ -14,6 +14,8 @@ class ModelSelection:
 
 
 class ModelRouter:
+    """Select configured model profiles with an optional in-process UI override."""
+
     _runtime_override_state: dict[str, str] | None = None
     _runtime_override_lock = RLock()
 
@@ -40,8 +42,6 @@ class ModelRouter:
     def clear_runtime_override(cls) -> None:
         cls.set_runtime_override()
 
-
-    """Select a configured model profile without hard-coding provider-specific names."""
 
     ROLE_ENV = {
         "fast": "JENEFAR_MODEL_FAST",
