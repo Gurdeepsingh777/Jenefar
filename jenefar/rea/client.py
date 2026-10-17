@@ -198,6 +198,8 @@ class ReaMCPClient:
                     raise ValueError(f"REA argument '{key}' exceeds its schema maximum.")
 
     def _ensure_connected(self) -> None:
+        # REA 6.5.0 launches over MCP stdio. Resolve npx and its Node.js runtime
+        # explicitly so the bridge is not dependent on the desktop shell PATH.
         problem = self._configuration_diagnostic()
         if problem:
             raise RuntimeError(problem)
@@ -215,7 +217,7 @@ class ReaMCPClient:
                 [command_path, *self.args],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 bufsize=0,
                 env=env,
             )
@@ -235,6 +237,14 @@ class ReaMCPClient:
                 raise RuntimeError("REA connected but advertised no MCP tools.")
         except Exception as exc:
             self._last_error = f"{type(exc).__name__}: {exc}"
+            process = self._process
+            if process is not None and process.stderr is not None:
+                try:
+                    diagnostic = process.stderr.read(1600).decode("utf-8", errors="replace").strip()
+                    if diagnostic:
+                        self._last_error += f" | REA stderr: {diagnostic}"
+                except Exception:
+                    pass
             self._stop_process()
             raise RuntimeError(f"Could not connect to REA MCP server: {self._last_error}") from exc
 
