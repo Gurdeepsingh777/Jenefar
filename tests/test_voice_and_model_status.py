@@ -306,6 +306,7 @@ def test_gemini_stt_sends_audio_and_extracts_transcript(monkeypatch):
     parts = captured["payload"]["contents"][0]["parts"]
     assert parts[1]["inlineData"]["mimeType"] == "audio/wav"
     assert parts[1]["inlineData"]["data"]
+    assert "temperature" not in captured["payload"]["generationConfig"]
 
 def test_tts_falls_back_from_openai_quota_to_groq(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
