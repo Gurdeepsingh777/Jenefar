@@ -17,7 +17,16 @@ def test_rea_bridge_defaults_to_enabled_with_official_server(monkeypatch):
     client = ReaMCPClient()
     assert client.enabled is True
     assert client.command == "npx"
-    assert client.args == ["-y", "rea-agents@6.5.0", "mcp"]
+    assert client.args == ["--yes", "--package=rea-agents@6.5.0", "--", "rea", "mcp"]
+    client.close()
+
+
+def test_rea_bridge_migrates_legacy_npx_arguments_from_existing_env(monkeypatch):
+    monkeypatch.setenv("JENEFAR_REA_ENABLED", "true")
+    monkeypatch.setenv("JENEFAR_REA_COMMAND", "npx")
+    monkeypatch.setenv("JENEFAR_REA_ARGS", "-y,rea-agents@6.5.0,mcp")
+    client = ReaMCPClient()
+    assert client.args == ["--yes", "--package=rea-agents@6.5.0", "--", "rea", "mcp"]
     client.close()
 
 
