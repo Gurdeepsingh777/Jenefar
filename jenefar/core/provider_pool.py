@@ -4,6 +4,8 @@ import os
 import time
 from dataclasses import dataclass
 
+from jenefar.core.model_ids import normalize_model_id
+
 
 @dataclass(frozen=True)
 class ProviderConfig:
@@ -99,7 +101,7 @@ class ProviderPool:
         )
         if name == "gemini" and selected in {"gemini-2.5-flash-lite", "models/gemini-2.5-flash-lite"}:
             selected = "gemini-3.5-flash-lite"
-        return selected
+        return normalize_model_id(selected, name)
 
     def available(self, name: str) -> bool:
         return self.configured(name) and time.monotonic() >= self.cooldowns.get(name, 0.0)
