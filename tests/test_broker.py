@@ -27,7 +27,7 @@ def test_rea_tools_are_registered_and_mutating_bridge_call_is_gated(monkeypatch)
 
     monkeypatch.setenv("JENEFAR_REA_ENABLED", "false")
     broker = ToolBroker(require_confirmation=True)
-    names = {tool["name"] for tool in broker.schemas()}
+    names = {tool["name"] for tool in broker.schemas(allow_action_tools=True)}
     assert "rea_status" in names
     assert "rea_list_tools" in names
     assert "rea_call" in names
