@@ -271,6 +271,7 @@ class KaliToolManager:
         installed_only: bool = False,
         include_all: bool = False,
         limit: int = 80,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List curated and PATH-discovered tools with fuzzy filters and bounded output."""
         records = self._records(include_all=include_all or bool(query))
@@ -292,7 +293,11 @@ class KaliToolManager:
                 str(item["name"]).casefold(),
             )
         )
-        bounded = selected[: self._limit(limit)]
+        try:
+            start = max(0, min(int(offset), 100000))
+        except (TypeError, ValueError):
+            start = 0
+        bounded = selected[start : start + self._limit(limit)]
         return bounded
 
     @staticmethod
@@ -545,7 +550,7 @@ class KaliToolManager:
             "target": details["target"],
             "targets": details["targets"],
             "timeout_seconds": details["timeout"],
-            "scope_checked": True,
+            "scope_checked": bool(details["targets"]),
             "inspection_required": not details["inspected"],
             "requires_user_approval": True,
         }
