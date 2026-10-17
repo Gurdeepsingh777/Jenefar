@@ -129,7 +129,7 @@ def test_browser_bridge_does_not_construct_native_audio_output():
     voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
     # ProviderVoiceRuntime is a transcription-only adapter here; audio playback
     # remains browser-side and never uses a native Python speaker stream.
-    assert "ProviderVoiceRuntime(self.orchestrator).transcribe_pcm" in voice
+    assert "self._stt_runtime.transcribe_pcm" in voice
     assert "asyncio.run(self.voice.speak" not in voice
     assert "sounddevice" not in voice
     assert "_play_wav" not in voice
@@ -150,7 +150,7 @@ def test_final_layout_has_dedicated_regions():
 def test_browser_speech_is_the_only_playback_path():
     bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
     app = (WEB / "app.js").read_text(encoding="utf-8")
-    assert "ProviderVoiceRuntime(self.orchestrator).transcribe_pcm" in bridge
+    assert "self._stt_runtime.transcribe_pcm" in bridge
     assert "speechSynthesis" in app
     assert 'utterance.lang="en-IN"' in app
 
