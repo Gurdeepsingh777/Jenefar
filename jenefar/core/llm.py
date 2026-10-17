@@ -439,10 +439,10 @@ class LLMClient:
                 if not self.providers.available(provider):
                     continue
                 runtime_model = (runtime_override or {}).get("model", "")
-                model = self.explicit_model or (
+                model = (
                     runtime_model
                     if runtime_model and (not runtime_provider or provider == runtime_provider)
-                    else self.providers.model(provider, selected_role)
+                    else self.explicit_model or self.providers.model(provider, selected_role)
                 )
                 try:
                     result = self._complete_online(
