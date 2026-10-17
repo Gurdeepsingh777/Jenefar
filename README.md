@@ -916,6 +916,27 @@ The reverse-engineering skill was already part of Jenefar's REA integration; thi
 All skills remain subject to Jenefar's authorization and approval boundaries. The skill text does not install analysis engines, register MCP servers, or bypass missing provider prerequisites. REA/MCP tools need to actually be available for execution.
 
 
+## Local Ollama recovery
+
+A successful `/api/tags` check only proves that Ollama lists a model; it does not prove that the model can finish a chat request quickly enough. Jenefar now logs each online provider/model failure, attempts one bounded compact local retry (smaller context/output), and if that also times out, switches to a smaller **already installed** non-vision Ollama model. It never pulls a model automatically.
+
+Suggested settings in `.env`:
+
+```env
+JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=600
+JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS=120
+JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=180
+JENEFAR_LOCAL_LLM_FALLBACK_MODEL=
+```
+
+If only a large local model such as a 27B model is installed and both local attempts time out, install a smaller local fallback once while online:
+
+```bash
+ollama pull qwen3:8b
+```
+
+This is a local model download and does not use hosted API credits. After it is installed, Jenefar can switch to it automatically if the larger model times out. Run `python run.py --provider-status` to inspect provider configuration; the terminal now prints the exact per-provider error during an actual request. Desktop automation on native Wayland remains dependent on the desktop/compositor backend and is independent of LLM fallback.
+
 ## Multi-provider LLM failover
 
 Jenefar's default cloud route is **Groq -> Gemini -> OpenRouter -> optional OpenAI**. Providers are tried left-to-right. When an online provider returns a quota/credit, daily-cap, authentication, rate-limit, timeout, connection, or service-availability error, Jenefar moves on to the next configured provider. Quota/daily-cap failures receive a longer cooldown; temporary rate limits use a shorter cooldown. If no online provider returns a usable answer, Jenefar automatically tries the installed local Ollama model (for example Qwen), unless local fallback is explicitly disabled.
