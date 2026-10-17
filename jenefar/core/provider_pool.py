@@ -143,6 +143,22 @@ class ProviderPool:
         return result
 
 
+def is_quota_exhausted_provider_error(exc: Exception) -> bool:
+    """Return True for exhausted provider quotas/credits, not ordinary rate limits."""
+    message = str(exc).lower()
+    markers = (
+        "insufficient_quota",
+        "credit_balance_exhausted",
+        "exceeded your current quota",
+        "quota exceeded",
+        "resource_exhausted",
+        "billing hard limit",
+        "billing_limit",
+        "exhausted quota",
+    )
+    return any(marker in message for marker in markers)
+
+
 def is_retryable_provider_error(exc: Exception) -> bool:
     """Classify provider failures that should permit automatic failover."""
     message = str(exc).lower()
@@ -173,4 +189,4 @@ def is_retryable_provider_error(exc: Exception) -> bool:
     return any(marker in message for marker in retry_markers)
 
 
-__all__ = ["ProviderConfig", "ProviderPool", "is_retryable_provider_error"]
+__all__ = ["ProviderConfig", "ProviderPool", "is_quota_exhausted_provider_error", "is_retryable_provider_error"]
