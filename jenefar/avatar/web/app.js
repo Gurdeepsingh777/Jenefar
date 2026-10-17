@@ -1335,21 +1335,53 @@ async function refreshModelStatus(){
     }
     modelChoice.disabled=false;
     if(applyModelButton) applyModelButton.disabled=false;
+    const currentModel=String(active.model||"").trim();
+    const currentProvider=String(active.provider||"").trim();
+    let activeOptionValue="";
     for(const provider of providers){
+      const discovered=Array.isArray(provider.models)?provider.models.filter(Boolean):[];
+      const catalogModels=discovered.length?discovered:[provider.model].filter(Boolean);
+      const isCatalogFallback=provider.catalog_source!=="provider-api";
+      for(const modelName of [...new Set(catalogModels)]){
+        const option=document.createElement("option");
+        option.value=provider.id+"::"+modelName;
+        option.dataset.provider=provider.id;
+        option.dataset.model=modelName;
+        option.textContent=(provider.label||provider.id)+" · "+modelName
+          +(provider.available?"":" (cooldown)")
+          +(isCatalogFallback?" · fallback catalog":"");
+        modelChoice.appendChild(option);
+        if(provider.id===currentProvider&&modelName===currentModel) activeOptionValue=option.value;
+      }
+    }
+    // Retain visibility of the current .env/runtime model if the provider's live
+    // catalog does not advertise it, but do not silently treat it as verified.
+    if(currentModel&&currentProvider&&!activeOptionValue){
       const option=document.createElement("option");
-      option.value=provider.id;
-      option.dataset.model=provider.model||"";
-      option.textContent=(provider.label||provider.id)+" · "+(provider.model||"default model")
-        +(provider.available?"":" (cooldown)");
+      option.value=currentProvider+"::"+currentModel;
+      option.dataset.provider=currentProvider;
+      option.dataset.model=currentModel;
+      option.textContent=currentProvider+" · "+currentModel+" (current setting; not verified)";
+      modelChoice.appendChild(option);
+      activeOptionValue=option.value;
+    }
+    if(!modelChoice.options.length){
+      const option=document.createElement("option");
+      option.value="";
+      option.textContent="No models returned by configured providers";
       modelChoice.appendChild(option);
     }
-    const chosen=providers.find(item=>item.id===active.provider)||providers[0];
-    modelChoice.value=chosen.id;
-    modelIdInput.value=active.model||chosen.model||"";
+    const chosen=providers.find(item=>item.id===currentProvider)||providers[0];
+    modelChoice.value=activeOptionValue||modelChoice.options[0].value;
+    const selectedOption=modelChoice.selectedOptions?.[0];
+    modelIdInput.value=selectedOption?.dataset?.model||currentModel||chosen.model||"";
     const label=document.getElementById("active-model-label");
-    if(label) label.textContent=active.model||chosen.model||"SELECT MODEL";
-    setModelFeedback("Active: "+(active.provider||chosen.id)+" / "+(active.model||chosen.model||"unknown")
-      +(status.runtime_override?" · browser override active":""),"success");
+    if(label) label.textContent=currentModel||chosen.model||"SELECT MODEL";
+    const catalogWarnings=providers.filter(item=>item.catalog_source==="fallback")
+      .map(item=>item.label+" catalog unavailable"+(item.catalog_diagnostic?": "+item.catalog_diagnostic:""));
+    setModelFeedback("Active: "+(active.provider||chosen.id)+" / "+(currentModel||chosen.model||"unknown")
+      +(status.runtime_override?" · browser override active":"")
+      +(catalogWarnings.length?" · "+catalogWarnings.join("; "):""),"success");
   }catch(error){
     const message=String(error?.message||error);
     const label=document.getElementById("active-model-label");
@@ -1367,7 +1399,8 @@ document.addEventListener("keydown",event=>{
   if(event.key==="Escape"&&modelPanel&&!modelPanel.hidden) toggleModelPanel(false);
 });
 applyModelButton?.addEventListener("click",async()=>{
-  const provider=String(modelChoice?.value||"").trim();
+  const selectedOption=modelChoice?.selectedOptions?.[0];
+  const provider=String(selectedOption?.dataset?.provider||"").trim();
   const model=String(modelIdInput?.value||"").trim();
   if(!provider||!model){
     setModelFeedback("Select a configured provider and enter a model ID first.","error");
@@ -1386,11 +1419,17 @@ applyModelButton?.addEventListener("click",async()=>{
     if(!response.ok||result?.error) throw new Error(result?.error||"Model selection failed");
     const label=document.getElementById("active-model-label");
     if(label) label.textContent=result.active?.model||model;
-    const option=modelChoice.selectedOptions?.[0];
-    if(option){
-      option.dataset.model=model;
-      option.textContent=(provider.charAt(0).toUpperCase()+provider.slice(1))+" · "+model;
+    let option=modelChoice.selectedOptions?.[0];
+    if(!option||option.dataset.provider!==provider){
+      option=document.createElement("option");
+      option.value=provider+"::"+model;
+      option.dataset.provider=provider;
+      modelChoice.appendChild(option);
     }
+    option.dataset.model=model;
+    option.value=provider+"::"+model;
+    option.textContent=(provider.charAt(0).toUpperCase()+provider.slice(1))+" · "+model+" (runtime)";
+    modelChoice.value=option.value;
     setModelFeedback("Applied: "+provider+" / "+model+". New requests will use this selection; an unavailable provider may still fall back.","success");
   }catch(error){
     setModelFeedback(String(error?.message||error),"error");
@@ -1399,3 +1438,76 @@ applyModelButton?.addEventListener("click",async()=>{
     applyModelButton.textContent="APPLY MODEL";
   }
 });
+
+
+/* REA bridge status is based on the actual local MCP process, not a decorative badge. */
+const reaDot=document.getElementById("rea-status-dot");
+const reaStatusLabel=document.getElementById("rea-status-label");
+const reaConnectButton=document.getElementById("rea-connect-button");
+function paintReaStatus(status){
+  if(!reaStatusLabel) return;
+  const connected=Boolean(status?.connected);
+  const ready=Boolean(status?.ready);
+  const skill=Boolean(status?.skill_enabled);
+  if(reaDot){
+    reaDot.dataset.state=connected?"connected":ready?"ready":"offline";
+  }
+  if(connected){
+    reaStatusLabel.textContent="REA CONNECTED · "+Number(status.advertised_tools||status.tool_count||0)+" TOOLS";
+    if(reaConnectButton) reaConnectButton.textContent="CONNECTED";
+    if(reaConnectButton) reaConnectButton.title="REA MCP is connected and its advertised tools can be called.";
+  }else if(ready){
+    reaStatusLabel.textContent=skill?"REA READY · SKILL ENABLED":"REA READY · SKILL DISABLED";
+    if(reaConnectButton) reaConnectButton.textContent="CONNECT";
+    if(reaConnectButton) reaConnectButton.title="Start the official REA MCP server and list its live tool catalog.";
+  }else{
+    reaStatusLabel.textContent="REA SETUP REQUIRED";
+    if(reaConnectButton) reaConnectButton.textContent="RETRY";
+    if(reaConnectButton) reaConnectButton.title=String(status?.last_error||"Check Node.js/npx and REA configuration.");
+  }
+  if(reaConnectButton) reaConnectButton.disabled=connected;
+}
+async function refreshReaStatus(){
+  try{
+    const response=await fetch("/rea/status?ts="+Date.now(),{cache:"no-store"});
+    const status=await response.json();
+    if(!response.ok) throw new Error(status?.last_error||status?.error||"REA status unavailable");
+    paintReaStatus(status);
+  }catch(error){
+    paintReaStatus({ready:false,connected:false,last_error:String(error?.message||error)});
+    if(reaStatusLabel) reaStatusLabel.title=String(error?.message||error);
+  }
+}
+reaConnectButton?.addEventListener("click",async()=>{
+  if(reaConnectButton.disabled) return;
+  reaConnectButton.disabled=true;
+  reaConnectButton.textContent="CONNECTING…";
+  if(reaStatusLabel) reaStatusLabel.textContent="CONNECTING TO OFFICIAL REA MCP…";
+  try{
+    const response=await fetch("/rea/connect",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:"{}"
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error) throw new Error(result?.error||"REA MCP connection failed");
+    paintReaStatus({
+      connected:true,ready:true,skill_enabled:result.skill_enabled,
+      advertised_tools:result.tool_count,tool_count:result.tool_count
+    });
+    if(reaStatusLabel) reaStatusLabel.title=(result.tool_examples||[]).join(", ");
+  }catch(error){
+    const message=String(error?.message||error);
+    paintReaStatus({ready:false,connected:false,last_error:message});
+    if(reaStatusLabel){
+      reaStatusLabel.textContent="REA CONNECTION FAILED";
+      reaStatusLabel.title=message;
+    }
+  }finally{
+    if(reaConnectButton) reaConnectButton.disabled=false;
+    refreshReaStatus();
+  }
+});
+refreshReaStatus();
+setInterval(refreshReaStatus,10000);
+refreshModelStatus();
