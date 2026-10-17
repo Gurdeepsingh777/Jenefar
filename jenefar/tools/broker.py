@@ -1697,6 +1697,30 @@ class ToolBroker:
             self.audit.record("tool_unknown", tool=name)
             return json.dumps({"status": "error", "error": f"Unknown tool: {name}"})
 
+        tool_preview = None
+        if name == "kali_tool_execute":
+            try:
+                tool_preview = self.kali.preview(
+                    tool=str(arguments.get("tool") or ""),
+                    args=[str(value) for value in (arguments.get("args") or [])],
+                    target=str(arguments.get("target") or ""),
+                    timeout=int(arguments.get("timeout", 120)),
+                )
+            except Exception as exc:
+                self.audit.record(
+                    "tool_error",
+                    tool=name,
+                    arguments=arguments,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                self._activity("error", f"Kali command blocked before approval: {exc}")
+                return json.dumps({
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "stage": "preflight",
+                    "executed": False,
+                }, ensure_ascii=False)
+
         # Critical tools always pause. Routine tools only use the legacy strict
         # confirmation mode when it is explicitly enabled.
         is_critical = bool(spec.critical)
@@ -1708,12 +1732,23 @@ class ToolBroker:
         if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
             self.pending[pending_id] = PendingToolCall(pending_id, name, arguments)
-            user_prompt = (
-                f"Kya main {name.replace('_', ' ')} kar doon? "
-                "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
-                if is_critical
-                else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
-            )
+            if name == "kali_tool_execute" and tool_preview:
+                targets_text = ", ".join(tool_preview.get("targets") or []) or "local-only / no remote target detected"
+                user_prompt = (
+                    "Kali tool execution plan (nothing has run yet):\\n"
+                    f"Command: {tool_preview['command']}\\n"
+                    f"Target(s): {targets_text}\\n"
+                    f"Authorization scope: {'PASS' if tool_preview.get('scope_checked') else 'not applicable'}\\n"
+                    f"Timeout: {tool_preview['timeout_seconds']} seconds\\n"
+                    "This is an external or high-impact command. Execute this exact command? Reply yes or no."
+                )
+            else:
+                user_prompt = (
+                    f"Kya main {name.replace('_', ' ')} kar doon? "
+                    "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
+                    if is_critical
+                    else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
+                )
             self.audit.record(
                 "tool_approval_requested",
                 pending_id=pending_id,
