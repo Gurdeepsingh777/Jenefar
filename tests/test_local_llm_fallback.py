@@ -284,3 +284,24 @@ def test_timeout_fallback_model_is_preferred_on_later_detection():
         ["qwen3.8:27b", "qwen3:8b"], "Ollama"
     ) == "qwen3:8b"
 
+
+
+def test_smaller_model_selection_prefers_largest_installed_model_below_current(monkeypatch):
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", raising=False)
+    monkeypatch.setattr(
+        LocalLLMClient,
+        "_get_json",
+        staticmethod(lambda *_args, **_kwargs: {
+            "models": [
+                {"name": "qwen3:1b", "details": {"parameter_size": "1.0B"}},
+                {"name": "qwen3:8b", "details": {"parameter_size": "8.0B"}},
+                {"name": "qwen3.8:27b", "details": {"parameter_size": "27B"}},
+            ]
+        }),
+    )
+    client = LocalLLMClient()
+    current = LocalModelInfo("http://127.0.0.1:11434", "qwen3.8:27b", "ollama")
+
+    selected = client._find_smaller_ollama_model(current)
+
+    assert selected == LocalModelInfo("http://127.0.0.1:11434", "qwen3:8b", "ollama")
