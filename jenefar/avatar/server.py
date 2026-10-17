@@ -5,7 +5,7 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from jenefar.avatar.controller import AvatarController
 from jenefar.avatar.settings import UISettings
@@ -86,7 +86,8 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         self._send(200, content_type, target.read_bytes())
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path or "/"
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path or "/"
         try:
             if path == "/":
                 self._serve_file("index.html")
@@ -149,6 +150,33 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                         "runtime_override": bool(override),
                     },
                 )
+                return
+            if path == "/security/scope":
+                broker = self.tool_broker
+                scope = getattr(broker, "scope", None) if broker is not None else None
+                if scope is None:
+                    self._json(503, {
+                        "configured": False,
+                        "authorized_targets": [],
+                        "last_error": "Security scope is not wired into this runtime.",
+                    })
+                    return
+                targets = list(getattr(scope, "allowed_targets", []) or [])
+                payload = {
+                    "configured": bool(targets),
+                    "target_count": len(targets),
+                    "authorized_targets": targets,
+                    "deny_by_default": not bool(targets),
+                }
+                query_targets = parse_qs(parsed_url.query).get("target", [])
+                if query_targets:
+                    target = query_targets[0]
+                    payload["check"] = {
+                        "target": target,
+                        "allowed": bool(scope.allows(target)),
+                        "message": scope.explain(target),
+                    }
+                self._json(200, payload)
                 return
             if path == "/rea/status":
                 broker = self.tool_broker
