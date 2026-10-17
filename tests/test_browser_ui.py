@@ -548,3 +548,33 @@ def test_dashboard_uses_live_telemetry_and_has_model_controls():
     assert 'class="ring-meter cpu">32%' not in html
     assert 'class="ring-meter ram">46%' not in html
     assert 'class="ring-meter gpu">28%' not in html
+
+def test_right_dashboard_stack_has_compact_non_overlapping_layout_rules():
+    hud_css = (WEB / "style-hud-center.css").read_text(encoding="utf-8")
+    assert "Phase 14: compact, non-overlapping right-side system / command / task stack" in hud_css
+    assert ".system-card{\n    top:74px!important" in hud_css
+    assert ".command-stack{\n    top:255px!important" in hud_css
+    assert "#activity-panel{\n    top:414px!important" in hud_css
+    assert 'id="rea-connect-button"' in (WEB / "index.html").read_text(encoding="utf-8")
+
+
+def test_model_panel_uses_provider_discovery_and_rea_is_a_live_connector():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    catalog = (ROOT / "jenefar" / "core" / "model_catalog.py").read_text(encoding="utf-8")
+    assert "provider.models" in app
+    assert 'fetch("/rea/status?ts="+Date.now()' in app
+    assert 'fetch("/rea/connect"' in app
+    assert 'path == "/rea/status"' in server
+    assert 'path == "/rea/connect"' in server
+    assert "list_provider_models(name, pool)" in server
+    assert '"/v1beta/models"' in catalog
+
+
+def test_browser_tts_prefers_expressive_gemini_before_edge_fallback():
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert "def _synthesize_gemini_audio" in bridge
+    assert "speech_metadata" in bridge
+    assert "JENEFAR_GEMINI_TTS_MODEL" in bridge
+    assert "self._synthesize_gemini_audio(text)" in bridge
+    assert "trying expressive Gemini TTS" in bridge
