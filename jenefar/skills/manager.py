@@ -47,6 +47,11 @@ class SkillManager:
             resolved = root.resolve()
             if resolved not in self.skill_roots:
                 self.skill_roots.append(resolved)
+        # Keep the repository's built-in skill manifests available when a
+        # caller supplies an isolated custom root (for example in tests).
+        built_in_root = (ROOT / "skills").resolve()
+        if built_in_root not in self.skill_roots:
+            self.skill_roots.append(built_in_root)
         self._lock = threading.Lock()
         self._skills: dict[str, SkillManifest] = {
             skill.name: skill for skill in BUILTIN_SKILLS
