@@ -80,6 +80,21 @@ Voice provider behavior:
 - `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
 - Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
 
+### LLM provider failover (free-tier first)
+
+Jenefar tries configured online providers in this default order: **Groq -> Gemini -> OpenRouter -> optional OpenAI**. If none returns a usable response, the assistant automatically tries the installed local Ollama model (for example, Qwen). A provider that reports exhausted credits/quota or a daily/free-tier cap is placed into a longer cooldown so the next request does not repeatedly hit the same exhausted endpoint. Temporary rate limits use a shorter cooldown.
+
+To use cloud fallbacks, create your own API keys using each provider's official console and put them in the local `.env` file:
+
+- `GROQ_API_KEY` and optionally `GROQ_MODEL`
+- `GEMINI_API_KEY` and optionally `GEMINI_MODEL`
+- `OPENROUTER_API_KEY` and `OPENROUTER_MODEL=openrouter/free`
+- `OPENAI_API_KEY` only if you want a final optional paid-provider attempt
+
+The sample `.env.example` uses `JENEFAR_PROVIDER_ORDER=groq,gemini,openrouter,openai`. Existing `.env` files with the old shipped default order are migrated automatically; an explicitly customized order is preserved. You can edit `JENEFAR_PROVIDER_ORDER` to change the priority.
+
+**Important:** free provider APIs are not unlimited. Their request/token limits and model availability depend on the provider and account and can change. When free cloud limits are reached, Jenefar cools down that provider and moves to the next one; the local Ollama model is the final no-cloud-credits fallback. Do not paste API keys into GitHub or commit your `.env` file.
+
 ### REA MCP bridge troubleshooting
 
 Jenefar REA ko official documented command `npx -y rea-agents@6.5.0 mcp` se start karta hai. MCP requests newline-delimited JSON-RPC ke roop me bheje jaate hain; connection fail ho to ab REA subprocess ka stderr aur exit code diagnostic me include hota hai. REA connect fail ho to pehle prerequisites aur package diagnostic check karein:
