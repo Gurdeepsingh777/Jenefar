@@ -248,69 +248,49 @@ class ReaMCPClient:
             self._stop_process()
             raise RuntimeError(f"Could not connect to REA MCP server: {self._last_error}") from exc
 
-    def _read_exact(self, size: int, deadline: float) -> bytes:
+    def _read_message(self, deadline: float) -> dict[str, Any]:
+        """Read one newline-delimited JSON-RPC message from MCP stdio."""
         import select
 
         process = self._process
         if process is None or process.stdout is None:
             raise RuntimeError("REA MCP process is not running.")
-        result = bytearray()
         fd = process.stdout.fileno()
-        while len(result) < size:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Timed out reading REA MCP response.")
+        data = bytearray()
+        while time.monotonic() < deadline:
+            remaining = max(0.05, deadline - time.monotonic())
             ready, _, _ = select.select([fd], [], [], min(remaining, 0.25))
             if not ready:
                 if process.poll() is not None:
-                    raise RuntimeError("REA MCP process exited while sending a response.")
+                    raise RuntimeError("REA MCP process exited while waiting for a response.")
                 continue
-            chunk = os.read(fd, size - len(result))
+            chunk = os.read(fd, 4096)
             if not chunk:
-                raise RuntimeError("REA MCP closed stdout unexpectedly.")
-            result.extend(chunk)
-        return bytes(result)
-
-    def _read_line(self, deadline: float, maximum: int = 8192) -> bytes:
-        result = bytearray()
-        while len(result) < maximum:
-            result.extend(self._read_exact(1, deadline))
-            if result.endswith(b"\r\n"):
-                return bytes(result)
-        raise RuntimeError("REA MCP header line is too long.")
-
-    def _read_message(self, deadline: float) -> dict[str, Any]:
-        first_line = self._read_line(deadline)
-        stripped = first_line.strip()
-        # Permit line-delimited JSON for MCP peers using the legacy transport.
-        if stripped.startswith(b"{"):
-            message = json.loads(stripped.decode("utf-8"))
-            if not isinstance(message, dict):
-                raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
-            return message
-        headers: dict[str, str] = {}
-        line = first_line
-        while line != b"\r\n":
-            header = line[:-2].decode("ascii", errors="replace")
-            if ":" not in header:
-                raise RuntimeError("REA MCP returned a malformed header.")
-            key, value = header.split(":", 1)
-            headers[key.strip().lower()] = value.strip()
-            line = self._read_line(deadline)
-        try:
-            length = int(headers["content-length"])
-        except (KeyError, ValueError) as exc:
-            raise RuntimeError("REA MCP response has no valid Content-Length header.") from exc
-        if length < 0 or length > 32 * 1024 * 1024:
-            raise RuntimeError("REA MCP response length is outside the permitted bound.")
-        body = self._read_exact(length, deadline)
-        try:
-            message = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("REA MCP returned invalid JSON-RPC data.") from exc
-        if not isinstance(message, dict):
-            raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
-        return message
+                if process.poll() is not None:
+                    raise RuntimeError("REA MCP closed stdout unexpectedly.")
+                continue
+            data.extend(chunk)
+            newline = data.find(b"\\n")
+            if newline >= 0:
+                line = bytes(data[:newline]).strip()
+                # MCP stdio messages are one JSON-RPC message per line. A server
+                # should not emit human logs to stdout; stderr remains separate.
+                if not line:
+                    del data[:newline + 1]
+                    continue
+                try:
+                    message = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise RuntimeError("REA MCP returned invalid newline-delimited JSON-RPC.") from exc
+                if not isinstance(message, dict):
+                    raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
+                # Retain any subsequent complete message bytes for the next read.
+                # Normal MCP servers send one response per request and optional notifications.
+                self._pending_output = bytes(data[newline + 1:])
+                return message
+            if len(data) > 32 * 1024 * 1024:
+                raise RuntimeError("REA MCP output line exceeded the 32 MiB safety limit.")
+        raise TimeoutError("Timed out reading REA MCP response.")
 
     def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         process = self._process
@@ -321,10 +301,10 @@ class ReaMCPClient:
         payload = json.dumps(
             {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
             ensure_ascii=False,
+            separators=(",", ":"),
         ).encode("utf-8")
-        frame = f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
         try:
-            os.write(process.stdin.fileno(), frame)
+            os.write(process.stdin.fileno(), payload + b"\\n")
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("Could not write an MCP request to REA.") from exc
         deadline = time.monotonic() + self.timeout
@@ -348,9 +328,12 @@ class ReaMCPClient:
         payload = json.dumps(
             {"jsonrpc": "2.0", "method": method, "params": params},
             ensure_ascii=False,
+            separators=(",", ":"),
         ).encode("utf-8")
-        frame = f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
-        os.write(process.stdin.fileno(), frame)
+        try:
+            os.write(process.stdin.fileno(), payload + b"\\n")
+        except (BrokenPipeError, OSError) as exc:
+            raise RuntimeError("Could not write an MCP notification to REA.") from exc
 
     def _load_tool_catalog(self) -> dict[str, dict[str, Any]]:
         result = self._request("tools/list", {})
