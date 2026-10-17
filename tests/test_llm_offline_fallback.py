@@ -177,3 +177,42 @@ def test_openai_compatible_chat_empty_text_raises_for_provider_failover(monkeypa
             model="test-model",
             model_role="fast",
         )
+
+
+def test_local_fallback_skips_tool_catalog_for_plain_questions():
+    tools = [
+        {"type": "function", "name": "rea_status", "description": "Check REA MCP."},
+        {"type": "function", "name": "memory_recall", "description": "Search stored notes."},
+        {"type": "function", "name": "workspace_read_file", "description": "Read a project file."},
+    ]
+
+    selected = LLMClient._select_local_tools("Explain Python loops in Hinglish.", tools)
+
+    assert selected == []
+
+
+def test_local_fallback_keeps_only_rea_tools_for_rea_requests():
+    tools = [
+        {"type": "function", "name": "rea_status", "description": "Check REA MCP status."},
+        {"type": "function", "name": "rea_list_tools", "description": "List REA server tools."},
+        {"type": "function", "name": "rea_call", "description": "Call a listed REA tool."},
+        {"type": "function", "name": "workspace_read_file", "description": "Read a project file."},
+    ]
+
+    selected = LLMClient._select_local_tools("Connect REA MCP and list tools.", tools)
+
+    assert [tool["name"] for tool in selected] == ["rea_status", "rea_list_tools", "rea_call"]
+
+
+def test_local_fallback_filters_repo_tools_and_supports_legacy_all_mode(monkeypatch):
+    tools = [
+        {"type": "function", "name": "workspace_read_file", "description": "Read files."},
+        {"type": "function", "name": "repository_analyze", "description": "Analyze a repository."},
+        {"type": "function", "name": "rea_status", "description": "Check REA MCP status."},
+    ]
+
+    selected = LLMClient._select_local_tools("Inspect the repository files and fix the code.", tools)
+
+    assert [tool["name"] for tool in selected] == ["workspace_read_file", "repository_analyze"]
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_TOOL_MODE", "all")
+    assert LLMClient._select_local_tools("Explain Python.", tools) == tools
