@@ -324,6 +324,18 @@ class KaliToolManager:
         return output.strip()[:12000]
 
     @staticmethod
+    def _useful_help_output(value: str) -> bool:
+        candidate = str(value or "").strip()
+        if not candidate or candidate.startswith("[unavailable:"):
+            return False
+        lowered = candidate.casefold()
+        return not any(marker in lowered for marker in (
+            "no manual entry", "nothing appropriate", "unknown option",
+            "unrecognized option", "invalid option", "option is not supported",
+            "command not found", "not recognized as an internal",
+        ))
+
+    @staticmethod
     def _package_search(query: str, *, limit: int = 8) -> list[dict[str, str]]:
         search = shutil.which("apt-cache")
         if not search or not query.strip():
@@ -374,10 +386,7 @@ class KaliToolManager:
                 timeout=min(int(timeout), 5),
                 env={"MANPAGER": "cat", "PAGER": "cat", "MANWIDTH": "100"},
             )
-            if candidate and not candidate.startswith("[unavailable:") and not any(
-                marker in candidate.casefold()
-                for marker in ("no manual entry", "nothing appropriate", "no entry for", "cannot open")
-            ):
+            if self._useful_help_output(candidate):
                 help_text, source = candidate, "man page"
 
         if not help_text and actual_name.casefold() not in GUI_ONLY_TOOLS:
@@ -386,7 +395,7 @@ class KaliToolManager:
                     [executable, flag],
                     timeout=min(int(timeout), 5),
                 )
-                if candidate and not candidate.startswith("[unavailable:"):
+                if self._useful_help_output(candidate):
                     help_text, source = candidate, f"{flag} output"
                     break
 
@@ -394,7 +403,8 @@ class KaliToolManager:
         if not help_text and actual_name.casefold() not in GUI_ONLY_TOOLS:
             version_text = self._run_readonly([executable, "--version"], timeout=2.0)[:1500]
 
-        self._inspected_tools.add(actual_name.casefold())
+        if help_text:
+            self._inspected_tools.add(actual_name.casefold())
         return {
             "tool": actual_name,
             "installed": True,
@@ -405,6 +415,11 @@ class KaliToolManager:
             "source": source or ("GUI/application entry; command-line help skipped" if actual_name.casefold() in GUI_ONLY_TOOLS else "executable metadata"),
             "help": help_text[:10000],
             "version": version_text,
+            "inspection_note": (
+                "Local help/manual was read. This command can be considered inspected for this session."
+                if help_text else
+                "No usable local help/manual output was found. This unfamiliar command remains blocked from execution; inspect official documentation or confirm a safer alternative."
+            ),
             "planning_guidance": [
                 "Identify whether the requested task is local-only or network-impacting.",
                 "Extract the exact input files and target(s) from the manual; do not guess flags.",
