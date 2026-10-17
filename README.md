@@ -929,13 +929,22 @@ JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=180
 JENEFAR_LOCAL_LLM_FALLBACK_MODEL=
 ```
 
-If only a large local model such as a 27B model is installed and both local attempts time out, install a smaller local fallback once while online:
+If a large local model such as a 27B model is installed and requests time out, install a smaller local fallback once while online:
 
 ```bash
 ollama pull qwen3:8b
 ```
 
-This is a local model download and does not use hosted API credits. After it is installed, Jenefar can switch to it automatically if the larger model times out. Run `python run.py --provider-status` to inspect provider configuration; the terminal now prints the exact per-provider error during an actual request. Desktop automation on native Wayland remains dependent on the desktop/compositor backend and is independent of LLM fallback.
+This downloads a local model and does not use hosted API credits. Once installed, Jenefar can switch to it automatically when the larger model times out.
+
+Before opening the browser UI, run the actual inference smoke test:
+
+```bash
+python run.py --provider-status
+python run.py --llm-smoke-test
+```
+
+The smoke test tries Groq -> Gemini -> OpenRouter -> local Ollama. It deliberately excludes OpenAI so debugging does not consume a paid OpenAI balance. `python run.py --doctor` only verifies that a local model is detected; it does not prove that chat inference completes. The smoke test prints the provider/model that responded, or the actual provider and local timeout errors if all attempts fail. Native Wayland desktop automation is a separate compositor/backend capability and is not the same as LLM/text chat availability.
 
 ## Multi-provider LLM failover
 
