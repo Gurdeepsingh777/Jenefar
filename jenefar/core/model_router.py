@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from threading import RLock
+from jenefar.core.model_ids import normalize_model_id
 
 
 @dataclass(frozen=True)
@@ -78,14 +79,17 @@ class ModelRouter:
 
     def resolve(self, role: str = "fast", *, explicit_model: str | None = None) -> ModelSelection:
         normalized = (role or "fast").strip().lower() or "fast"
-        if explicit_model:
-            return ModelSelection(normalized, explicit_model, "explicit-agent-model")
-
         runtime = self.runtime_override()
         if runtime:
+            provider = runtime.get("provider") or None
             return ModelSelection(
-                normalized, runtime["model"], "browser-runtime", runtime.get("provider") or None
+                normalized,
+                normalize_model_id(runtime["model"], provider),
+                "browser-runtime",
+                provider,
             )
+        if explicit_model:
+            return ModelSelection(normalized, explicit_model, "explicit-agent-model")
 
         role_env = self.ROLE_ENV.get(normalized)
         if role_env:
@@ -107,7 +111,10 @@ class ModelRouter:
             )
             if compatible_model:
                 return ModelSelection(
-                    normalized, compatible_model, "LLM_MODEL_NAME/GEMINI_MODEL"
+                    normalized,
+                    normalize_model_id(compatible_model, "gemini"),
+                    "LLM_MODEL_NAME/GEMINI_MODEL",
+                    "gemini",
                 )
 
         default = os.getenv("OPENAI_MODEL", "").strip() or "gpt-5.6-luna"
