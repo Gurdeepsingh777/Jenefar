@@ -415,7 +415,7 @@ tests/              automated tests
 
 ## Authorized security scope
 
-Security testing deny-by-default hai jab tak tum `config.yaml` me authorized targets configure nahi karte:
+Security testing deny-by-default hai jab tak tum authorized targets configure nahi karte. YAML aur `.env` targets combine hote hain; environment targets non-empty YAML list ko silently replace nahi karte:
 
 ```yaml
 security:
@@ -424,7 +424,20 @@ security:
     - "192.168.1.0/24"
 ```
 
-Scope checks exact host/IP values aur IPv4/IPv6 CIDRs accept karte hain.
+Ya `.env` me comma-separated list rakho:
+
+```env
+JENEFAR_AUTHORIZED_TARGETS=192.168.29.0/24,10.20.30.40
+```
+
+Har authorized-target setting change ke baad Jenefar restart karo. Active runtime ne kaunsi scope list load ki hai, localhost par verify karo:
+
+```bash
+curl -s http://127.0.0.1:8787/security/scope | python -m json.tool
+curl -sG --data-urlencode 'target=192.168.29.0/24' http://127.0.0.1:8787/security/scope | python -m json.tool
+```
+
+Scope checks exact host/IP values aur IPv4/IPv6 CIDRs accept karte hain. CIDR target ka poora range authorized network ke andar hona chahiye. Nmap profile subnet CIDRs preserve karta hai; WhatWeb/Nikto ko ek host ya URL diya jana chahiye.
 
 Har tool approval, execution, error aur scope check configured JSONL audit log me write hota hai.
 
