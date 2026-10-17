@@ -61,12 +61,24 @@ class ProviderPool:
         valid = [name for name in names if name in self.CONFIGS]
         return valid or ["openai"]
 
+    @staticmethod
+    def _generic_gemini_key() -> str:
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        if "generativelanguage.googleapis.com" not in base_url:
+            return ""
+        return os.getenv("LLM_API_KEY", "").strip() or os.getenv("API_KEY", "").strip()
+
     def configured(self, name: str) -> bool:
         config = self.CONFIGS[name]
         key = os.getenv(config.api_key_env, "").strip()
         if key:
             if name == "openai" and key.startswith("sk-or-"):
                 return False
+            return True
+        if name == "gemini" and self._generic_gemini_key():
             return True
         # Backward compatibility: the existing Jenefar setup may have stored an
         # OpenRouter key in OPENAI_API_KEY before provider-aware routing existed.
@@ -78,6 +90,11 @@ class ProviderPool:
         selected = (
             os.getenv(role_env, "").strip()
             or os.getenv(config.model_env, "").strip()
+            or (
+                os.getenv("LLM_MODEL_NAME", "").strip()
+                if name == "gemini" and self._generic_gemini_key()
+                else ""
+            )
             or config.default_model
         )
         if name == "gemini" and selected in {"gemini-2.5-flash-lite", "models/gemini-2.5-flash-lite"}:
@@ -101,6 +118,8 @@ class ProviderPool:
             legacy = os.getenv("OPENAI_API_KEY", "").strip()
             if legacy.startswith("sk-or-"):
                 return legacy
+        if name == "gemini":
+            return self._generic_gemini_key()
         return ""
 
     def reset(self, name: str) -> None:
