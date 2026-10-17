@@ -398,9 +398,9 @@ class LocalLLMClient:
                     payload["tool_choice"] = "auto"
 
             try:
-                timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "360"))
+                timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600"))
             except ValueError:
-                timeout = 360.0
+                timeout = 600.0
             timeout = max(15.0, min(900.0, timeout))
             result, info = self._request_chat_with_fallback(
                 info, payload, timeout=timeout
