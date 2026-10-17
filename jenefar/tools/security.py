@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import shlex
 import shutil
 import subprocess
@@ -31,9 +32,28 @@ class ScopedSecurityToolExecutor:
 
     @staticmethod
     def _host(target: str) -> str:
-        value = target.strip()
+        value = str(target or "").strip()
+        # Keep a bare IPv4/IPv6 CIDR intact for Nmap. urlparse otherwise treats
+        # the "/24" portion as a URL path and silently changes a subnet scan to
+        # a scan of just the network-address host.
+        if "://" not in value:
+            try:
+                return str(ipaddress.ip_network(value, strict=False))
+            except ValueError:
+                pass
         parsed = urlparse(value if "://" in value else f"//{value}")
         return parsed.hostname or value
+
+    @staticmethod
+    def _is_cidr(target: str) -> bool:
+        value = str(target or "").strip()
+        if "://" in value:
+            return False
+        try:
+            ipaddress.ip_network(value, strict=False)
+            return "/" in value
+        except ValueError:
+            return False
 
     def run(self, *, tool: str, target: str, timeout: int = 60) -> dict[str, object]:
         tool = tool.strip().lower()
@@ -45,6 +65,8 @@ class ScopedSecurityToolExecutor:
             raise ValueError("A target is required.")
         if not self.scope.allows(target):
             raise PermissionError(self.scope.explain(target))
+        if self._is_cidr(target) and tool != "nmap":
+            raise ValueError("CIDR ranges are supported by the Nmap profile only; WhatWeb/Nikto require one authorized host or URL.")
         if timeout < 1 or timeout > 120:
             raise ValueError("Timeout must be between 1 and 120 seconds.")
 
@@ -54,7 +76,7 @@ class ScopedSecurityToolExecutor:
 
         profile, profile_args = self.PROFILES[tool]
         command_target = self._host(target)
-        if tool in {"whatweb", "nikto"} and "://" not in command_target:
+        if tool in {"whatweb", "nikto"} and "://" not in target:
             command_target = f"http://{command_target}"
 
         if tool == "nikto":
