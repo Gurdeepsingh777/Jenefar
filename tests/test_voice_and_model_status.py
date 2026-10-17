@@ -6,6 +6,19 @@ from jenefar.core.orchestrator import JenefarOrchestrator
 from jenefar.voice.provider import ProviderVoiceRuntime
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def clear_inherited_gemini_voice_env(monkeypatch):
+    # Keep provider-order assertions independent from a developer's local .env.
+    for name in (
+        "GEMINI_API_KEY", "LLM_API_KEY", "API_KEY", "LLM_BASE_URL", "BASE_URL",
+        "GEMINI_MODEL", "LLM_MODEL_NAME", "JENEFAR_GEMINI_STT_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_voice_provider_module_imports():
     assert ProviderVoiceRuntime is not None
 
@@ -192,6 +205,102 @@ def test_stt_falls_back_from_openai_quota_to_groq(monkeypatch):
     assert calls == ["openai", "groq"]
     assert not runtime._audio_pool.available("openai")
 
+
+
+def test_gemini_is_available_as_browser_stt_fallback(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+    status = ProviderVoiceRuntime.audio_status()
+    assert status["stt"] == {
+        "provider": "openai",
+        "model": "gpt-4o-transcribe",
+        "fallback": ["gemini"],
+    }
+    assert status["tts"]["provider"] == "openai"
+
+
+def test_gemini_stt_can_reuse_telegram_llm_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_API_KEY", "test-gemini-key")
+    monkeypatch.setenv(
+        "LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
+    monkeypatch.setenv("LLM_MODEL_NAME", "gemini-3.8-flash")
+    status = ProviderVoiceRuntime.audio_status()
+    assert status["stt"] == {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "fallback": [],
+    }
+    assert status["tts"] is None
+
+
+def test_browser_stt_fails_over_from_openai_quota_to_gemini(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    from jenefar.core.provider_pool import ProviderPool
+
+    runtime._audio_pool = ProviderPool()
+    calls = []
+
+    async def fail_openai(_audio):
+        calls.append("openai")
+        error = RuntimeError("429 insufficient_quota credit_balance_exhausted")
+        error.status_code = 429
+        raise error
+
+    async def succeed_gemini(_audio):
+        calls.append("gemini")
+        return "Hello Jenefar, meri awaaz suno."
+
+    monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_openai", staticmethod(fail_openai))
+    monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_gemini", staticmethod(succeed_gemini))
+    result = asyncio.run(runtime.transcribe_pcm(b"\\x00\\x00" * 16000))
+    assert result == "Hello Jenefar, meri awaaz suno."
+    assert calls == ["openai", "gemini"]
+    assert not runtime._audio_pool.available("openai")
+
+
+def test_gemini_stt_sends_audio_and_extracts_transcript(monkeypatch):
+    import httpx
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("JENEFAR_GEMINI_STT_MODEL", "gemini-test-model")
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"candidates": [{"content": {"parts": [{"text": "Hello Jenefar"}]}}]}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url, *, headers, json):
+            captured.update({"url": url, "headers": headers, "payload": json})
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+    audio = ProviderVoiceRuntime._wav_bytes(b"\\x00\\x00" * 1600)
+    result = asyncio.run(ProviderVoiceRuntime._transcribe_gemini(audio))
+    assert result == "Hello Jenefar"
+    assert captured["url"].endswith("/models/gemini-test-model:generateContent")
+    assert captured["headers"]["x-goog-api-key"] == "test-gemini-key"
+    parts = captured["payload"]["contents"][0]["parts"]
+    assert parts[1]["inlineData"]["mimeType"] == "audio/wav"
+    assert parts[1]["inlineData"]["data"]
 
 def test_tts_falls_back_from_openai_quota_to_groq(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
