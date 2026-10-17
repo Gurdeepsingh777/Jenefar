@@ -381,7 +381,7 @@ def test_browser_tts_has_natural_edge_fallback():
     voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
     assert "def _synthesize_edge_audio" in voice
     assert "en-IN-NeerjaNeural" in voice
-    assert 'return self._synthesize_edge_audio(text)' in voice
+    assert 'return audio if audio[0] else self._synthesize_edge_audio(text)' in voice
 
 
 def test_critical_only_approval_policy():
@@ -568,7 +568,7 @@ def test_model_panel_uses_provider_discovery_and_rea_is_a_live_connector():
     assert 'path == "/rea/status"' in server
     assert 'path == "/rea/connect"' in server
     assert "list_provider_models(name, pool)" in server
-    assert '"/v1beta/models"' in catalog
+    assert 'generativelanguage.googleapis.com/v1beta/models' in catalog
 
 
 def test_browser_tts_prefers_expressive_gemini_before_edge_fallback():
