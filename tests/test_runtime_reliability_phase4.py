@@ -86,7 +86,7 @@ def test_mediarecorder_fallback_is_connected_to_provider_stt():
     assert 'fetch("/voice/audio"' in app
     assert 'if path == "/voice/audio":' in server
     assert "def handle_audio(self, audio: bytes" in voice
-    assert "ProviderVoiceRuntime(self.orchestrator).transcribe_pcm" in voice
+    assert "self._stt_runtime.transcribe_pcm" in voice
     assert "voice_audio_handler=browser_voice.handle_audio" in run
 
 
