@@ -533,11 +533,11 @@ class JenefarOrchestrator:
         import re
 
         patterns = (
-            r"\\b(check|show|find|get|display|tell me)\\b.{0,40}\\b(my|current|public|local)\\b.{0,16}\\bip(?:v[46])?(?:\\s+address)?\\b",
-            r"\\bwhat(?:'s| is)\\s+(?:my|the)\\s+(?:(?:current|public|local)\\s+)?ip(?:v[46])?(?:\\s+address)?\\b",
-            r"\\bmy\\s+(?:(?:current|public|local)\\s+)?ip(?:v[46])?(?:\\s+address)?\\b",
-            r"\\b(?:mera|meri)\\s+(?:(?:public|local)\\s+)?ip(?:\\s+address)?\\b",
-            r"\\bip\\s+(?:batao|check karo|address kya hai)\\b",
+            r"\b(check|show|find|get|display|tell me)\b.{0,40}\b(my|current|public|local)\b.{0,16}\bip(?:v[46])?(?:\s+address)?\b",
+            r"\bwhat(?:'s| is)\s+(?:my|the)\s+(?:(?:current|public|local)\s+)?ip(?:v[46])?(?:\s+address)?\b",
+            r"\bmy\s+(?:(?:current|public|local)\s+)?ip(?:v[46])?(?:\s+address)?\b",
+            r"\b(?:mera|meri)\s+(?:(?:public|local)\s+)?ip(?:\s+address)?\b",
+            r"\bip\s+(?:batao|check karo|address kya hai)\b",
         )
         return any(re.search(pattern, lowered) for pattern in patterns)
 
@@ -581,7 +581,7 @@ class JenefarOrchestrator:
         else:
             lines.append("Public IPv4: abhi fetch nahi ho saka; internet/service unavailable ho sakti hai.")
         lines.append("Ye sirf IP information check tha—koi Nmap, port scan ya subnet scan nahi chalaya.")
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     @staticmethod
     def _is_local_time_query(text: str) -> bool:
