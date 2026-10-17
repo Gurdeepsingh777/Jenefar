@@ -1511,3 +1511,53 @@ reaConnectButton?.addEventListener("click",async()=>{
 refreshReaStatus();
 setInterval(refreshReaStatus,10000);
 refreshModelStatus();
+
+
+/* Dynamic right-rail layout: use measured panel heights instead of brittle fixed
+   top coordinates. The CSS variables only affect desktop/tablet-width layouts. */
+(function setupDynamicRightRail() {
+  const stage = document.getElementById("stage");
+  const systemCard = document.querySelector(".system-card");
+  const commandStack = document.querySelector(".command-stack");
+  const workspace = document.getElementById("activity-panel");
+  if (!stage || !systemCard || !commandStack || !workspace) return;
+
+  let framePending = false;
+  const layout = () => {
+    if (window.innerWidth <= 1000) {
+      stage.style.removeProperty("--jenefar-right-commands-top");
+      stage.style.removeProperty("--jenefar-right-workspace-top");
+      return;
+    }
+
+    const stageTop = stage.getBoundingClientRect().top;
+    const systemBottom = systemCard.getBoundingClientRect().bottom - stageTop;
+    const commandTop = Math.ceil(systemBottom + 12);
+    stage.style.setProperty("--jenefar-right-commands-top", commandTop + "px");
+
+    // Element height is independent of its top coordinate, so this measurement
+    // remains stable while the right rail is being repositioned.
+    const commandHeight = commandStack.getBoundingClientRect().height;
+    const workspaceTop = Math.ceil(commandTop + commandHeight + 12);
+    stage.style.setProperty("--jenefar-right-workspace-top", workspaceTop + "px");
+  };
+
+  const scheduleLayout = () => {
+    if (framePending) return;
+    framePending = true;
+    requestAnimationFrame(() => {
+      framePending = false;
+      layout();
+    });
+  };
+
+  window.addEventListener("resize", scheduleLayout, { passive: true });
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(scheduleLayout);
+    observer.observe(systemCard);
+    observer.observe(commandStack);
+  }
+  scheduleLayout();
+  // The initial font/layout pass can change card height after the first frame.
+  window.addEventListener("load", scheduleLayout, { once: true });
+})();
