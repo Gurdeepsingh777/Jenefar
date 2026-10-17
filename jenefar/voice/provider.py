@@ -309,7 +309,7 @@ class ProviderVoiceRuntime:
                     ]
                 }
             ],
-            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 1024},
+            "generationConfig": {"maxOutputTokens": 1024},
         }
         timeout = float(os.getenv("JENEFAR_GEMINI_STT_TIMEOUT", "35"))
         async with httpx.AsyncClient(timeout=timeout) as client:
