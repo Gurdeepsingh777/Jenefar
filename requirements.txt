@@ -11,3 +11,5 @@ SpeechRecognition>=3.14.0
 Pillow>=10.0
 httpx>=0.27.2,<1
 python-telegram-bot>=21.10,<23
+
+mcp>=1.6,<2
