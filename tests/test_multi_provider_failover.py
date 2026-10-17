@@ -140,7 +140,7 @@ def test_daily_and_free_tier_quota_errors_get_long_cooldown_classification():
     )
 
 
-def test_default_route_fails_over_groq_gemini_to_openrouter_before_local(monkeypatch):
+def test_default_route_fails_over_groq_gemini_to_openrouter_before_local(monkeypatch, capsys):
     from jenefar.core.llm import LLMClient, LLMResponse
 
     monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
@@ -181,3 +181,7 @@ def test_default_route_fails_over_groq_gemini_to_openrouter_before_local(monkeyp
     assert attempted == ["groq", "gemini", "openrouter"]
     assert result.provider == "openrouter"
     assert result.text == "OpenRouter free route response"
+    output = capsys.readouterr().out
+    assert "Online LLM provider groq/openai/gpt-oss-120b failed" in output
+    assert "quota exhausted" in output
+    assert "Online LLM provider gemini/online-model failed" in output
