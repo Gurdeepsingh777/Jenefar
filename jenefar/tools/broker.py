@@ -103,6 +103,16 @@ class ToolBroker:
         self._register_phase4_compat_tools()
         self._apply_critical_tool_policy()
 
+    def _rea_status(self) -> dict[str, Any]:
+        return self.rea_connector.status()
+
+    def _rea_call(self, args: dict[str, Any]) -> dict[str, Any]:
+        name = str(args.get("tool", "")).strip()
+        tool_args = args.get("arguments", {})
+        if not isinstance(tool_args, dict):
+            raise ValueError("REA tool arguments must be a JSON object.")
+        return self.rea_connector.call(name, tool_args)
+
     @staticmethod
     def _terminal_command_is_critical(command: str) -> bool:
         """Permit bounded, low-risk local inspection/test commands without prompts."""
