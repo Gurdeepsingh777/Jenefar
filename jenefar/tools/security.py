@@ -36,7 +36,7 @@ class ScopedSecurityToolExecutor:
         # Keep a bare IPv4/IPv6 CIDR intact for Nmap. urlparse otherwise treats
         # the "/24" portion as a URL path and silently changes a subnet scan to
         # a scan of just the network-address host.
-        if "://" not in value:
+        if "://" not in value and "/" in value:
             try:
                 return str(ipaddress.ip_network(value, strict=False))
             except ValueError:
