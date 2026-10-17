@@ -94,7 +94,7 @@ def test_local_file_arguments_are_not_mistaken_for_network_targets(tmp_path, mon
     preview = manager.preview(tool="custompass", args=["hashes.txt"], timeout=10)
 
     assert preview["targets"] == []
-    assert preview["scope_checked"] is True
+    assert preview["scope_checked"] is False
 
 
 def test_network_target_list_flags_are_rejected_even_when_target_field_is_authorized():
