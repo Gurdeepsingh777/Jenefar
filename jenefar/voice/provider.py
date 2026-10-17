@@ -211,7 +211,10 @@ class ProviderVoiceRuntime:
 
     def _cooldown_seconds(self, exc: Exception) -> float:
         message = str(exc).lower()
-        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
+        if any(marker in message for marker in (
+            "insufficient_quota", "credit_balance_exhausted",
+            "resource_exhausted", "quota exceeded",
+        )):
             return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
         return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
 
@@ -354,7 +357,15 @@ class ProviderVoiceRuntime:
 
         last_error: Exception | None = None
         for provider in providers:
-            if not self._audio_pool.available(provider):
+            if provider == "gemini":
+                # ProviderPool's native Gemini key is GEMINI_API_KEY; voice also
+                # supports the Telegram agent's LLM_API_KEY alias for Google URLs.
+                available = self._provider_configured(provider) and (
+                    time.monotonic() >= self._audio_pool.cooldowns.get(provider, 0.0)
+                )
+            else:
+                available = self._audio_pool.available(provider)
+            if not available:
                 continue
             try:
                 if provider == "openai":
