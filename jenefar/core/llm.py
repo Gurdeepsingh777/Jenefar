@@ -568,7 +568,22 @@ class LLMClient:
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
-                    if is_retryable_provider_error(exc):
+                    quota_exhausted = is_quota_exhausted_provider_error(exc)
+                    retryable = is_retryable_provider_error(exc)
+                    # Provider failures used to be hidden when the final local
+                    # fallback also failed, making invalid model IDs, 429s and
+                    # exhausted keys indistinguishable from an Ollama timeout.
+                    classification = (
+                        "quota exhausted" if quota_exhausted
+                        else "transient/retryable" if retryable
+                        else "provider error"
+                    )
+                    print(
+                        f"[JENEFAR] Online LLM provider {provider}/{model} failed "
+                        f"({classification}): {error[:700]}. "
+                        "Trying the next configured provider."
+                    )
+                    if retryable:
                         if is_quota_exhausted_provider_error(exc):
                             try:
                                 quota_cooldown = float(
@@ -589,6 +604,16 @@ class LLMClient:
         online_error = "; ".join(failures) if failures else (
             "internet unavailable" if not online else "no configured online provider"
         )
+        if failures:
+            print(
+                "[JENEFAR] All configured online LLM providers failed; switching to local fallback. "
+                + online_error[:1200]
+            )
+        elif online and not any(self.providers.configured(name) for name in provider_order):
+            print(
+                "[JENEFAR] Internet is available, but no provider in "
+                f"JENEFAR_PROVIDER_ORDER={','.join(provider_order)} has a configured API key."
+            )
 
         if os.getenv("JENEFAR_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {
             "1", "true", "yes", "on"
@@ -626,9 +651,11 @@ class LLMClient:
             lowered = local_error.casefold()
             if "timed out" in lowered or "timeout" in lowered:
                 message = (
-                    "Main abhi jawab generate nahi kar paayi: local Ollama model ne "
-                    "time par response nahi diya aur online AI providers bhi unavailable hain. "
-                    "Ollama mein model ko direct test karke phir instruction dobara bhejein."
+                    "Cloud AI providers se response nahi mila aur local model bhi timeout ho gaya. "
+                    "Jenefar ab ek compact retry aur, available ho to, installed smaller Ollama model "
+                    "try karta hai. Agar yeh message phir aaye to ek baar 'ollama pull qwen3:8b' "
+                    "chalayein; yeh local model hai aur API credits use nahi karta. "
+                    "Terminal mein har cloud provider ki asli error bhi ab dikh jayegi."
                 )
             elif "empty answer" in lowered or "returned an empty" in lowered:
                 message = (
