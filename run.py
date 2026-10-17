@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-health", action="store_true", help="show compact runtime health summary")
     parser.add_argument("--self-healing-policy", action="store_true", help="show bounded self-healing policy and safeguards")
     parser.add_argument("--provider-status", action="store_true", help="show configured online/local model provider routing without making an LLM request")
+    parser.add_argument("--llm-smoke-test", action="store_true", help="test one short chat response using free-tier cloud providers then local Ollama; skips OpenAI to avoid paid calls")
     parser.add_argument("--online-only", action="store_true", help="disable local LLM fallback for this process")
     parser.add_argument("--voice-auto", action="store_true", help="run voice mode using the configured online provider stack; falls back to OpenAI STT/TTS only when configured")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
@@ -177,8 +178,13 @@ def doctor() -> int:
         local_model = LocalLLMClient().detect()
         print(
             "  local model                  "
-            + (f"OK ({local_model.model})" if local_model else "NOT DETECTED")
+            + (
+                f"DETECTED ({local_model.model}; inference not tested)"
+                if local_model else "NOT DETECTED"
+            )
         )
+        if local_model:
+            print("  local inference               not tested by --doctor (run --llm-smoke-test)")
         try:
             from jenefar.vision.screen import ScreenVision
             vision_base = os.getenv("JENEFAR_LOCAL_VISION_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -364,6 +370,46 @@ def main() -> int:
 
     if args.doctor:
         return doctor()
+
+    if args.llm_smoke_test:
+        import os
+        from jenefar.core.config import load_config
+        from jenefar.core.llm import LLMClient
+
+        # Load the local .env, but intentionally do not test OPENAI_API_KEY.
+        # This command is designed for users debugging free-tier + local fallback
+        # and must not accidentally consume paid OpenAI balance.
+        load_config()
+        previous_order = os.environ.get("JENEFAR_PROVIDER_ORDER")
+        previous_disable_local = os.environ.pop("JENEFAR_DISABLE_LOCAL_FALLBACK", None)
+        os.environ["JENEFAR_PROVIDER_ORDER"] = "groq,gemini,openrouter"
+        print("[JENEFAR] LLM smoke test: Groq -> Gemini -> OpenRouter -> local Ollama.")
+        print("[JENEFAR] OpenAI is intentionally excluded from this smoke test.")
+        try:
+            response = LLMClient(model_role="fast").complete(
+                "Reply exactly with JENEFAR_LLM_OK.",
+                instructions="You are a concise diagnostics assistant. Reply exactly with JENEFAR_LLM_OK.",
+                max_tool_rounds=1,
+                model_role="fast",
+            )
+            print(f"[JENEFAR] Smoke-test provider: {response.provider}")
+            print(f"[JENEFAR] Smoke-test model: {response.model or 'unknown'}")
+            print(f"[JENEFAR] Smoke-test response: {response.text[:1200]}")
+            if response.provider in {"offline_unavailable", "online_unavailable"}:
+                print("[JENEFAR] LLM smoke test FAILED; review the provider errors above.")
+                return 1
+            print("[JENEFAR] LLM smoke test PASSED.")
+            return 0
+        except Exception as exc:
+            print(f"[JENEFAR] LLM smoke test FAILED: {type(exc).__name__}: {exc}")
+            return 1
+        finally:
+            if previous_order is None:
+                os.environ.pop("JENEFAR_PROVIDER_ORDER", None)
+            else:
+                os.environ["JENEFAR_PROVIDER_ORDER"] = previous_order
+            if previous_disable_local is not None:
+                os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = previous_disable_local
 
     if args.setup_vision:
         return setup_vision()
