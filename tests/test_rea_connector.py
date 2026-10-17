@@ -77,3 +77,32 @@ def test_rea_skill_is_available_in_jenefar_skill_manager(monkeypatch, tmp_path):
     assert Path(registered.source).name == "SKILL.md"
     assert "Call" in registered.system_prompt
     assert "rea_list_tools" in registered.system_prompt
+
+def test_rea_client_preserves_multiple_jsonrpc_messages_from_one_read():
+    import os
+    import time
+    from types import SimpleNamespace
+
+    client = ReaMCPClient()
+    read_fd, write_fd = os.pipe()
+    stream = os.fdopen(read_fd, "rb", buffering=0)
+    client._process = SimpleNamespace(stdout=stream, poll=lambda: None)
+    try:
+        os.write(
+            write_fd,
+            (
+                '{"jsonrpc":"2.0","id":1,"result":{"first":true}}\\n'
+                '{"jsonrpc":"2.0","id":2,"result":{"second":true}}\\n'
+            ).encode("utf-8"),
+        )
+        first = client._read_message(time.monotonic() + 2)
+        second = client._read_message(time.monotonic() + 2)
+        assert first["id"] == 1
+        assert first["result"]["first"] is True
+        assert second["id"] == 2
+        assert second["result"]["second"] is True
+    finally:
+        stream.close()
+        os.close(write_fd)
+        client._process = None
+        client.close()
