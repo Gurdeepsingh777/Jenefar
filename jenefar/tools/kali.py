@@ -437,6 +437,7 @@ class KaliToolManager:
         flags_with_values = {
             "-u", "--url", "--host", "-h", "--target", "--domain", "-d",
             "--hostname", "--server", "-t", "--ip", "--target-ip",
+            "--bssid", "--ap-mac", "-b",
         }
         index = 0
         while index < len(args):
@@ -449,6 +450,9 @@ class KaliToolManager:
                 candidates.append(value.split("=", 1)[1].strip())
             elif value:
                 parsed = value
+                mac_match = re.search(r"(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}", value)
+                if mac_match:
+                    candidates.append(mac_match.group(0).lower().replace("-", ":"))
                 if "://" in value:
                     parsed = urlparse(value).hostname or value
                 try:
@@ -515,12 +519,26 @@ class KaliToolManager:
             or any(value.startswith(flag + "=") for flag in bypass_flags if flag.startswith("--"))
             or value.startswith("-il") and len(value) > 3
         )
+        local_wireless_operations = (
+            actual_name.casefold() in {"airmon-ng", "iw", "iwconfig", "rfkill"}
+            and not flagged_targets
+            and not supplied_target
+        )
+        gui_launch_only = (
+            actual_name.casefold() in GUI_ONLY_TOOLS
+            and not flagged_targets
+            and not supplied_target
+        )
         likely_network = (
-            actual_name.casefold() in NETWORK_TOOL_NAMES
-            or info.category.casefold() in NETWORK_CATEGORIES
-            or bool(flagged_targets)
-            or any(value in target_flags for value in normalized_args)
-            or bool(prohibited)
+            not local_wireless_operations
+            and not gui_launch_only
+            and (
+                actual_name.casefold() in NETWORK_TOOL_NAMES
+                or info.category.casefold() in NETWORK_CATEGORIES
+                or bool(flagged_targets)
+                or any(value in target_flags for value in normalized_args)
+                or bool(prohibited)
+            )
         )
         # Only remote target values are scope-checked; local filename arguments
         # such as wordlist.txt or report.xml are not treated as hostnames.
