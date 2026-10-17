@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 
 from jenefar.core.orchestrator import JenefarOrchestrator
+from jenefar.core.planner import Planner
 from jenefar.tools import network_info
 
 
@@ -127,3 +128,9 @@ def test_network_ip_info_handles_public_ip_service_failure(monkeypatch):
     assert result["public_ipv4"] is None
     assert result["public_ipv4_status"] == "unavailable (TimeoutError)"
     assert result["network_scan_performed"] is False
+
+
+def test_planner_does_not_route_plain_ip_check_to_security_agent():
+    plan = Planner().plan("check my ip")
+    assert plan.agent == "utility"
+    assert plan.intent == "network_ip_info"
