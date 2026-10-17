@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+
+import pytest
+
+from jenefar.rea.client import ReaMCPClient
+
+
+def test_rea_bridge_defaults_to_enabled_with_official_server(monkeypatch):
+    monkeypatch.setenv("JENEFAR_REA_ENABLED", "true")
+    monkeypatch.delenv("JENEFAR_REA_COMMAND", raising=False)
+    monkeypatch.delenv("JENEFAR_REA_ARGS", raising=False)
+    client = ReaMCPClient()
+    assert client.enabled is True
+    assert client.command == "npx"
+    assert client.args == ["-y", "rea-agents@6.5.0", "mcp"]
+    client.close()
+
+
+def test_rea_bridge_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("JENEFAR_REA_ENABLED", "false")
+    client = ReaMCPClient()
+    status = client.status()
+    assert status["enabled"] is False
+    assert status["ready"] is False
+    assert "disabled" in status["last_error"].lower()
+    client.close()
+
+
+def test_rea_schema_validator_rejects_missing_and_extra_arguments():
+    schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}},
+        "required": ["path"],
+        "additionalProperties": False,
+    }
+    with pytest.raises(ValueError, match="Missing required"):
+        ReaMCPClient._validate_arguments(schema, {})
+    with pytest.raises(ValueError, match="Unexpected"):
+        ReaMCPClient._validate_arguments(schema, {"path": "/tmp/x", "extra": True})
+    with pytest.raises(ValueError, match="schema type"):
+        ReaMCPClient._validate_arguments(schema, {"path": 123})
+    with pytest.raises(ValueError, match="maximum"):
+        ReaMCPClient._validate_arguments(schema, {"path": "/tmp/x", "limit": 11})
+
+
+def test_rea_content_text_extracts_text_and_nontext_blocks():
+    content = [
+        {"type": "text", "text": "evidence"},
+        {"type": "image", "data": "ignored"},
+    ]
+    result = ReaMCPClient._content_text(content)
+    assert "evidence" in result
+    assert "[REA returned image content]" in result
+
+
+def test_rea_schema_call_requires_advertised_tool(monkeypatch):
+    monkeypatch.setenv("JENEFAR_REA_ENABLED", "false")
+    client = ReaMCPClient()
+    with pytest.raises(RuntimeError, match="disabled"):
+        client.call("unknown", {})
+    client.close()
+
+
+def test_rea_skill_is_available_in_jenefar_skill_manager(monkeypatch, tmp_path):
+    from jenefar.skills.manager import SkillManager
+
+    monkeypatch.setenv("JENEFAR_REA_SKILL_ENABLED", "true")
+    skill = tmp_path / "rea" / "reverse-engineer-anything" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "---\nname: rea_reverse_engineering\ndescription: REA helper\nkeywords:\n  - decompile\nconnectors:\n  - rea\n---\nUse REA tools.",
+        encoding="utf-8",
+    )
+    manager = SkillManager(tmp_path / "state.json", skill_roots=[skill.parents[1]])
+    registered = manager.get("rea_reverse_engineering")
+    assert registered.connectors == ("rea",)
+    assert "Use REA tools." in registered.system_prompt
