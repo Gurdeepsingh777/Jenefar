@@ -208,7 +208,7 @@ def test_model_parameter_size_parser_understands_model_tags_and_ollama_details()
     ) == 8.0
 
 
-def test_local_timeout_retries_compact_then_uses_smaller_installed_model(monkeypatch):
+def test_local_timeout_switches_promptly_to_smaller_installed_model(monkeypatch):
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "120")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "180")
@@ -222,7 +222,7 @@ def test_local_timeout_retries_compact_then_uses_smaller_installed_model(monkeyp
 
     def fake_request(info, payload, *, timeout):
         attempts.append((info.model, dict(payload), timeout))
-        if len(attempts) < 3:
+        if len(attempts) == 1:
             raise RuntimeError("Could not reach local LLM endpoint: timed out")
         return {"message": {"role": "assistant", "content": "Recovered with Qwen 8B"}}, info
 
@@ -234,17 +234,13 @@ def test_local_timeout_retries_compact_then_uses_smaller_installed_model(monkeyp
 
     assert answer == "Recovered with Qwen 8B"
     assert pending == []
-    assert [item[0] for item in attempts] == [
-        "qwen3.8:27b",
-        "qwen3.8:27b",
-        "qwen3:8b",
-    ]
+    assert [item[0] for item in attempts] == ["qwen3.8:27b", "qwen3:8b"]
     assert attempts[0][2] == 120
     assert attempts[1][2] == 180
     assert attempts[1][1]["options"]["num_ctx"] == 2048
     assert attempts[1][1]["options"]["num_predict"] == 192
     assert attempts[1][1]["think"] is False
-    assert attempts[2][1]["model"] == "qwen3:8b"
+    assert attempts[1][1]["model"] == "qwen3:8b"
     assert client.model == "qwen3:8b"
 
 
@@ -278,3 +274,13 @@ def test_compact_retry_preserves_tools_for_action_requests():
     assert compact["think"] is False
     assert payload["options"]["num_ctx"] == 4096
     assert payload["think"] is True
+
+
+def test_timeout_fallback_model_is_preferred_on_later_detection():
+    client = LocalLLMClient()
+    client._runtime_fallback_model = "qwen3:8b"
+
+    assert client._select_installed_model(
+        ["qwen3.8:27b", "qwen3:8b"], "Ollama"
+    ) == "qwen3:8b"
+
