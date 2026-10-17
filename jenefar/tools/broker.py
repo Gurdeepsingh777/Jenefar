@@ -325,17 +325,12 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="discover_kali_tools",
-            description="List common Kali/Linux security tools and whether each executable is installed. This never executes a security tool.",
-            handler=lambda _args: [
-                {
-                    "name": t.name,
-                    "category": t.category,
-                    "command": t.command,
-                    "installed": t.installed,
-                    "description": t.description,
-                }
-                for t in discover_tools()
-            ],
+            description=(
+                "List the curated Kali catalog plus installed security-related executables discovered on PATH. "
+                "For fuzzy search or complete PATH inventory use kali_catalog; to inspect an unfamiliar command use kali_tool_help. "
+                "Read-only: never executes or installs a tool."
+            ),
+            handler=lambda _args: self.kali.catalog_list(limit=100),
         ))
         self.registry.register(ToolSpec(
             name="dismiss_offline_notice",
@@ -716,6 +711,7 @@ class ToolBroker:
                     "args": {"type": "array", "items": {"type": "string", "maxLength": 8000}, "maxItems": 80},
                     "target": {"type": "string", "maxLength": 500},
                     "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
+                    "plan": {"type": "string", "maxLength": 2000},
                 },
                 "required": ["tool", "args", "target", "timeout"],
                 "additionalProperties": False,
@@ -1734,13 +1730,15 @@ class ToolBroker:
             self.pending[pending_id] = PendingToolCall(pending_id, name, arguments)
             if name == "kali_tool_execute" and tool_preview:
                 targets_text = ", ".join(tool_preview.get("targets") or []) or "local-only / no remote target detected"
+                plan_text = str(arguments.get("plan") or "").strip()[:1600]
                 user_prompt = (
                     "Kali tool execution plan (nothing has run yet):\\n"
+                    f"Purpose/plan: {plan_text or 'Inspect the selected tool result and complete the requested task.'}\\n"
                     f"Command: {tool_preview['command']}\\n"
                     f"Target(s): {targets_text}\\n"
-                    f"Authorization scope: {'PASS' if tool_preview.get('scope_checked') else 'not applicable'}\\n"
+                    f"Authorization scope: {'PASS' if tool_preview.get('scope_checked') else 'not applicable (local command)'}\\n"
                     f"Timeout: {tool_preview['timeout_seconds']} seconds\\n"
-                    "This is an external or high-impact command. Execute this exact command? Reply yes or no."
+                    "Review this exact command and its scope. Execute it? Reply yes or no."
                 )
             else:
                 user_prompt = (
