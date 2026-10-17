@@ -359,12 +359,37 @@ class LocalLLMClient:
                 "messages": messages,
                 "stream": False,
             }
+            if info.api == "ollama":
+                # Qwen-family models may spend their generation budget on hidden
+                # reasoning and return empty visible content/tool calls. For an
+                # assistant runtime, prefer a direct answer unless explicitly
+                # opted in to reasoning.
+                think_value = os.getenv("JENEFAR_LOCAL_LLM_THINK", "false").strip().lower()
+                payload["think"] = think_value in {"1", "true", "yes", "on"}
+
+                def _bounded_int(name: str, default: int, lower: int, upper: int) -> int:
+                    try:
+                        value = int(os.getenv(name, str(default)).strip())
+                    except (TypeError, ValueError):
+                        value = default
+                    return max(lower, min(upper, value))
+
+                payload["keep_alive"] = os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m"
+                payload["options"] = {
+                    "num_ctx": _bounded_int("JENEFAR_LOCAL_LLM_NUM_CTX", 8192, 2048, 65536),
+                    "num_predict": _bounded_int("JENEFAR_LOCAL_LLM_NUM_PREDICT", 768, 128, 8192),
+                    "temperature": 0.2,
+                }
             if local_tools:
                 payload["tools"] = local_tools
                 if info.api == "openai":
                     payload["tool_choice"] = "auto"
 
-            timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "240"))
+            try:
+                timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "360"))
+            except ValueError:
+                timeout = 360.0
+            timeout = max(15.0, min(900.0, timeout))
             result, info = self._request_chat_with_fallback(
                 info, payload, timeout=timeout
             )
