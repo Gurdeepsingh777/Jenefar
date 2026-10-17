@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,14 +36,28 @@ def load_config() -> Config:
         for item in os.getenv("JENEFAR_WAKE_PHRASES", "Hi Jenefar,Hello Jenefar").split(",")
         if item.strip()
     ]
-    env_targets = [
-        item.strip().lower()
-        for item in os.getenv("JENEFAR_AUTHORIZED_TARGETS", "").split(",")
-        if item.strip()
+    # Read .env values directly as well as process environment variables.
+    # load_dotenv(override=False) intentionally preserves shell settings, but an
+    # exported empty variable must not silently mask an explicitly configured .env.
+    dotenv = dotenv_values(ROOT / ".env")
+    raw_target_sources = [
+        security.get("authorized_targets") or [],
+        dotenv.get("JENEFAR_AUTHORIZED_TARGETS") or "",
+        os.getenv("JENEFAR_AUTHORIZED_TARGETS", "") or "",
     ]
+    targets: list[str] = []
+    seen_targets: set[str] = set()
+    for source in raw_target_sources:
+        values = source.split(",") if isinstance(source, str) else source
+        if not isinstance(values, (list, tuple, set)):
+            continue
+        for item in values:
+            cleaned = str(item or "").strip().strip('"').strip("'").lower()
+            if cleaned and cleaned not in seen_targets:
+                seen_targets.add(cleaned)
+                targets.append(cleaned)
 
     phrases = assistant.get("wake_phrases") or env_phrases
-    targets = security.get("authorized_targets") or env_targets
 
     return Config(
         name=str(assistant.get("name") or os.getenv("JENEFAR_NAME", "Jenefar")),
