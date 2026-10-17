@@ -7,7 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from jenefar.core.model_router import ModelRouter
-from jenefar.core.provider_pool import ProviderPool, is_retryable_provider_error
+from jenefar.core.provider_pool import (
+    ProviderPool,
+    is_quota_exhausted_provider_error,
+    is_retryable_provider_error,
+)
 from jenefar.offline.connectivity import internet_available
 from jenefar.offline.local_llm import LocalLLMClient
 
@@ -458,7 +462,18 @@ class LLMClient:
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
                     if is_retryable_provider_error(exc):
-                        self.providers.cooldown(provider)
+                        if is_quota_exhausted_provider_error(exc):
+                            try:
+                                quota_cooldown = float(
+                                    os.getenv("JENEFAR_PROVIDER_QUOTA_COOLDOWN_SECONDS", "3600")
+                                )
+                            except ValueError:
+                                quota_cooldown = 3600.0
+                            self.providers.cooldown(
+                                provider, seconds=max(60.0, quota_cooldown)
+                            )
+                        else:
+                            self.providers.cooldown(provider)
                         continue
                     # A non-retryable provider error should still allow another
                     # configured provider to answer, but it is not cooled down.
