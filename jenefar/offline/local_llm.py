@@ -305,7 +305,10 @@ class LocalLLMClient:
 
         if not candidates:
             return None
-        candidates.sort(key=lambda item: (item[0], item[1]))
+        # Choose the largest installed model that is still smaller than the
+        # timed-out model. This preserves as much response quality as the host
+        # can support (e.g. 8B before 4B/1B when falling back from 27B).
+        candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
         preferred = os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip()
         chosen = next((name for _size, name in candidates if name == preferred), candidates[0][1])
         return LocalModelInfo(info.base_url, chosen, "ollama")
