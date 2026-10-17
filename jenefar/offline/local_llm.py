@@ -234,8 +234,8 @@ class LocalLLMClient:
             "think": think_value in {"1", "true", "yes", "on"},
             "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m",
             "options": {
-                "num_ctx": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 8192, 2048, 65536),
-                "num_predict": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 768, 128, 8192),
+                "num_ctx": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 4096, 2048, 65536),
+                "num_predict": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 384, 128, 8192),
                 "temperature": 0.2,
             },
         }
