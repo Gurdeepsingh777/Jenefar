@@ -84,8 +84,25 @@ class Planner:
             "codebase",
             "architecture review",
         )
-        if "kali" in t or any(x in t for x in ("nmap", "hashcat", "metasploit", "burpsuite", "sqlmap")):
-            return self._make_plan(text, "kali", "kali", confidence=0.96, reason="Kali/security-tool keyword match", needs_tool=True)
+        kali_terms = (
+            "kali", "nmap", "masscan", "rustscan", "amass", "subfinder",
+            "gobuster", "ffuf", "feroxbuster", "whatweb", "nikto", "wpscan",
+            "sqlmap", "hashcat", "john the ripper", "hydra", "aircrack",
+            "metasploit", "msfconsole", "burpsuite", "zaproxy", "impacket",
+            "responder", "bloodhound", "mimikatz", "linpeas", "winpeas",
+            "wireshark", "tcpdump", "volatility", "binwalk", "searchsploit",
+            "penetration test", "pentest", "security tool", "kali tool",
+            "tool catalog", "tool --help", "new kali tool", "installed tools",
+        )
+        if any(x in t for x in kali_terms):
+            return self._make_plan(
+                text,
+                "kali",
+                "kali",
+                confidence=0.96,
+                reason="Kali/security-tool or tool-discovery keyword match",
+                needs_tool=True,
+            )
 
         if any(x in t for x in (
             "find on screen", "locate on screen", "click the", "click on",
