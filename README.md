@@ -82,7 +82,7 @@ Voice provider behavior:
 
 ### REA MCP bridge troubleshooting
 
-Jenefar REA ko `npx` ke through explicit package/binary form me start karta hai, aur purane `.env` argument values ko runtime par migrate karta hai. REA connect fail ho to pehle prerequisites aur package diagnostic check karein:
+Jenefar REA ko official documented command `npx -y rea-agents@6.5.0 mcp` se start karta hai. MCP requests newline-delimited JSON-RPC ke roop me bheje jaate hain; connection fail ho to ab REA subprocess ka stderr aur exit code diagnostic me include hota hai. REA connect fail ho to pehle prerequisites aur package diagnostic check karein:
 
 ```bash
 node --version
@@ -540,14 +540,15 @@ Environment:
 JENEFAR_LOCAL_LLM_API=auto
 JENEFAR_LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
 JENEFAR_LOCAL_LLM_MODEL=
-JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=360
+JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=600
 JENEFAR_LOCAL_LLM_THINK=false
 JENEFAR_LOCAL_LLM_KEEP_ALIVE=10m
-JENEFAR_LOCAL_LLM_NUM_CTX=8192
-JENEFAR_LOCAL_LLM_NUM_PREDICT=768
+JENEFAR_LOCAL_LLM_NUM_CTX=4096
+JENEFAR_LOCAL_LLM_NUM_PREDICT=384
+JENEFAR_LOCAL_LLM_TOOL_MODE=auto
 ```
 
-Ollama native API par Jenefar default se direct-answer mode (think=false) use karta hai aur response/tool calls ko empty hone se bachane ke liye generation limits set karta hai. `JENEFAR_LOCAL_LLM_THINK=true` se thinking opt-in kar sakte ho, lekin thinking models par response slow ya empty hone ka risk badh sakta hai. Model name blank hone par Jenefar installed local model ko discover karta hai. Agar configured model tag server par installed nahi milta, to installed list se available model choose karke terminal me warning deta hai. Local server aur downloaded model running/available hona zaroori hai; online-only kaam jaise live web search, remote downloads aur live GitHub retrieval internet ke bina unavailable hi rahenge. Local tools bhi existing confirmation aur security-scope policy ko follow karte hain.
+Ollama native API par Jenefar default se direct-answer mode (think=false) use karta hai aur response/tool calls ko empty hone se bachane ke liye generation limits set karta hai. `JENEFAR_LOCAL_LLM_TOOL_MODE=auto` normal explanatory questions ke liye poora tool catalog prompt me include nahi karta; REA, files, desktop, web aur doosre action requests par sirf relevant tool group advertise hota hai. `JENEFAR_LOCAL_LLM_TOOL_MODE=all` purana behavior force karta hai. `JENEFAR_LOCAL_LLM_THINK=true` se thinking opt-in kar sakte ho, lekin thinking models par response slow ya empty hone ka risk badh sakta hai. Model name blank hone par Jenefar installed local model ko discover karta hai. Agar configured model tag server par installed nahi milta, to installed list se available model choose karke terminal me warning deta hai. Local server aur downloaded model running/available hona zaroori hai; online-only kaam jaise live web search, remote downloads aur live GitHub retrieval internet ke bina unavailable hi rahenge. Local tools bhi existing confirmation aur security-scope policy ko follow karte hain.
 
 Offline condition me online-only capabilities ki list explicitly show ki ja sakti hai, jaise:
 
