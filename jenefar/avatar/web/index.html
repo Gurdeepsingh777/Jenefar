@@ -71,16 +71,20 @@
         <div><span class="service-light"></span>Voice <b id="service-voice">●</b></div>
         <div><span class="service-light"></span>VRM <b id="service-vrm">●</b></div>
       </div>
+      <div class="rea-connector-row">
+        <span><i id="rea-status-dot" data-state="checking"></i><b id="rea-status-label">REA MCP: CHECKING</b></span>
+        <button type="button" id="rea-connect-button">CONNECT</button>
+      </div>
     </aside>
     <aside class="model-panel" id="model-panel" aria-labelledby="model-panel-title" hidden>
       <div class="model-panel-head">
         <div><div class="card-title" id="model-panel-title">MODEL CONTROL</div><div class="model-panel-subtitle">Live runtime configuration</div></div>
         <button type="button" id="model-panel-close" aria-label="Close model settings">×</button>
       </div>
-      <label for="model-choice">Configured provider / model</label>
+      <label for="model-choice">Available provider models</label>
       <select id="model-choice"><option value="">Loading configured providers…</option></select>
       <label for="model-id-input">Model ID</label>
-      <input id="model-id-input" autocomplete="off" spellcheck="false" placeholder="Select a configured model or enter model ID">
+      <input id="model-id-input" autocomplete="off" spellcheck="false" placeholder="Choose a listed model or enter a custom model ID">
       <button type="button" class="model-apply-button" id="apply-model-button">APPLY MODEL</button>
       <p id="model-feedback" role="status" aria-live="polite">Checking configured providers…</p>
     </aside>
