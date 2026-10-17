@@ -74,6 +74,30 @@ class Planner:
 
     def plan(self, text: str) -> Plan:
         t = text.lower()
+        # Simple IP-information queries are local diagnostics, not security scans.
+        # The orchestrator handles them directly; this plan also prevents fallback
+        # routing from assigning plain "check my IP" requests to a security agent.
+        ip_info_markers = (
+            "check my ip", "check my ip address", "what is my ip", "what's my ip",
+            "what is my public ip", "what's my public ip", "my public ip", "my local ip",
+            "show my ip", "find my ip", "get my ip", "ip address kya", "mera ip", "meri ip",
+            "ip batao",
+        )
+        explicit_scan_markers = (
+            "nmap", "masscan", "port scan", "network scan", "subnet scan",
+            "scan my network", "scan this network", "open ports", "sweep",
+        )
+        if any(marker in t for marker in ip_info_markers) and not any(
+            marker in t for marker in explicit_scan_markers
+        ):
+            return self._make_plan(
+                text,
+                "network_ip_info",
+                "utility",
+                needs_tool=True,
+                confidence=0.99,
+                reason="explicit local/public IP-information request; no scan intent",
+            )
 
         repository_terms = (
             "github",
