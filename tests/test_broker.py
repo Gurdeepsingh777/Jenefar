@@ -30,6 +30,30 @@ def test_kali_catalog_help_and_confirmed_executor_are_registered():
     assert "kali_tool_execute" in names
 
 
+def test_kali_execution_requires_plan_before_it_can_request_approval(monkeypatch):
+    import json
+
+    broker = ToolBroker(require_confirmation=True)
+    called = []
+    monkeypatch.setattr(
+        broker.kali,
+        "preview",
+        lambda **_kwargs: called.append(True),
+    )
+
+    result = json.loads(broker.invoke("kali_tool_execute", {
+        "tool": "nmap",
+        "args": ["-sV", "192.168.29.10"],
+        "target": "192.168.29.10",
+        "timeout": 30,
+    }))
+
+    assert result["status"] == "error"
+    assert result["stage"] == "preflight"
+    assert result["executed"] is False
+    assert not called
+
+
 def test_kali_execution_approval_displays_exact_command_and_target(monkeypatch):
     import json
 
