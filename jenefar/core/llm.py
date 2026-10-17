@@ -516,9 +516,32 @@ class LLMClient:
                 model_role=selected_role,
             )
         except Exception as exc:
+            local_error = f"{type(exc).__name__}: {exc}"
+            # Keep full diagnostics in the terminal/logs, but do not make the
+            # assistant read a giant provider quota traceback aloud to the user.
+            print(
+                "[JENEFAR] Local model fallback failed after cloud-provider "
+                f"failover: {local_error}"
+            )
+            lowered = local_error.casefold()
+            if "timed out" in lowered or "timeout" in lowered:
+                message = (
+                    "Main abhi jawab generate nahi kar paayi: local Ollama model ne "
+                    "time par response nahi diya aur online AI providers bhi unavailable hain. "
+                    "Ollama mein model ko direct test karke phir instruction dobara bhejein."
+                )
+            elif "empty answer" in lowered or "returned an empty" in lowered:
+                message = (
+                    "Local model ne khaali response diya. Jenefar ne direct-answer mode "
+                    "try kiya, lekin is model/API combination se visible answer nahi mila."
+                )
+            else:
+                message = (
+                    "Abhi online providers aur local AI dono se response nahi mil paaya. "
+                    "Technical detail terminal mein [JENEFAR] Local model fallback failed ke neeche hai."
+                )
             return LLMResponse(
-                f"Online providers unavailable ({online_error}); "
-                f"local model unavailable ({type(exc).__name__}: {exc}).",
+                message,
                 "offline_unavailable",
                 model_role=selected_role,
             )
