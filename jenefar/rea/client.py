@@ -21,23 +21,9 @@ class ReaMCPClient:
             "1", "true", "yes", "on"
         }
         self.command = os.getenv("JENEFAR_REA_COMMAND", "npx").strip() or "npx"
-        raw_args = os.getenv(
-            "JENEFAR_REA_ARGS",
-            "--yes,--package=rea-agents@6.5.0,--,rea,mcp",
-        )
+        # Follow REA's documented stdio MCP command exactly.
+        raw_args = os.getenv("JENEFAR_REA_ARGS", "-y,rea-agents@6.5.0,mcp")
         self.args = [item.strip() for item in raw_args.split(",") if item.strip()]
-        # Migrate existing .env files from the ambiguous npx package/bin shorthand
-        # to npm's explicit package-runner form. This is intentionally limited to
-        # the known REA command shape and never invokes a shell.
-        if (
-            os.path.basename(self.command) in {"npx", "npx.cmd"}
-            and len(self.args) == 3
-            and self.args[0] in {"-y", "--yes"}
-            and self.args[1].startswith("rea-agents@")
-            and self.args[2] == "mcp"
-        ):
-            package = self.args[1]
-            self.args = ["--yes", f"--package={package}", "--", "rea", "mcp"]
         self.timeout = max(
             5.0,
             min(600.0, float(os.getenv("JENEFAR_REA_TIMEOUT_SECONDS", "120"))),
@@ -355,7 +341,7 @@ class ReaMCPClient:
             separators=(",", ":"),
         ).encode("utf-8")
         try:
-            os.write(process.stdin.fileno(), payload + b"\\n")
+            os.write(process.stdin.fileno(), payload + b"\n")
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("Could not write an MCP request to REA.") from exc
         deadline = time.monotonic() + self.timeout
@@ -382,7 +368,7 @@ class ReaMCPClient:
             separators=(",", ":"),
         ).encode("utf-8")
         try:
-            os.write(process.stdin.fileno(), payload + b"\\n")
+            os.write(process.stdin.fileno(), payload + b"\n")
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("Could not write an MCP notification to REA.") from exc
 
