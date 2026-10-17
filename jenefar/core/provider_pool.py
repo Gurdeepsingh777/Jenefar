@@ -161,6 +161,8 @@ def is_quota_exhausted_provider_error(exc: Exception) -> bool:
 
 def is_retryable_provider_error(exc: Exception) -> bool:
     """Classify provider failures that should permit automatic failover."""
+    if is_quota_exhausted_provider_error(exc):
+        return True
     message = str(exc).lower()
     status = getattr(exc, "status_code", None)
     response = getattr(exc, "response", None)
