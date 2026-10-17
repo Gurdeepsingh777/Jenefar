@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -8,6 +9,9 @@ from urllib.parse import urlparse
 
 from jenefar.avatar.controller import AvatarController
 from jenefar.avatar.settings import UISettings
+from jenefar.avatar.system_metrics import read_system_metrics
+from jenefar.core.model_router import ModelRouter
+from jenefar.core.provider_pool import ProviderPool
 from jenefar.evaluation.dashboard import render_dashboard
 from jenefar.realtime.server import (
     RealtimeSessionError,
@@ -92,6 +96,50 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                         "status": "ok",
                         "avatar": self.controller.current(),
                         "vrm_available": bool(self.vrm_path and self.vrm_path.is_file()),
+                    },
+                )
+                return
+            if path == "/system/metrics":
+                self._json(200, read_system_metrics())
+                return
+            if path == "/model/status":
+                pool = ProviderPool()
+                states = pool.status("fast")
+                providers = [
+                    {
+                        "id": name,
+                        "label": name.replace("_", " ").title(),
+                        "model": state["model"],
+                        "available": state["available"],
+                    }
+                    for name, state in states.items()
+                    if state["configured"]
+                ]
+                override = ModelRouter.runtime_override()
+                selected = ModelRouter().resolve("fast")
+                active_provider = (override or {}).get("provider", "")
+                if active_provider not in pool.CONFIGS:
+                    active_provider = next(
+                        (
+                            name for name in pool.order()
+                            if pool.configured(name) and pool.model(name, "fast") == selected.model
+                        ),
+                        "",
+                    )
+                if not active_provider:
+                    active_provider = next(
+                        (name for name in pool.order() if pool.configured(name)), ""
+                    )
+                self._json(
+                    200,
+                    {
+                        "active": {
+                            "provider": active_provider,
+                            "model": (override or {}).get("model") or selected.model,
+                            "source": selected.source,
+                        },
+                        "providers": providers,
+                        "runtime_override": bool(override),
                     },
                 )
                 return
@@ -188,6 +236,37 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     return
                 result = handler(str(body.get("text", "")))
                 self._json(200, result if isinstance(result, dict) else {"result": result})
+                return
+
+            if path == "/model/select":
+                provider = str(body.get("provider", "")).strip().lower()
+                model = str(body.get("model", "")).strip()
+                pool = ProviderPool()
+                if provider not in pool.CONFIGS:
+                    self._json(400, {"error": "Choose a supported provider."})
+                    return
+                if not pool.configured(provider):
+                    self._json(
+                        400,
+                        {"error": f"{provider} is not configured. Add its API key to .env first."},
+                    )
+                    return
+                if not model or len(model) > 160 or not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,159}", model
+                ):
+                    self._json(
+                        400,
+                        {"error": "Enter a valid model ID (letters, numbers, . _ : / + -)."},
+                    )
+                    return
+                ModelRouter.set_runtime_override(model, provider)
+                self._json(
+                    200,
+                    {
+                        "status": "ok",
+                        "active": {"provider": provider, "model": model, "source": "browser-runtime"},
+                    },
+                )
                 return
 
             if path == "/settings":
