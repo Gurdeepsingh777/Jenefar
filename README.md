@@ -488,32 +488,36 @@ blank chhoda ja sakta hai; tab normal online model/local model fallback use hoga
 
 ## Online-first, offline fallback
 
-Jenefar runtime connectivity detect karta hai.
+Jenefar har request par online providers ko configured order me try karta hai. Agar saare providers quota, billing, authentication, rate-limit ya connection error dein, to `JENEFAR_DISABLE_LOCAL_FALLBACK=1` / `--online-only` explicitly set na hone par **local downloaded model automatic fallback** hai. Internet connected hone ke bawajood API credits khatam ho jaane par bhi local fallback run hona chahiye.
 
 Flow:
 
 ```text
-Internet available
+Online providers try karo
     ↓
-Online model + online tools
+Sab unavailable / credits exhausted
     ↓
-Internet unavailable
+Detected local model par switch
     ↓
-Local OpenAI-compatible model
+Wahi Jenefar prompt + enabled skills + session memory + local tool broker
     ↓
-Local tools continue
+Approval/scope checks ke through local actions continue
 ```
 
-Local fallback ke liye Ollama ya llama.cpp jaise OpenAI-compatible local servers use kiye ja sakte hain. Ollama local `/v1/chat/completions` compatibility provide karta hai, aur llama.cpp OpenAI-compatible server ke saath tool calling support karta hai. citeturn881519search7turn881519search0turn881519search1
+Local LLM API do modes support karti hai:
+- `auto` (default): local Ollama ko `/api/tags` aur `/api/chat` se detect karta hai; doosre compatible servers ke liye `/v1/models` aur `/v1/chat/completions` use karta hai.
+- `openai` ya `ollama`: agar auto-detection tumhare local server se match na kare to explicit mode select karo.
 
 Environment:
 
 ```env
+JENEFAR_LOCAL_LLM_API=auto
 JENEFAR_LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
 JENEFAR_LOCAL_LLM_MODEL=
+JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=240
 ```
 
-Model name blank hone par Jenefar local server se available model discover karta hai.
+Model name blank hone par Jenefar installed local model ko discover karta hai. Agar configured model tag server par installed nahi milta, to installed list se available model choose karke terminal me warning deta hai. Local server aur downloaded model running/available hona zaroori hai; online-only kaam jaise live web search, remote downloads aur live GitHub retrieval internet ke bina unavailable hi rahenge. Local tools bhi existing confirmation aur security-scope policy ko follow karte hain.
 
 Offline condition me online-only capabilities ki list explicitly show ki ja sakti hai, jaise:
 
