@@ -142,7 +142,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     {
                         "active": {
                             "provider": active_provider,
-                            "model": (override or {}).get("model") or selected.model,
+                            "model": selected.model,
                             "source": selected.source,
                         },
                         "providers": providers,
