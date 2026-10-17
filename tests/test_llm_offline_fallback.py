@@ -216,3 +216,25 @@ def test_local_fallback_filters_repo_tools_and_supports_legacy_all_mode(monkeypa
     assert [tool["name"] for tool in selected] == ["workspace_read_file", "repository_analyze"]
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_TOOL_MODE", "all")
     assert LLMClient._select_local_tools("Explain Python.", tools) == tools
+
+
+def test_local_fallback_routes_authorized_network_scans_to_scope_and_security_tools():
+    from jenefar.core.llm import LLMClient
+
+    tools = [
+        {"type": "function", "name": "scope_check", "description": "Check authorized scope."},
+        {"type": "function", "name": "security_tool_execute", "description": "Run constrained Nmap scan."},
+        {"type": "function", "name": "kali_tool_execute", "description": "Run allow-listed Kali tool."},
+        {"type": "function", "name": "memory_recall", "description": "Search local memory."},
+    ]
+
+    selected = LLMClient._select_local_tools(
+        "Scan my authorized target 192.168.29.0/24 using Nmap.",
+        tools,
+    )
+
+    assert [tool["name"] for tool in selected] == [
+        "scope_check",
+        "security_tool_execute",
+        "kali_tool_execute",
+    ]
