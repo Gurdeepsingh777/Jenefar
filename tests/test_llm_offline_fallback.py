@@ -238,3 +238,13 @@ def test_local_fallback_routes_authorized_network_scans_to_scope_and_security_to
         "security_tool_execute",
         "kali_tool_execute",
     ]
+
+    selected_direct = LLMClient._select_local_tools(
+        "Scan 192.168.29.0/24",
+        tools,
+    )
+    assert [tool["name"] for tool in selected_direct] == [
+        "scope_check",
+        "security_tool_execute",
+        "kali_tool_execute",
+    ]
