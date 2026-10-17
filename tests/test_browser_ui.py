@@ -529,3 +529,22 @@ def test_broker_online_schemas_are_non_strict_function_schemas():
     schemas = ToolBroker(require_confirmation=False).schemas()
     assert schemas
     assert all(item.get("strict") is False for item in schemas)
+
+def test_dashboard_uses_live_telemetry_and_has_model_controls():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    assert 'id="metric-cpu"' in html
+    assert 'id="metric-ram"' in html
+    assert 'id="metric-gpu"' in html
+    assert 'id="model-settings-button"' in html
+    assert 'id="model-choice"' in html
+    assert 'id="model-id-input"' in html
+    assert 'fetch("/system/metrics?ts="+Date.now()' in app
+    assert "setInterval(refreshSystemMetrics,1500)" in app
+    assert 'path == "/system/metrics"' in server
+    assert 'path == "/model/status"' in server
+    assert 'path == "/model/select"' in server
+    assert 'class="ring-meter cpu">32%' not in html
+    assert 'class="ring-meter ram">46%' not in html
+    assert 'class="ring-meter gpu">28%' not in html
