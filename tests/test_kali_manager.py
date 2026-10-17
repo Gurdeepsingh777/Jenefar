@@ -1,3 +1,4 @@
+from jenefar.execution.scope import ScopePolicy
 from jenefar.tools.kali import KaliToolManager
 
 
@@ -29,18 +30,18 @@ def test_kali_catalog_natural_language_filter_does_not_return_empty_for_network_
 def _make_fake_cli(tmp_path, name):
     command = tmp_path / name
     command.write_text(
-        "#!/bin/sh\\n"
-        "if [ \\"$1\\" = \\"--help\\" ] || [ \\"$1\\" = \\"-h\\" ]; then\\n"
-        "  echo 'Usage: custom command [OPTIONS] TARGET'\\n"
-        "  echo 'Read-only fake help used in unit tests.'\\n"
-        "  exit 0\\n"
-        "fi\\n"
-        "echo 'FAKE_TOOL_RAN'\\n",
+        """#!/bin/sh
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+  echo 'Usage: custom command [OPTIONS] TARGET'
+  echo 'Read-only fake help used in unit tests.'
+  exit 0
+fi
+echo 'FAKE_TOOL_RAN'
+""",
         encoding="utf-8",
     )
     command.chmod(0o755)
     return command
-
 
 def test_unlisted_path_tool_is_discovered_and_local_help_is_read(tmp_path, monkeypatch):
     _make_fake_cli(tmp_path, "customaudit")
