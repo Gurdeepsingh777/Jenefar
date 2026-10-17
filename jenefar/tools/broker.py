@@ -28,6 +28,7 @@ from jenefar.offline.capabilities import unavailable_online_items, local_items
 from jenefar.automation.browser import play_youtube, first_mp3_in_folder
 from jenefar.media.song import record_and_recognize
 from jenefar.tools.kali import KaliToolManager
+from jenefar.tools.network_info import get_network_ip_info
 from jenefar.vision.screen import ScreenVision
 from jenefar.vision.mirror import DesktopMirror
 from jenefar.automation.headless import HeadlessDesktopAutomation
@@ -375,6 +376,22 @@ class ToolBroker:
                 "additionalProperties": False,
             },
             handler=lambda _args: self._local_time(),
+        ))
+
+        self.registry.register(ToolSpec(
+            name="network_ip_info",
+            description=(
+                "Read the local computer's active interface IP addresses and make one optional HTTPS request "
+                "to api.ipify.org to learn the public IPv4 address. Read-only; does not scan hosts, ports, "
+                "or subnets, and never runs Nmap."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            handler=lambda _args: get_network_ip_info(),
         ))
 
         self.registry.register(ToolSpec(
