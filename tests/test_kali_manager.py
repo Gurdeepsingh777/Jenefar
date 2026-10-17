@@ -85,6 +85,41 @@ def test_new_network_tool_must_be_inspected_then_target_must_be_authorized(tmp_p
         raise AssertionError("Out-of-scope remote targets must be rejected.")
 
 
+def test_nested_out_of_scope_ip_cannot_hide_in_tool_script_arguments(tmp_path, monkeypatch):
+    _make_fake_cli(tmp_path, "customscan")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    manager = KaliToolManager(scope=ScopePolicy(["lab.example.com"]))
+    manager.inspect_tool(tool="customscan")
+
+    try:
+        manager.preview(
+            tool="customscan",
+            args=["-x", "set RHOSTS 8.8.8.8; run"],
+            target="lab.example.com",
+            timeout=10,
+        )
+    except PermissionError as exc:
+        assert "8.8.8.8" in str(exc)
+    else:
+        raise AssertionError("A nested out-of-scope IP must not be authorized by a different target field.")
+
+
+def test_mac_bssid_is_a_scope_checked_target_for_discovered_wireless_tools(tmp_path, monkeypatch):
+    _make_fake_cli(tmp_path, "airscan")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    manager = KaliToolManager(scope=ScopePolicy(["AA:BB:CC:DD:EE:FF"]))
+    manager.inspect_tool(tool="airscan")
+
+    preview = manager.preview(
+        tool="airscan",
+        args=["-b", "aa:bb:cc:dd:ee:ff"],
+        timeout=10,
+    )
+
+    assert preview["targets"] == ["aa:bb:cc:dd:ee:ff"]
+    assert preview["scope_checked"] is True
+
+
 def test_local_file_arguments_are_not_mistaken_for_network_targets(tmp_path, monkeypatch):
     _make_fake_cli(tmp_path, "custompass")
     monkeypatch.setenv("PATH", str(tmp_path))
