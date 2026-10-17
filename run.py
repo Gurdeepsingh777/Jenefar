@@ -373,12 +373,18 @@ def main() -> int:
         from jenefar.core.llm import LLMClient
         from jenefar.offline.local_llm import LocalLLMClient
         client = LLMClient()
+        local_client = LocalLLMClient()
+        local_info = local_client.detect()
         print({
             "provider_order": client.providers.order(),
             "providers": client.provider_status("fast"),
             "local": {
+                "api_mode": os.getenv("JENEFAR_LOCAL_LLM_API", "auto"),
                 "base_url": os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1"),
-                "model_detected": bool(LocalLLMClient().detect()),
+                "model_detected": bool(local_info),
+                "active_api": local_info.api if local_info else None,
+                "active_model": local_info.model if local_info else None,
+                "diagnostic": None if local_info else local_client._last_detection_error,
             },
         })
         return 0
