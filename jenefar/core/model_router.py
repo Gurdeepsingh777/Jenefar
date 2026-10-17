@@ -56,6 +56,24 @@ class ModelRouter:
             configured = os.getenv(role_env, "").strip()
             if configured:
                 return ModelSelection(normalized, configured, role_env)
+
+        # The Telegram runtime uses generic OpenAI-compatible variables. When
+        # those point to Google's endpoint, make the desktop/avatar runtime use
+        # the same Gemini model instead of the OpenAI-only default model name.
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        if "generativelanguage.googleapis.com" in base_url:
+            compatible_model = (
+                os.getenv("LLM_MODEL_NAME", "").strip()
+                or os.getenv("GEMINI_MODEL", "").strip()
+            )
+            if compatible_model:
+                return ModelSelection(
+                    normalized, compatible_model, "LLM_MODEL_NAME/GEMINI_MODEL"
+                )
+
         default = os.getenv("OPENAI_MODEL", "").strip() or "gpt-5.6-luna"
         return ModelSelection(normalized, default, "OPENAI_MODEL/default")
 
