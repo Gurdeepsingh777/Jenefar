@@ -113,6 +113,51 @@ class ToolBroker:
             raise ValueError("REA tool arguments must be a JSON object.")
         return self.rea_connector.call(name, tool_args)
 
+
+    def _register_builtin_tools(self) -> None:
+        self.registry.register(ToolSpec(
+            name="rea_status",
+            description="Check optional REA MCP bridge status and Node.js prerequisites.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self._rea_status(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_list_tools",
+            description="Connect to REA MCP and list the exact advertised reverse-engineering tools and schemas.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self.rea_connector.list_tools(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_call",
+            description="Call an exact advertised REA MCP tool with schema-validated arguments for authorized reverse engineering.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["tool", "arguments"],
+                "additionalProperties": False,
+            },
+            handler=self._rea_call,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="discover_kali_tools",
+            description="List common Kali/Linux security tools and whether each executable is installed. This never executes a security tool.",
+            handler=lambda _args: [
+                {
+                    "name": t.name,
+                    "category": t.category,
+                    "command": t.command,
+                    "installed": t.installed,
+                    "description": t.description,
+                }
+                for t in discover_tools()
+            ],
+        ))
+
     @staticmethod
     def _terminal_command_is_critical(command: str) -> bool:
         """Permit bounded, low-risk local inspection/test commands without prompts."""
