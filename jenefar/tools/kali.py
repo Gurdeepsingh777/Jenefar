@@ -466,6 +466,8 @@ class KaliToolManager:
         name = str(tool or "").strip()
         if not name or len(name) > 120 or "/" in name or "\x00" in name:
             raise ValueError("Provide a command name, not a path or shell expression.")
+        if not isinstance(args, (list, tuple)):
+            raise ValueError("Tool args must be a JSON array of individual arguments, not a shell string.")
         values = [str(arg) for arg in args]
         if len(values) > 80 or any("\x00" in item or len(item) > 8000 for item in values):
             raise ValueError("Tool arguments exceed the supported limits.")
