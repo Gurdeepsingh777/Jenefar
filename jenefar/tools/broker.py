@@ -304,16 +304,6 @@ class ToolBroker:
             raise ValueError("REA tool arguments must be a JSON object.")
         return self.rea_connector.call(name, tool_args)
 
-    def _rea_status(self) -> dict[str, Any]:
-        return self.rea_connector.status()
-
-    def _rea_call(self, args: dict[str, Any]) -> dict[str, Any]:
-        name = str(args.get("tool", "")).strip()
-        tool_args = args.get("arguments", {})
-        if not isinstance(tool_args, dict):
-            raise ValueError("REA tool arguments must be a JSON object.")
-        return self.rea_connector.call(name, tool_args)
-
     def _register_builtin_tools(self) -> None:
         self.registry.register(ToolSpec(
             name="discover_kali_tools",
