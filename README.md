@@ -72,11 +72,13 @@ Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime
 
 Voice provider behavior:
 
-- Default browser runtime me microphone input browser Web SpeechRecognition se aata hai.
+- Browser microphone permission sirf MIC button click karne ke baad maangi jaati hai. Supported browsers par Jenefar pehle MediaRecorder se utterance capture karke server STT use karta hai, jo Hinglish ke liye preferred path hai.
+- Server STT configured OpenAI, Groq aur Gemini providers ko failover order me try karta hai. Quota/credits exhaust hone ya providers fail hone par cached local Whisper STT fallback try hota hai.
+- Local STT ke liye optional `faster-whisper` package aur ek Whisper model ki one-time download zaroori hai. Runtime model ko local cache se hi load karta hai, isliye mic use karte waqt model download nahi karta.
+- Browser server STT fail hone par Web SpeechRecognition fallback bhi use kar sakta hai, agar browser us API ko expose karta hai.
 - Default browser runtime me speech output server-generated audio se hota hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser Web SpeechSynthesis fallback hota hai. Python/native speaker playback start nahi hota.
 - `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
 - Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
-- OpenAI/Groq provider failover diagnostics legacy voice runtime ke liye retained hain.
 
 ## Language behavior
 
@@ -131,6 +133,18 @@ python run.py --voice-continuous
 Continuous mode microphone ko open rakhta hai, local energy-based VAD se utterances detect karta hai, detected utterances ko STT ke liye bhejta hai, wake-word gate apply karta hai, phir same orchestrator routing use karta hai aur TTS response speakers par play karta hai.
 
 Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai. Groq voice ke liye `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, aur `GROQ_TTS_VOICE` configure kiye ja sakte hain.
+
+### Offline browser-microphone STT fallback
+
+Agar OpenAI/Gemini credits ya quota khatam ho jaaye aur Groq key configured na ho, local Whisper use karne ke liye:
+
+```bash
+source .venv/bin/activate
+python -m pip install faster-whisper
+python -c 'from faster_whisper import WhisperModel; WhisperModel("small", device="cpu", compute_type="int8")'
+```
+
+Second command `small` Whisper model ko ek baar download karke local cache me rakhega; iske liye initial setup waqt internet chahiye. Uske baad Jenefar cloud STT fail hone par cached model ko offline use kar sakta hai. Default setting `JENEFAR_LOCAL_STT_MODEL=small` aur automatic language detection hai. Optional settings `.env.example` me listed hain. Agar package installation Python 3.14 par native dependency ki wajah se fail ho, to Python 3.12/3.13 ke separate virtual environment me try karo.
 
 ## Avatar aur realtime voice
 
