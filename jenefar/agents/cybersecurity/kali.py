@@ -71,8 +71,8 @@ Safety:
         import re
 
         has_explicit_target = bool(
-            re.search(r"(?<![0-9.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?(?![0-9.])", lowered)
-            or re.search(r"(?i)https?://[^\\s]+|\\b[a-z0-9-]+(?:\\.[a-z0-9-]+)+\\b", lowered)
+            re.search(r"(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?(?![0-9.])", lowered)
+            or re.search(r"(?i)https?://[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b", lowered)
             or re.search(r"(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}", lowered)
         )
         explicit_execution = any(
