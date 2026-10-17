@@ -47,12 +47,12 @@ def test_rea_request_ends_with_real_newline_for_stdio_framing():
     try:
         os.write(
             output_write,
-            b'{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{}}}\\n',
+            b'{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{}}}\n',
         )
         result = client._request("initialize", {})
         written = os.read(input_read, 4096)
         assert result["serverInfo"] == {}
-        assert written.endswith(b"\\n")
+        assert written.endswith(b"\n")
         assert json.loads(written.decode("utf-8"))["method"] == "initialize"
     finally:
         client._process = None
