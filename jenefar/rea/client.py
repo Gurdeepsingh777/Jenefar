@@ -82,14 +82,16 @@ class ReaMCPClient:
 
     def status(self) -> dict[str, Any]:
         with self._lock:
+            configuration_error = self._configuration_diagnostic()
+            connected = bool(self._process and self._process.poll() is None)
             return {
                 "enabled": self.enabled,
                 "command": self.command,
                 "args": self.args,
-                "connected": bool(self._process and self._process.poll() is None),
+                "connected": connected,
                 "advertised_tools": len(self._tools),
-                "ready": not bool(self._configuration_diagnostic()),
-                "last_error": self._last_error or self._configuration_diagnostic(),
+                "ready": not bool(configuration_error) and not bool(self._last_error),
+                "last_error": self._last_error or configuration_error,
             }
 
     def list_tools(self) -> dict[str, Any]:
