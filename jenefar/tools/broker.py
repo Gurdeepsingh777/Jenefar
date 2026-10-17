@@ -35,6 +35,7 @@ from jenefar.skills.manager import SkillManager
 from jenefar.connectors.manager import ConnectorManager
 from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
+from jenefar.rea.client import ReaMCPClient
 
 
 @dataclass
@@ -94,6 +95,7 @@ class ToolBroker:
             ros2_robot=self.ros2_robot,
             security=self.security,
         )
+        self.rea_connector = ReaMCPClient()
         self.pending: dict[str, PendingToolCall] = {}
         self._task_context: dict[str, str] = {"agent": "", "task": ""}
         self._task_action_log: list[dict[str, str]] = []
@@ -292,6 +294,16 @@ class ToolBroker:
             raise ValueError("REA tool arguments must be a JSON object.")
         return self.rea_connector.call(name, tool_args)
 
+    def _rea_status(self) -> dict[str, Any]:
+        return self.rea_connector.status()
+
+    def _rea_call(self, args: dict[str, Any]) -> dict[str, Any]:
+        name = str(args.get("tool", "")).strip()
+        tool_args = args.get("arguments", {})
+        if not isinstance(tool_args, dict):
+            raise ValueError("REA tool arguments must be a JSON object.")
+        return self.rea_connector.call(name, tool_args)
+
     def _register_builtin_tools(self) -> None:
         self.registry.register(ToolSpec(
             name="rea_status",
@@ -311,6 +323,38 @@ class ToolBroker:
                 "Call an advertised REA MCP tool for static inspection/reverse engineering. "
                 "Choose an exact tool name from rea_list_tools and pass its schema-valid arguments. "
                 "Tool calls that mutate targets or cause external effects require user approval."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["tool", "arguments"],
+                "additionalProperties": False,
+            },
+            handler=self._rea_call,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_status",
+            description="Check the optional REA MCP server connection and advertised reverse-engineering tools.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self._rea_status(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_list_tools",
+            description="List the reverse-engineering tools advertised by REA's MCP server. Always discover exact names/schemas before a new workflow.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self.rea_connector.list_tools(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_call",
+            description=(
+                "Call a schema-validated tool advertised by REA for authorized reverse-engineering or artifact analysis. "
+                "Supply exact tool name and JSON-object arguments from rea_list_tools. REA tools are invoked through "
+                "the registered MCP process, not arbitrary shell command construction."
             ),
             parameters={
                 "type": "object",
