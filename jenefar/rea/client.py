@@ -34,6 +34,7 @@ class ReaMCPClient:
         self._lock = threading.RLock()
         self._next_id = 1
         self._process: subprocess.Popen[bytes] | None = None
+        self._pending_output = bytearray()
         self._tools: dict[str, dict[str, Any]] = {}
         self._last_error = ""
 
@@ -239,10 +240,17 @@ class ReaMCPClient:
             self._last_error = f"{type(exc).__name__}: {exc}"
             process = self._process
             if process is not None and process.stderr is not None:
+                # Never perform a blocking read from the long-lived stderr pipe
+                # while the REA process may still be alive.
                 try:
-                    diagnostic = process.stderr.read(1600).decode("utf-8", errors="replace").strip()
-                    if diagnostic:
-                        self._last_error += f" | REA stderr: {diagnostic}"
+                    import select
+                    ready, _, _ = select.select([process.stderr.fileno()], [], [], 0.1)
+                    if ready:
+                        diagnostic = os.read(process.stderr.fileno(), 1600).decode(
+                            "utf-8", errors="replace"
+                        ).strip()
+                        if diagnostic:
+                            self._last_error += f" | REA stderr: {diagnostic}"
                 except Exception:
                     pass
             self._stop_process()
@@ -256,8 +264,26 @@ class ReaMCPClient:
         if process is None or process.stdout is None:
             raise RuntimeError("REA MCP process is not running.")
         fd = process.stdout.fileno()
-        data = bytearray()
+        data = bytearray(self._pending_output)
+        self._pending_output.clear()
+
         while time.monotonic() < deadline:
+            newline = data.find(b"\n")
+            if newline >= 0:
+                line = bytes(data[:newline]).strip()
+                del data[:newline + 1]
+                if not line:
+                    continue
+                try:
+                    message = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise RuntimeError("REA MCP returned invalid newline-delimited JSON-RPC.") from exc
+                if not isinstance(message, dict):
+                    raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
+                # Preserve additional JSON-RPC lines delivered by the same OS read.
+                self._pending_output.extend(data)
+                return message
+
             remaining = max(0.05, deadline - time.monotonic())
             ready, _, _ = select.select([fd], [], [], min(remaining, 0.25))
             if not ready:
@@ -270,25 +296,7 @@ class ReaMCPClient:
                     raise RuntimeError("REA MCP closed stdout unexpectedly.")
                 continue
             data.extend(chunk)
-            newline = data.find(b"\\n")
-            if newline >= 0:
-                line = bytes(data[:newline]).strip()
-                # MCP stdio messages are one JSON-RPC message per line. A server
-                # should not emit human logs to stdout; stderr remains separate.
-                if not line:
-                    del data[:newline + 1]
-                    continue
-                try:
-                    message = json.loads(line.decode("utf-8"))
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise RuntimeError("REA MCP returned invalid newline-delimited JSON-RPC.") from exc
-                if not isinstance(message, dict):
-                    raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
-                # Retain any subsequent complete message bytes for the next read.
-                # Normal MCP servers send one response per request and optional notifications.
-                self._pending_output = bytes(data[newline + 1:])
-                return message
-            if len(data) > 32 * 1024 * 1024:
+            if len(data) > 32 * 1024 * 1024 and b"\n" not in data:
                 raise RuntimeError("REA MCP output line exceeded the 32 MiB safety limit.")
         raise TimeoutError("Timed out reading REA MCP response.")
 
