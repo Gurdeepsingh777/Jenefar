@@ -103,7 +103,7 @@ def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
     assert pending == []
     assert broker.invocations == [("memory_recall", {"query": "voice setup"})]
     assert requests[0][0] == "http://127.0.0.1:11434/api/chat"
-    assert requests[0][2] == 600
+    assert requests[0][2] == 120
     assert requests[0][1]["think"] is False
     assert requests[0][1]["keep_alive"] == "10m"
     assert requests[0][1]["options"]["num_ctx"] == 4096
@@ -199,3 +199,82 @@ def test_offline_fallback_is_used_after_all_online_providers_fail(monkeypatch):
     assert result.provider == "local"
     assert result.text == "Offline local answer."
     assert len(local_calls) == 1
+
+
+def test_model_parameter_size_parser_understands_model_tags_and_ollama_details():
+    assert LocalLLMClient._model_parameter_billions("qwen3.8:27b") == 27.0
+    assert LocalLLMClient._model_parameter_billions(
+        "custom-model", {"parameter_size": "8.0B"}
+    ) == 8.0
+
+
+def test_local_timeout_retries_compact_then_uses_smaller_installed_model(monkeypatch):
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "180")
+    client = LocalLLMClient()
+    large = LocalModelInfo("http://127.0.0.1:11434", "qwen3.8:27b", "ollama")
+    smaller = LocalModelInfo("http://127.0.0.1:11434", "qwen3:8b", "ollama")
+    monkeypatch.setattr(client, "detect", lambda model_role=None: large)
+    monkeypatch.setattr(client, "_find_smaller_ollama_model", lambda _info: smaller)
+
+    attempts = []
+
+    def fake_request(info, payload, *, timeout):
+        attempts.append((info.model, dict(payload), timeout))
+        if len(attempts) < 3:
+            raise RuntimeError("Could not reach local LLM endpoint: timed out")
+        return {"message": {"role": "assistant", "content": "Recovered with Qwen 8B"}}, info
+
+    monkeypatch.setattr(client, "_request_chat_with_fallback", fake_request)
+    answer, pending = client.complete(
+        prompt="Reply exactly with a short confirmation.",
+        instructions="You are Jenefar. Be concise.",
+    )
+
+    assert answer == "Recovered with Qwen 8B"
+    assert pending == []
+    assert [item[0] for item in attempts] == [
+        "qwen3.8:27b",
+        "qwen3.8:27b",
+        "qwen3:8b",
+    ]
+    assert attempts[0][2] == 120
+    assert attempts[1][2] == 180
+    assert attempts[1][1]["options"]["num_ctx"] == 2048
+    assert attempts[1][1]["options"]["num_predict"] == 192
+    assert attempts[1][1]["think"] is False
+    assert attempts[2][1]["model"] == "qwen3:8b"
+    assert client.model == "qwen3:8b"
+
+
+def test_compact_retry_preserves_tools_for_action_requests():
+    client = LocalLLMClient()
+    info = LocalModelInfo("http://127.0.0.1:11434", "qwen3.8:27b", "ollama")
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "scope_check",
+            "description": "Check the configured authorized scope.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+    payload = {
+        "model": info.model,
+        "messages": [
+            {"role": "system", "content": "Follow authorization policy."},
+            {"role": "user", "content": "Check my authorized scope."},
+        ],
+        "tools": tools,
+        "think": True,
+        "options": {"num_ctx": 4096, "num_predict": 384},
+    }
+
+    compact = client._compact_retry_payload(payload, info)
+
+    assert compact["tools"] == tools
+    assert compact["options"]["num_ctx"] == 2048
+    assert compact["options"]["num_predict"] == 192
+    assert compact["think"] is False
+    assert payload["options"]["num_ctx"] == 4096
+    assert payload["think"] is True
