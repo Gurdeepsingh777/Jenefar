@@ -488,32 +488,36 @@ blank chhoda ja sakta hai; tab normal online model/local model fallback use hoga
 
 ## Online-first, offline fallback
 
-Jenefar runtime connectivity detect karta hai.
+Jenefar har request par online providers ko configured order me try karta hai. Agar saare providers quota, billing, authentication, rate-limit ya connection error dein, to `JENEFAR_DISABLE_LOCAL_FALLBACK=1` / `--online-only` explicitly set na hone par **local downloaded model automatic fallback** hai. Internet connected hone ke bawajood API credits khatam ho jaane par bhi local fallback run hona chahiye.
 
 Flow:
 
 ```text
-Internet available
+Online providers try karo
     ↓
-Online model + online tools
+Sab unavailable / credits exhausted
     ↓
-Internet unavailable
+Detected local model par switch
     ↓
-Local OpenAI-compatible model
+Wahi Jenefar prompt + enabled skills + session memory + local tool broker
     ↓
-Local tools continue
+Approval/scope checks ke through local actions continue
 ```
 
-Local fallback ke liye Ollama ya llama.cpp jaise OpenAI-compatible local servers use kiye ja sakte hain. Ollama local `/v1/chat/completions` compatibility provide karta hai, aur llama.cpp OpenAI-compatible server ke saath tool calling support karta hai. citeturn881519search7turn881519search0turn881519search1
+Local LLM API do modes support karti hai:
+- `auto` (default): local Ollama ko `/api/tags` aur `/api/chat` se detect karta hai; doosre compatible servers ke liye `/v1/models` aur `/v1/chat/completions` use karta hai.
+- `openai` ya `ollama`: agar auto-detection tumhare local server se match na kare to explicit mode select karo.
 
 Environment:
 
 ```env
+JENEFAR_LOCAL_LLM_API=auto
 JENEFAR_LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
 JENEFAR_LOCAL_LLM_MODEL=
+JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=240
 ```
 
-Model name blank hone par Jenefar local server se available model discover karta hai.
+Model name blank hone par Jenefar installed local model ko discover karta hai. Agar configured model tag server par installed nahi milta, to installed list se available model choose karke terminal me warning deta hai. Local server aur downloaded model running/available hona zaroori hai; online-only kaam jaise live web search, remote downloads aur live GitHub retrieval internet ke bina unavailable hi rahenge. Local tools bhi existing confirmation aur security-scope policy ko follow karte hain.
 
 Offline condition me online-only capabilities ki list explicitly show ki ja sakti hai, jaise:
 
@@ -947,3 +951,72 @@ Explicit commands such as "Firefox ko blue screen par shift karo", "terminal ko 
 
 On native Wayland, application-window capture is available through the XDG ScreenCast portal and PipeWire, but generic cross-application window movement/minimization is compositor-managed rather than a single universal client API. The portal explicitly supports application-window sources, while the Wayland xdg-shell protocol exposes move/resize operations as user-driven surface operations. citeturn144502search0turn144502search6 Jenefar therefore reports the actual backend capability instead of pretending a native transfer succeeded when it did not.
 
+
+
+## Telegram-only autonomous agent
+
+This is an additional, independent runtime for the Telegram-first agent described below. It does **not** replace the existing Jenefar desktop/avatar runtime (`run.py`). The Telegram bot's only user interface is Telegram: there is no web chat, Discord bot, or typed chat CLI in this runtime.
+
+### Features
+
+- Async Telegram handlers with an allowlist enforced before every command or message.
+- `/start`, `/status`, and `/clear` commands.
+- OpenAI-compatible REST LLM with environment-based `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_NAME`; aliases `API_KEY`, `BASE_URL`, and `MODEL_NAME` are also supported.
+- Bounded ReAct/function-calling loop: invoke registered tools, inspect observations, and continue until the task is complete or the configured tool-round limit is reached.
+- GitHub tools: list repositories, read files, create/update and commit files, create repositories, and list/create issues or pull requests.
+- Utility tools: public HTTP page text fetching plus read/write persistent scratchpad notes.
+- Persistent prompt-only `SKILL.md` storage: explicitly learn a reusable workflow with `skill_learn`, list saved skills with `skill_list`, and reuse matching guidance on future tasks.
+- After a successful multi-tool task using safe read-oriented tools, automatically save a redacted reusable playbook. Credentials, raw targets, GitHub writes, security actions and robotics workflows are excluded from automatic learning.
+- Async API calls, request timeouts, readable rate-limit errors, bounded tool output, per-user short-term memory, and persistent local skills.
+- Docker Compose deployment with a non-root container, read-only application filesystem, dropped Linux capabilities, and persistent scratchpad and skill volumes.
+
+### Local setup (Linux/Kali)
+
+1. Create a Telegram bot with [BotFather](https://t.me/BotFather) and copy the bot token. Do not publish the token.
+2. Get your numeric Telegram user ID from a trusted Telegram ID helper and put it in `ALLOWED_TELEGRAM_USER_IDS`. Use comma-separated numeric IDs only; anyone not listed is blocked before command/tool handlers run.
+3. Create a fine-grained GitHub PAT for the repositories you need. Grant only the permissions required for your work (Metadata read; Contents read/write for file edits; Issues read/write for issues; Pull requests read/write for PRs). Add it to `GITHUB_PAT`. GitHub tools remain disabled until a PAT is configured.
+4. Choose an OpenAI-compatible provider. The example defaults to Google's Gemini OpenAI-compatible API, with a free tier subject to current account eligibility and rate limits ([Google API compatibility](https://ai.google.dev/gemini-api/docs/openai), [current pricing](https://ai.google.dev/gemini-api/docs/pricing)). Get a key from [Google AI Studio](https://aistudio.google.com/apikey). Put it in `LLM_API_KEY`; for Groq or OpenRouter, set `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_NAME` to match that provider.
+5. Configure and run:
+
+```bash
+cp .env.example .env
+nano .env
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-telegram.txt
+python main.py
+```
+
+Send the bot `/start`, then `/status`. Send ordinary text messages to request tasks. `/clear` erases this Telegram user's in-memory conversation history; it does not delete scratchpad files or GitHub content.
+
+### Docker deployment
+
+```bash
+cp .env.example .env
+nano .env
+docker compose up -d --build
+docker compose logs -f jenefar-telegram
+```
+
+To stop the bot:
+
+```bash
+docker compose down
+```
+
+The scratchpad stays in the `jenefar_scratchpad` Docker volume. The container runs as a non-root user with a read-only root filesystem and no extra Linux capabilities.
+
+### Add a new tool
+
+Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asynchronous function, and register its JSON schema using `@registry.tool(name=..., description=..., parameters=...)`. New tool modules should expose a `register_*_tools(registry, settings)` function and be added to `AgentCore.__init__`. Tool parameters must be JSON Schema objects with `additionalProperties: false`.
+
+### Security and operational notes
+
+- Keep `.env`, Telegram tokens, LLM keys and `GITHUB_PAT` out of Git. Rotate a key immediately if it is accidentally disclosed.
+- Use a GitHub PAT with the smallest practical repository access. File edits create commits; repository/issue/PR creation has real effects. The agent prompt requires the current task to authorize writes, but token permissions remain the ultimate boundary.
+- `fetch_url` allows public HTTP(S) pages only, blocks private/loopback/reserved IP targets and does not follow redirects. Fetched web pages and repository text are untrusted reference data, not agent instructions.
+- The short-term chat memory lives in process memory and resets when the bot restarts. `/clear` resets only the requesting authorized user's short-term history.
+- Free API provider limits can change; rate-limit and quota errors are surfaced without terminating polling. The bot does not bypass provider authentication or quota requirements.
+- Privacy note: the example uses Gemini's free tier, which Google's pricing page says may use submitted content to improve its products. Avoid sending passwords, API keys, private personal data, or sensitive private-repository code to a free-tier endpoint; choose a provider/plan with suitable data terms for sensitive work. See [Gemini API pricing and data-use terms](https://ai.google.dev/gemini-api/docs/pricing).
+- Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.

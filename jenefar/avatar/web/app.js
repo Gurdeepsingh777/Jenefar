@@ -44,15 +44,15 @@ refreshDesktopMirror();
 
 const stage=document.getElementById("stage");
 const canvas=document.getElementById("particles");
-const ctx=canvas.getContext("2d");
+const ctx=canvas?.getContext("2d")||null;
 const stateEl=document.getElementById("state");
 const captionEl=document.getElementById("caption");
 const dot=document.querySelector(".pulse-dot");
-const activityList=document.getElementById("activity-list");
-const runningCount=document.getElementById("activity-running");
-const queuedCount=document.getElementById("activity-queued");
-const doneCount=document.getElementById("activity-done");
-const errorCount=document.getElementById("activity-errors");
+const activityList=document.getElementById("activity-list") || document.getElementById("workspace-log");
+const runningCount=document.getElementById("activity-running") || document.getElementById("stat-running");
+const queuedCount=document.getElementById("activity-queued") || document.getElementById("stat-queue");
+const doneCount=document.getElementById("activity-done") || document.getElementById("stat-done");
+const errorCount=document.getElementById("activity-errors") || document.getElementById("stat-error");
 
 const labels={
   idle:["READY","Ready"],
@@ -78,6 +78,7 @@ let activityFilter="all";
 const taskState=new Map();
 
 function resize(){
+  if(!canvas||!ctx) return;
   dpr=Math.min(window.devicePixelRatio||1,2);
   width=window.innerWidth;height=window.innerHeight;
   canvas.width=width*dpr;canvas.height=height*dpr;
@@ -103,6 +104,7 @@ function palette(state){
 }
 
 function draw(t){
+  if(!ctx){requestAnimationFrame(draw);return;}
   ctx.clearRect(0,0,width,height);
   const workWidth=width*.66;
   const centerX=workWidth/2,centerY=height*.46;
@@ -256,6 +258,7 @@ function addActivity(event){
   lastActivityKey=key;
 
   const bucket=activityBucket(state);
+  activityList.querySelector(".workspace-idle")?.remove();
   const row=document.createElement("article");
   row.className="activity-item activity-"+state;
   row.dataset.bucket=bucket;
@@ -307,20 +310,22 @@ function applyActivityFilter(){
 const clearActivityButton=document.getElementById("clear-activity");
 const clearWorkspaceButton=document.getElementById("clear-workspace");
 function clearActivity(){
-  if(activityList) activityList.innerHTML="";
+  if(activityList) activityList.replaceChildren();
   taskState.clear();
   updateTaskCounts();
   lastActivityKey="";
 }
-if(clearActivityButton) clearActivityButton.onclick=clearActivity;
+if(clearActivityButton) clearActivityButton.onclick=()=>document.getElementById("chat-log")?.replaceChildren();
 if(clearWorkspaceButton) clearWorkspaceButton.onclick=clearActivity;
 
 function setupActivityFilters(){
-  document.querySelectorAll("[data-activity-filter]").forEach(button=>{
+  const filters=document.querySelectorAll("[data-activity-filter], [data-tab]");
+  filters.forEach(button=>{
     button.addEventListener("click",()=>{
-      activityFilter=button.dataset.activityFilter||"all";
-      document.querySelectorAll("[data-activity-filter]").forEach(item=>{
+      activityFilter=button.dataset.activityFilter||button.dataset.tab||"all";
+      filters.forEach(item=>{
         item.dataset.active=String(item===button);
+        item.classList.toggle("active",item===button);
       });
       applyActivityFilter();
     });
@@ -378,17 +383,31 @@ function pauseBrowserVoice(){
   voiceLocked=true;
   if(restartTimer) clearTimeout(restartTimer);
   try{recognition?.stop();}catch(_){}
-  setVoiceInputStatus("BROWSER MIC: PAUSED WHILE JENEFAR SPEAKS",false);
+  if(fallbackMode) stopFallbackMonitor(false);
+  setVoiceInputStatus("MIC PAUSED WHILE JENEFAR SPEAKS",false);
 }
 
 function resumeBrowserVoice(){
   if(!micEnabled||voiceLocked) return;
-  if("speechSynthesis" in window && window.speechSynthesis.speaking) return;
+  if(browserSpeechActive||("speechSynthesis" in window && window.speechSynthesis.speaking)) return;
+  if(fallbackMode){
+    startFallbackMonitor();
+    return;
+  }
+  if(!voiceSupported||!recognition) return;
   if(restartTimer) clearTimeout(restartTimer);
   restartTimer=setTimeout(()=>{
-    if(!micEnabled||voiceLocked) return;
-    try{recognition?.start();}catch(_){}
-  },450);
+    if(!micEnabled||voiceLocked||!recognition) return;
+    try{recognition.start();}
+    catch(error){
+      if(error?.name==="InvalidStateError") return;
+      addActivity({state:"error",text:"Mic could not start: "+(error?.name||error?.message||"unknown error")});
+      setVoiceInputStatus("MIC START ERROR — turn mic OFF then ON",false);
+      setMicButton(false,false);
+      micEnabled=false;
+      voiceLocked=true;
+    }
+  },restartDelay);
 }
 
 function selectPremiumVoice(){
@@ -496,8 +515,8 @@ function apply(event){
   }
 
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
-  stateEl.textContent=stateText;
-  captionEl.textContent=event.text||caption;
+  if(stateEl) stateEl.textContent=stateText;
+  if(captionEl) captionEl.textContent=event.text||caption;
 
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     document.body.dataset.voiceActive="true";
@@ -506,14 +525,22 @@ function apply(event){
   }
 
   const [r,g,b]=palette(currentState);
-  dot.style.background=`rgb(${r},${g},${b})`;
-  dot.style.boxShadow=`0 0 18px rgb(${r},${g},${b})`;
+  if(dot){
+    dot.style.background=`rgb(${r},${g},${b})`;
+    dot.style.boxShadow=`0 0 18px rgb(${r},${g},${b})`;
+  }
+  const voiceService=document.getElementById("service-voice");
+  if(voiceService) voiceService.textContent=(currentState==="speaking"||currentState==="speaking_fallback"||currentState==="listening")?"●":"○";
 }
 
 function connect(){
   const source=new EventSource("/events");
   source.onmessage=(message)=>{
-    try{apply(JSON.parse(message.data));}catch(_){}
+    try{apply(JSON.parse(message.data));}
+    catch(error){
+      console.error("[JENEFAR] Dashboard event handler failed:",error);
+      setVoiceInputStatus("DASHBOARD UPDATE ERROR — check browser console",false);
+    }
   };
   source.onerror=()=>{
     source.close();
@@ -549,14 +576,28 @@ if(browserSpeechReady){
   primeVoices();
   window.speechSynthesis.onvoiceschanged=primeVoices;
 }
-const voiceInputStatus=document.getElementById("voice-input-status");
+const voiceInputStatus=document.getElementById("voice-input-status") || document.getElementById("mic-status");
 let recognition=null;
 let micEnabled=true;
 let voiceLocked=false;
 let voiceSupported=false;
 let restartTimer=null;
+let restartDelay=450;
 let browserSpeechActive=false;
 let browserAudio=null;
+let fallbackMode=false;
+let fallbackStream=null;
+let fallbackContext=null;
+let fallbackAnalyser=null;
+let fallbackSource=null;
+let fallbackData=null;
+let fallbackAnimationFrame=0;
+let fallbackRecorder=null;
+let fallbackChunks=[];
+let fallbackRecordStartedAt=0;
+let fallbackLastSpeechAt=0;
+let fallbackStopping=false;
+let fallbackSubmitting=false;
 
 function setVoiceInputStatus(text,active=false){
   if(voiceInputStatus){
@@ -570,8 +611,191 @@ function setMicButton(active, busy=false){
   micButton.classList.toggle("is-active", active);
   micButton.classList.toggle("is-busy", busy);
   micButton.setAttribute("aria-pressed", String(active));
-  micButton.textContent = busy ? "◌ PROCESSING" : active ? "● MIC ON" : "● MIC OFF";
+  micButton.setAttribute("aria-label",busy ? "Microphone processing" : active ? "Turn microphone off" : "Turn microphone on");
+  const label=micButton.querySelector(".mic-label");
+  if(label) label.textContent=busy ? "PROCESSING" : active ? "MIC ON" : "MIC OFF";
 }
+
+
+function stopFallbackMonitor(releaseStream=false){
+  if(fallbackAnimationFrame){
+    cancelAnimationFrame(fallbackAnimationFrame);
+    fallbackAnimationFrame=0;
+  }
+  if(fallbackRecorder&&fallbackRecorder.state==="recording"){
+    fallbackRecorder.onstop=null;
+    try{fallbackRecorder.stop();}catch(_){}
+  }
+  fallbackRecorder=null;
+  fallbackChunks=[];
+  fallbackStopping=false;
+  if(fallbackSource){try{fallbackSource.disconnect();}catch(_){}}
+  fallbackSource=null;
+  fallbackAnalyser=null;
+  fallbackData=null;
+  if(fallbackContext){try{fallbackContext.close();}catch(_){};fallbackContext=null;}
+  if(releaseStream){
+    fallbackStream?.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
+    fallbackStream=null;
+    fallbackMode=false;
+  }
+}
+
+async function transcribeCapturedAudio(blob,durationMs){
+  if(!micEnabled||voiceLocked||!blob||blob.size<1200||durationMs<550) return;
+  fallbackSubmitting=true;
+  voiceLocked=true;
+  stopFallbackMonitor(false);
+  setVoiceInputStatus("TRANSCRIBING VOICE…",true);
+  setMicButton(true,true);
+  try{
+    const response=await fetch("/voice/audio",{
+      method:"POST",
+      headers:{"Content-Type":blob.type||"audio/webm"},
+      body:blob
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error) throw new Error(result?.error||("HTTP "+response.status));
+    if(result?.ignored){
+      fallbackSubmitting=false;
+      voiceLocked=false;
+      if(result?.reason==="empty_transcript"){
+        setVoiceInputStatus("NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL",false);
+        addActivity({state:"error",text:"Audio was captured but speech-to-text returned an empty transcript."});
+      }else{
+        setVoiceInputStatus("MIC ON — LISTENING FOR SPEECH",true);
+      }
+      setMicButton(true,false);
+      resumeBrowserVoice();
+      return;
+    }
+    if(result?.busy){
+      fallbackSubmitting=false;
+      voiceLocked=false;
+      setVoiceInputStatus("Jenefar is busy — mic will resume after reply",true);
+      setMicButton(true,true);
+      resumeBrowserVoice();
+      return;
+    }
+    if(result?.accepted){
+      const heard=String(result.transcript||result.text||"").trim();
+      if(heard) addActivity({state:"listening",text:"You: "+heard});
+      setVoiceInputStatus(heard ? "HEARD: "+heard.slice(0,90) : "COMMAND RECEIVED — WORKING",true);
+      setMicButton(true,true);
+      // Stay muted until the assistant finishes speaking to avoid feedback.
+      fallbackSubmitting=false;
+      return;
+    }
+    fallbackSubmitting=false;
+    voiceLocked=false;
+    setVoiceInputStatus("VOICE WAS NOT TRANSCRIBED — TRY AGAIN",false);
+    setMicButton(true,false);
+    resumeBrowserVoice();
+  }catch(error){
+    fallbackSubmitting=false;
+    const errorText=String(error?.message||error);
+    const providerUnavailable=/Speech-to-text unavailable|No speech-to-text provider is configured|No currently available STT provider|All configured STT providers failed|Browser microphone audio transcription is unavailable|HTTP 503/i.test(errorText);
+    if(providerUnavailable&&fallbackMode&&voiceSupported&&recognition){
+      stopFallbackMonitor(true);
+      fallbackMode=false;
+      voiceLocked=false;
+      addActivity({state:"error",text:"Server STT is unavailable; switching to browser speech recognition: "+errorText});
+      setVoiceInputStatus("SERVER STT UNAVAILABLE — TRYING BROWSER SPEECH",true);
+      setMicButton(true,true);
+      resumeBrowserVoice();
+      return;
+    }
+    voiceLocked=false;
+    addActivity({state:"error",text:"Audio STT failed: "+errorText});
+    setVoiceInputStatus("VOICE STT ERROR — "+errorText.slice(0,90),false);
+    setMicButton(true,false);
+    resumeBrowserVoice();
+  }
+}
+
+function startFallbackMonitor(){
+  if(!micEnabled||voiceLocked||!fallbackMode||!fallbackStream||fallbackAnimationFrame||fallbackSubmitting) return;
+  try{
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextClass||!window.MediaRecorder) throw new Error("MediaRecorder/Web Audio unavailable");
+    fallbackContext=new AudioContextClass();
+    fallbackAnalyser=fallbackContext.createAnalyser();
+    fallbackAnalyser.fftSize=1024;
+    fallbackData=new Uint8Array(fallbackAnalyser.fftSize);
+    fallbackSource=fallbackContext.createMediaStreamSource(fallbackStream);
+    fallbackSource.connect(fallbackAnalyser);
+    fallbackContext.resume().catch(()=>{});
+  }catch(error){
+    setVoiceInputStatus("AUDIO CAPTURE ERROR — "+String(error?.message||error).slice(0,80),false);
+    addActivity({state:"error",text:"Audio capture setup failed: "+(error?.message||error)});
+    return;
+  }
+
+  const beginSegment=(now)=>{
+    try{
+      const candidates=["audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/webm","audio/ogg"];
+      const mimeType=candidates.find(type=>MediaRecorder.isTypeSupported?.(type));
+      const recorder=new MediaRecorder(fallbackStream,mimeType?{mimeType}:{});
+      const chunks=[];
+      fallbackRecorder=recorder;
+      fallbackChunks=chunks;
+      fallbackRecordStartedAt=now;
+      fallbackLastSpeechAt=now;
+      fallbackStopping=false;
+      setVoiceInputStatus("SPEECH DETECTED — RECORDING UTTERANCE",true);
+      recorder.ondataavailable=(event)=>{if(event.data&&event.data.size) chunks.push(event.data);};
+      recorder.onerror=(event)=>{
+        addActivity({state:"error",text:"Audio recorder: "+(event.error?.name||"recording error")});
+      };
+      recorder.onstop=()=>{
+        if(fallbackRecorder===recorder) fallbackRecorder=null;
+        fallbackStopping=false;
+        fallbackChunks=[];
+        if(!micEnabled||voiceLocked) return;
+        const duration=Math.max(0,performance.now()-fallbackRecordStartedAt);
+        const blob=new Blob(chunks,{type:recorder.mimeType||"audio/webm"});
+        if(duration<550||blob.size<1200) return;
+        transcribeCapturedAudio(blob,duration);
+      };
+      recorder.start();
+    }catch(error){
+      fallbackRecorder=null;
+      setVoiceInputStatus("AUDIO RECORDER ERROR — "+String(error?.message||error).slice(0,80),false);
+      addActivity({state:"error",text:"Could not start MediaRecorder: "+(error?.message||error)});
+    }
+  };
+
+  const monitor=()=>{
+    fallbackAnimationFrame=0;
+    if(!micEnabled||voiceLocked||!fallbackMode||!fallbackStream||fallbackSubmitting) return;
+    if(!fallbackAnalyser||!fallbackData) return;
+    fallbackAnalyser.getByteTimeDomainData(fallbackData);
+    let energy=0;
+    for(let i=0;i<fallbackData.length;i++){
+      const centered=fallbackData[i]-128;
+      energy+=centered*centered;
+    }
+    const rms=Math.sqrt(energy/fallbackData.length)/128;
+    const now=performance.now();
+    // 0.020 misses quiet speech on some Linux microphone/USB levels.
+    const speechThreshold=0.010;
+    if(rms>speechThreshold){
+      fallbackLastSpeechAt=now;
+      if(!fallbackRecorder&&!fallbackStopping) beginSegment(now);
+    }
+    if(fallbackRecorder&&fallbackRecorder.state==="recording"){
+      const elapsed=now-fallbackRecordStartedAt;
+      const quietFor=now-fallbackLastSpeechAt;
+      if((elapsed>=700&&quietFor>=850)||elapsed>=12000){
+        fallbackStopping=true;
+        try{fallbackRecorder.stop();}catch(_){fallbackStopping=false;}
+      }
+    }
+    fallbackAnimationFrame=requestAnimationFrame(monitor);
+  };
+  fallbackAnimationFrame=requestAnimationFrame(monitor);
+}
+
 
 async function sendBrowserTranscript(text){
   const clean=String(text||"").trim();
@@ -632,6 +856,8 @@ async function sendBrowserTranscript(text){
 
 function setupBrowserVoice(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const canRecord=Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder&&(window.AudioContext||window.webkitAudioContext));
+  voiceSupported=Boolean(Recognition);
 
   if(micButton){
     micButton.addEventListener("pointerdown",()=>micButton.classList.add("pressed"),{passive:true});
@@ -642,14 +868,14 @@ function setupBrowserVoice(){
   async function requestMicrophonePermission(){
     if(!navigator.mediaDevices?.getUserMedia){
       setVoiceInputStatus("MIC API UNSUPPORTED",false);
-      return false;
+      return null;
     }
     try{
       setVoiceInputStatus("MIC PERMISSION: CLICK ALLOW",true);
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-      stream.getTracks().forEach(track=>track.stop());
-      setVoiceInputStatus("MIC PERMISSION GRANTED",true);
-      return true;
+      return await navigator.mediaDevices.getUserMedia({
+        audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+        video:false
+      });
     }catch(error){
       const code=error?.name||"unknown";
       addActivity({state:"error",text:"Microphone permission: "+code});
@@ -657,99 +883,130 @@ function setupBrowserVoice(){
         micEnabled=false;
         voiceLocked=true;
         setVoiceInputStatus("MIC BLOCKED — USE SITE SETTINGS TO ALLOW",false);
-        setMicButton(false, false);
       }else if(code==="NotFoundError"||code==="DevicesNotFoundError"){
         micEnabled=false;
         voiceLocked=true;
         setVoiceInputStatus("NO MICROPHONE DEVICE FOUND",false);
-        setMicButton(false, false);
       }else{
         setVoiceInputStatus("MIC ERROR: "+code,false);
-        setMicButton(false, false);
       }
-      return false;
+      setMicButton(false,false);
+      return null;
     }
   }
 
   if(micButton){
     micButton.onclick=async()=>{
-      if(!voiceSupported) return;
       if(micEnabled){
         micEnabled=false;
         voiceLocked=true;
         try{recognition?.stop();}catch(_){}
-        setVoiceInputStatus("BROWSER MIC: OFF",false);
-        setMicButton(false, false);
-      }else{
-        micEnabled=true;
-        voiceLocked=false;
-        const granted=await requestMicrophonePermission();
-        if(!granted) return;
+        stopFallbackMonitor(true);
+        setVoiceInputStatus("MIC OFF",false);
+        setMicButton(false,false);
+        return;
+      }
+      if(!voiceSupported&&!canRecord){
+        setVoiceInputStatus("MIC UNSUPPORTED — USE CHAT OR A SUPPORTED BROWSER",false);
+        setMicButton(false,false);
+        return;
+      }
+
+      const stream=await requestMicrophonePermission();
+      if(!stream) return;
+      micEnabled=true;
+      voiceLocked=false;
+      if(canRecord){
+        // Prefer server-side STT to Chromium's built-in recognizer for Hinglish.
+        fallbackMode=true;
+        fallbackStream=stream;
+        setVoiceInputStatus("MIC ON — SERVER STT READY; SPEAK NATURALLY",true);
+        setMicButton(true,false);
+        startFallbackMonitor();
+      }else if(voiceSupported&&recognition){
+        stream.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
+        fallbackMode=false;
         setVoiceInputStatus("BROWSER MIC: STARTING",true);
-        setMicButton(true, false);
+        setMicButton(true,false);
         resumeBrowserVoice();
+      }else{
+        stream.getTracks().forEach(track=>{try{track.stop();}catch(_){}});
+        micEnabled=false;
+        voiceLocked=true;
+        setVoiceInputStatus("MIC CAPTURE UNSUPPORTED — USE CHAT",false);
+        setMicButton(false,false);
       }
     };
   }
 
-  if(!Recognition){
-    voiceSupported=false;
-    micEnabled=false;
-    setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED",false);
-    setMicButton(false, false);
-    if(micButton) micButton.textContent="MIC UNSUPPORTED";
-    return;
+  if(Recognition){
+    recognition=new Recognition();
+    recognition.lang="hi-IN";
+    recognition.continuous=true;
+    recognition.interimResults=false;
+    recognition.maxAlternatives=1;
+
+    recognition.onstart=()=>{
+      if(voiceLocked||!micEnabled){try{recognition.stop();}catch(_){};return;}
+      restartDelay=450;
+      setVoiceInputStatus("BROWSER MIC: LISTENING",true);
+      setMicButton(true,false);
+    };
+
+    recognition.onresult=(event)=>{
+      for(let i=event.resultIndex;i<event.results.length;i++){
+        const result=event.results[i];
+        if(result.isFinal&&!voiceLocked&&micEnabled){
+          const text=(result[0]?.transcript||"").trim();
+          if(text) sendBrowserTranscript(text);
+        }
+      }
+    };
+
+    recognition.onerror=(event)=>{
+      const code=event.error||"unknown";
+      if(code==="aborted") return;
+      addActivity({state:"error",text:"Browser mic: "+code});
+      if(code==="not-allowed"||code==="service-not-allowed"){
+        micEnabled=false;
+        voiceLocked=true;
+        setVoiceInputStatus("MIC PERMISSION DENIED",false);
+        setMicButton(false,false);
+      }else{
+        restartDelay=Math.min(5000,Math.max(900,restartDelay*1.8));
+        setVoiceInputStatus("MIC RETRYING IN "+(restartDelay/1000).toFixed(1)+"s — "+code,false);
+        setMicButton(true,true);
+      }
+    };
+
+    recognition.onend=()=>{
+      if(!micEnabled||voiceLocked||browserSpeechActive) return;
+      resumeBrowserVoice();
+    };
   }
 
-  voiceSupported=true;
-  recognition=new Recognition();
-  recognition.lang="hi-IN";
-  recognition.continuous=true;
-  recognition.interimResults=false;
-  recognition.maxAlternatives=1;
-
-  recognition.onstart=()=>{
-    if(voiceLocked||!micEnabled){try{recognition.stop();}catch(_){};return;}
-    setVoiceInputStatus("BROWSER MIC: LISTENING",true);
-    setMicButton(true, false);
-  };
-
-  recognition.onresult=(event)=>{
-    for(let i=event.resultIndex;i<event.results.length;i++){
-      const result=event.results[i];
-      if(result.isFinal&&!voiceLocked&&micEnabled){
-        const text=(result[0]?.transcript||"").trim();
-        if(text) sendBrowserTranscript(text);
-      }
-    }
-  };
-
-  recognition.onerror=(event)=>{
-    const code=event.error||"unknown";
-    if(code==="aborted") return;
-    addActivity({state:"error",text:"Browser mic: "+code});
-    if(code==="not-allowed"||code==="service-not-allowed"){
-      micEnabled=false;
-      voiceLocked=true;
-      setVoiceInputStatus("MIC PERMISSION DENIED",false);
-      setMicButton(false, false);
-    }else{
-      setVoiceInputStatus("MIC RETRYING…",false);
-      setMicButton(true, true);
-    }
-  };
-
-  recognition.onend=()=>{
-    if(!micEnabled||voiceLocked||browserSpeechActive) return;
-    resumeBrowserVoice();
-  };
-
-  // Do not auto-start SpeechRecognition on page load. Browser permission prompts
-  // are more reliable when microphone access follows a user gesture.
+  // Request the microphone only after a direct user click. Browsers without
+  // SpeechRecognition use MediaRecorder + server-side OpenAI/Groq STT.
   micEnabled=false;
   voiceLocked=true;
-  setVoiceInputStatus("CLICK MIC ON TO START",false);
-  setMicButton(false, false);
+  if(canRecord){
+    setVoiceInputStatus("CLICK MIC ON — SERVER STT READY",false);
+    if(micButton){
+      const label=micButton.querySelector(".mic-label");
+      if(label) label.textContent="MIC OFF";
+      micButton.title="Click to enable microphone recording and server-side OpenAI/Groq/Gemini transcription.";
+    }
+  }else if(voiceSupported){
+    setVoiceInputStatus("CLICK MIC ON TO START",false);
+    if(micButton) micButton.title="Click to enable browser speech recognition.";
+  }else{
+    setVoiceInputStatus("MIC UNSUPPORTED — TYPE IN CHAT",false);
+    if(micButton){
+      const label=micButton.querySelector(".mic-label");
+      if(label) label.textContent="MIC UNSUPPORTED";
+      micButton.title="This browser does not expose microphone recording. Chat input remains available.";
+    }
+  }
 }
 
 
@@ -774,7 +1031,7 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
       web:()=>dispatchDashboardCommand("web search karo"),
       notes:()=>document.getElementById("chat-input")?.focus(),
       automation:()=>dispatchDashboardCommand("automation dikhao"),
-      settings:()=>setVoiceInputStatus("Settings panel ready",true)
+      settings:()=>{toggleModelPanel(true);setVoiceInputStatus("Model settings open",true)}
     };
     targets[target]?.();
   });
@@ -840,6 +1097,11 @@ resize();
 connect();
 requestAnimationFrame(draw);
 setupBrowserVoice();
+
+// Live Realtime voice owns the microphone; stop the standard STT listener first.
+window.addEventListener("jenefar-realtime-start",()=>{
+  if(micEnabled&&micButton) micButton.click();
+});
 
 /* Cinematic 3D holographic environment */
 (function setupHolographicEnvironment(){
@@ -954,3 +1216,298 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
     resumeBrowserVoice();
   }
 });
+
+
+/* Actual host telemetry: values are sampled by the local backend, never simulated. */
+function formatMetricBytes(value){
+  const bytes=Number(value);
+  if(!Number.isFinite(bytes)||bytes<0) return "N/A";
+  const units=["B","KB","MB","GB","TB"];
+  let size=bytes, unit=0;
+  while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
+  return size.toFixed(unit===0?0:1)+" "+units[unit];
+}
+function setMetricRing(name,value,detail){
+  const ring=document.getElementById("metric-"+name);
+  const valueEl=document.getElementById("metric-"+name+"-value");
+  const detailEl=document.getElementById("metric-"+name+"-detail");
+  const n=Number(value);
+  const valid=value!==null&&value!==undefined&&value!==""&&Number.isFinite(n)&&n>=0;
+  if(ring){
+    ring.classList.toggle("meter-unavailable",!valid);
+    ring.style.setProperty("--meter-value",valid?String(Math.min(100,n)):"0");
+    ring.title=valid?name.toUpperCase()+" usage: "+n+"%":String(detail||"Sensor unavailable");
+    if(valid){
+      ring.setAttribute("aria-valuenow",String(Math.round(n)));
+      ring.setAttribute("role","progressbar");
+      ring.setAttribute("aria-label",name.toUpperCase()+" usage "+n+" percent");
+    }else{
+      ring.removeAttribute("aria-valuenow");
+      ring.setAttribute("role","img");
+      ring.setAttribute("aria-label",name.toUpperCase()+" telemetry unavailable");
+    }
+  }
+  if(valueEl) valueEl.textContent=valid?Math.round(n)+"%":"N/A";
+  if(detailEl) detailEl.textContent=detail|| (valid?"Live sample":"Sensor unavailable");
+}
+function showMetricsUnavailable(message){
+  setMetricRing("cpu",null,message);
+  setMetricRing("ram",null,message);
+  setMetricRing("gpu",null,message);
+  const updated=document.getElementById("metrics-updated");
+  if(updated) updated.textContent="LIVE TELEMETRY UNAVAILABLE";
+}
+async function refreshSystemMetrics(){
+  try{
+    const response=await fetch("/system/metrics?ts="+Date.now(),{cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok||!data?.available) throw new Error(data?.error||"System metrics endpoint unavailable");
+    const cpu=data.cpu||{};
+    const ram=data.ram||{};
+    const process=data.process||{};
+    const gpu=data.gpu||{};
+    setMetricRing("cpu",cpu.usage_percent,
+      cpu.logical_cores?String(cpu.logical_cores)+" logical cores":"System CPU");
+    setMetricRing("ram",ram.usage_percent,
+      formatMetricBytes(ram.used_bytes)+" / "+formatMetricBytes(ram.total_bytes));
+    if(gpu.available&&Number.isFinite(Number(gpu.usage_percent))){
+      const vram=Number.isFinite(Number(gpu.memory_used_mb))&&Number.isFinite(Number(gpu.memory_total_mb))
+        ?Math.round(Number(gpu.memory_used_mb))+" / "+Math.round(Number(gpu.memory_total_mb))+" MB VRAM"
+        :"GPU detected";
+      setMetricRing("gpu",gpu.usage_percent,vram);
+    }else{
+      setMetricRing("gpu",null,gpu.reason||"No supported GPU telemetry");
+    }
+    const updated=document.getElementById("metrics-updated");
+    if(updated){
+      const stamp=data.sampled_at?new Date(data.sampled_at):new Date();
+      updated.textContent="LIVE · "+stamp.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})
+        +(Number.isFinite(Number(process.memory_percent))?" · JENEFAR RAM "+Number(process.memory_percent).toFixed(1)+"%":"");
+      updated.title="System values sampled by the local backend at "+stamp.toISOString();
+    }
+  }catch(error){
+    showMetricsUnavailable(String(error?.message||error));
+  }
+}
+refreshSystemMetrics();
+setInterval(refreshSystemMetrics,1500);
+
+/* Browser model controls apply to the live runtime for subsequent responses. */
+const modelPanel=document.getElementById("model-panel");
+const modelButton=document.getElementById("model-settings-button");
+const modelChoice=document.getElementById("model-choice");
+const modelIdInput=document.getElementById("model-id-input");
+const modelFeedback=document.getElementById("model-feedback");
+const applyModelButton=document.getElementById("apply-model-button");
+function setModelFeedback(message,state=""){
+  if(!modelFeedback) return;
+  modelFeedback.textContent=message;
+  modelFeedback.dataset.state=state;
+}
+function toggleModelPanel(force){
+  if(!modelPanel) return;
+  const shouldOpen=typeof force==="boolean"?force:modelPanel.hidden;
+  modelPanel.hidden=!shouldOpen;
+  modelButton?.setAttribute("aria-expanded",String(shouldOpen));
+  if(shouldOpen) refreshModelStatus();
+}
+async function refreshModelStatus(){
+  if(!modelChoice||!modelIdInput) return;
+  try{
+    const response=await fetch("/model/status?ts="+Date.now(),{cache:"no-store"});
+    const status=await response.json();
+    if(!response.ok) throw new Error(status?.error||"Model status request failed");
+    const active=status.active||{};
+    const providers=Array.isArray(status.providers)?status.providers:[];
+    modelChoice.replaceChildren();
+    if(!providers.length){
+      const option=document.createElement("option");
+      option.value="";
+      option.textContent="No configured cloud providers";
+      modelChoice.appendChild(option);
+      modelChoice.disabled=true;
+      applyModelButton && (applyModelButton.disabled=true);
+      if(modelIdInput) modelIdInput.value=active.model||"";
+      const label=document.getElementById("active-model-label");
+      if(label) label.textContent=active.model||"NOT CONFIGURED";
+      setModelFeedback("No cloud provider is configured. Add a provider API key in .env, then restart Jenefar.","error");
+      return;
+    }
+    modelChoice.disabled=false;
+    if(applyModelButton) applyModelButton.disabled=false;
+    const currentModel=String(active.model||"").trim();
+    const currentProvider=String(active.provider||"").trim();
+    let activeOptionValue="";
+    for(const provider of providers){
+      const discovered=Array.isArray(provider.models)?provider.models.filter(Boolean):[];
+      const catalogModels=discovered.length?discovered:[provider.model].filter(Boolean);
+      const isCatalogFallback=provider.catalog_source!=="provider-api";
+      for(const modelName of [...new Set(catalogModels)]){
+        const option=document.createElement("option");
+        option.value=provider.id+"::"+modelName;
+        option.dataset.provider=provider.id;
+        option.dataset.model=modelName;
+        option.textContent=(provider.label||provider.id)+" · "+modelName
+          +(provider.available?"":" (cooldown)")
+          +(isCatalogFallback?" · fallback catalog":"");
+        modelChoice.appendChild(option);
+        if(provider.id===currentProvider&&modelName===currentModel) activeOptionValue=option.value;
+      }
+    }
+    // Retain visibility of the current .env/runtime model if the provider's live
+    // catalog does not advertise it, but do not silently treat it as verified.
+    if(currentModel&&currentProvider&&!activeOptionValue){
+      const option=document.createElement("option");
+      option.value=currentProvider+"::"+currentModel;
+      option.dataset.provider=currentProvider;
+      option.dataset.model=currentModel;
+      option.textContent=currentProvider+" · "+currentModel+" (current setting; not verified)";
+      modelChoice.appendChild(option);
+      activeOptionValue=option.value;
+    }
+    if(!modelChoice.options.length){
+      const option=document.createElement("option");
+      option.value="";
+      option.textContent="No models returned by configured providers";
+      modelChoice.appendChild(option);
+    }
+    const chosen=providers.find(item=>item.id===currentProvider)||providers[0];
+    modelChoice.value=activeOptionValue||modelChoice.options[0].value;
+    const selectedOption=modelChoice.selectedOptions?.[0];
+    modelIdInput.value=selectedOption?.dataset?.model||currentModel||chosen.model||"";
+    const label=document.getElementById("active-model-label");
+    if(label) label.textContent=currentModel||chosen.model||"SELECT MODEL";
+    const catalogWarnings=providers.filter(item=>item.catalog_source==="fallback")
+      .map(item=>item.label+" catalog unavailable"+(item.catalog_diagnostic?": "+item.catalog_diagnostic:""));
+    setModelFeedback("Active: "+(active.provider||chosen.id)+" / "+(currentModel||chosen.model||"unknown")
+      +(status.runtime_override?" · browser override active":"")
+      +(catalogWarnings.length?" · "+catalogWarnings.join("; "):""),"success");
+  }catch(error){
+    const message=String(error?.message||error);
+    const label=document.getElementById("active-model-label");
+    if(label) label.textContent="STATUS ERROR";
+    setModelFeedback("Could not load model configuration: "+message,"error");
+  }
+}
+modelChoice?.addEventListener("change",()=>{
+  const option=modelChoice.selectedOptions?.[0];
+  if(option?.dataset?.model&&modelIdInput) modelIdInput.value=option.dataset.model;
+});
+modelButton?.addEventListener("click",()=>toggleModelPanel());
+document.getElementById("model-panel-close")?.addEventListener("click",()=>toggleModelPanel(false));
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&modelPanel&&!modelPanel.hidden) toggleModelPanel(false);
+});
+applyModelButton?.addEventListener("click",async()=>{
+  const selectedOption=modelChoice?.selectedOptions?.[0];
+  const provider=String(selectedOption?.dataset?.provider||"").trim();
+  const model=String(modelIdInput?.value||"").trim();
+  if(!provider||!model){
+    setModelFeedback("Select a configured provider and enter a model ID first.","error");
+    return;
+  }
+  applyModelButton.disabled=true;
+  applyModelButton.textContent="APPLYING…";
+  setModelFeedback("Applying "+provider+" / "+model+" to new requests…");
+  try{
+    const response=await fetch("/model/select",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({provider,model})
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error) throw new Error(result?.error||"Model selection failed");
+    const label=document.getElementById("active-model-label");
+    if(label) label.textContent=result.active?.model||model;
+    let option=modelChoice.selectedOptions?.[0];
+    if(!option||option.dataset.provider!==provider){
+      option=document.createElement("option");
+      option.value=provider+"::"+model;
+      option.dataset.provider=provider;
+      modelChoice.appendChild(option);
+    }
+    option.dataset.model=model;
+    option.value=provider+"::"+model;
+    option.textContent=(provider.charAt(0).toUpperCase()+provider.slice(1))+" · "+model+" (runtime)";
+    modelChoice.value=option.value;
+    setModelFeedback("Applied: "+provider+" / "+model+". New requests will use this selection; an unavailable provider may still fall back.","success");
+  }catch(error){
+    setModelFeedback(String(error?.message||error),"error");
+  }finally{
+    applyModelButton.disabled=false;
+    applyModelButton.textContent="APPLY MODEL";
+  }
+});
+
+
+/* REA bridge status is based on the actual local MCP process, not a decorative badge. */
+const reaDot=document.getElementById("rea-status-dot");
+const reaStatusLabel=document.getElementById("rea-status-label");
+const reaConnectButton=document.getElementById("rea-connect-button");
+function paintReaStatus(status){
+  if(!reaStatusLabel) return;
+  const connected=Boolean(status?.connected);
+  const ready=Boolean(status?.ready);
+  const skill=Boolean(status?.skill_enabled);
+  if(reaDot){
+    reaDot.dataset.state=connected?"connected":ready?"ready":"offline";
+  }
+  if(connected){
+    reaStatusLabel.textContent="REA CONNECTED · "+Number(status.advertised_tools||status.tool_count||0)+" TOOLS";
+    if(reaConnectButton) reaConnectButton.textContent="CONNECTED";
+    if(reaConnectButton) reaConnectButton.title="REA MCP is connected and its advertised tools can be called.";
+  }else if(ready){
+    reaStatusLabel.textContent=skill?"REA READY · SKILL ENABLED":"REA READY · SKILL DISABLED";
+    if(reaConnectButton) reaConnectButton.textContent="CONNECT";
+    if(reaConnectButton) reaConnectButton.title="Start the official REA MCP server and list its live tool catalog.";
+  }else{
+    reaStatusLabel.textContent="REA SETUP REQUIRED";
+    if(reaConnectButton) reaConnectButton.textContent="RETRY";
+    if(reaConnectButton) reaConnectButton.title=String(status?.last_error||"Check Node.js/npx and REA configuration.");
+  }
+  if(reaConnectButton) reaConnectButton.disabled=connected;
+}
+async function refreshReaStatus(){
+  try{
+    const response=await fetch("/rea/status?ts="+Date.now(),{cache:"no-store"});
+    const status=await response.json();
+    if(!response.ok) throw new Error(status?.last_error||status?.error||"REA status unavailable");
+    paintReaStatus(status);
+  }catch(error){
+    paintReaStatus({ready:false,connected:false,last_error:String(error?.message||error)});
+    if(reaStatusLabel) reaStatusLabel.title=String(error?.message||error);
+  }
+}
+reaConnectButton?.addEventListener("click",async()=>{
+  if(reaConnectButton.disabled) return;
+  reaConnectButton.disabled=true;
+  reaConnectButton.textContent="CONNECTING…";
+  if(reaStatusLabel) reaStatusLabel.textContent="CONNECTING TO OFFICIAL REA MCP…";
+  try{
+    const response=await fetch("/rea/connect",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:"{}"
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error) throw new Error(result?.error||"REA MCP connection failed");
+    paintReaStatus({
+      connected:true,ready:true,skill_enabled:result.skill_enabled,
+      advertised_tools:result.tool_count,tool_count:result.tool_count
+    });
+    if(reaStatusLabel) reaStatusLabel.title=(result.tool_examples||[]).join(", ");
+  }catch(error){
+    const message=String(error?.message||error);
+    paintReaStatus({ready:false,connected:false,last_error:message});
+    if(reaStatusLabel){
+      reaStatusLabel.textContent="REA CONNECTION FAILED";
+      reaStatusLabel.title=message;
+    }
+  }finally{
+    if(reaConnectButton) reaConnectButton.disabled=false;
+    refreshReaStatus();
+  }
+});
+refreshReaStatus();
+setInterval(refreshReaStatus,10000);
+refreshModelStatus();

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -33,6 +35,7 @@ from jenefar.skills.manager import SkillManager
 from jenefar.connectors.manager import ConnectorManager
 from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
+from jenefar.rea.client import ReaMCPClient
 
 
 @dataclass
@@ -92,11 +95,109 @@ class ToolBroker:
             ros2_robot=self.ros2_robot,
             security=self.security,
         )
+        self.rea_connector = ReaMCPClient()
         self.pending: dict[str, PendingToolCall] = {}
         self._task_context: dict[str, str] = {"agent": "", "task": ""}
+        self._task_action_log: list[dict[str, str]] = []
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
         self._apply_critical_tool_policy()
+
+    def _rea_status(self) -> dict[str, Any]:
+        return self.rea_connector.status()
+
+    def _rea_call(self, args: dict[str, Any]) -> dict[str, Any]:
+        name = str(args.get("tool", "")).strip()
+        tool_args = args.get("arguments", {})
+        if not isinstance(tool_args, dict):
+            raise ValueError("REA tool arguments must be a JSON object.")
+        return self.rea_connector.call(name, tool_args)
+
+    @staticmethod
+    def _terminal_command_is_critical(command: str) -> bool:
+        """Permit bounded, low-risk local inspection/test commands without prompts."""
+        raw = str(command or "").strip()
+        if not raw or any(char in raw for char in ("\n", "\r", chr(96), "$", ">", "<", "&", "(", ")")):
+            return True
+        segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", raw)
+        if not segments or any(not segment.strip() for segment in segments):
+            return True
+        forbidden = {
+            "sudo", "su", "doas", "rm", "rmdir", "shred", "wipe", "wipefs",
+            "dd", "mkfs", "fdisk", "parted", "mount", "umount", "reboot",
+            "shutdown", "poweroff", "systemctl", "service", "kill", "pkill",
+            "chmod", "chown", "chattr", "setfacl", "iptables", "nft", "ufw",
+            "curl", "wget", "nc", "netcat", "nmap", "masscan", "nikto",
+            "sqlmap", "hydra", "aircrack-ng", "hashcat", "responder",
+        }
+        read_only = {
+            "pwd", "ls", "tree", "cat", "head", "tail", "less", "more",
+            "file", "stat", "du", "df", "grep", "rg", "wc", "cut",
+            "sort", "uniq", "tr", "printf", "echo", "date", "whoami", "id",
+            "uname", "hostname", "which", "whereis", "free", "ps", "uptime",
+        }
+        for segment in segments:
+            try:
+                tokens = shlex.split(segment)
+            except ValueError:
+                return True
+            if not tokens:
+                return True
+            executable = tokens[0].rsplit("/", 1)[-1].lower()
+            args = tokens[1:]
+            if executable in forbidden:
+                return True
+            if executable == "find":
+                if any(arg in {"-exec", "-execdir", "-delete", "-ok"} for arg in args):
+                    return True
+                continue
+            if executable == "cd":
+                if len(args) > 1:
+                    return True
+                continue
+            if executable in read_only:
+                continue
+            if executable == "ip":
+                normalized = [arg.lower() for arg in args if not arg.startswith("-")]
+                if normalized and normalized[0] in {"addr", "address", "route", "link", "neigh"}:
+                    if any(arg in {"flush", "del", "delete", "add", "replace", "set"} for arg in normalized):
+                        return True
+                    continue
+                return True
+            if executable == "git":
+                if not args:
+                    return True
+                subcommand = args[0].lower()
+                safe_git = {
+                    "status", "diff", "log", "show", "branch", "rev-parse",
+                    "ls-files", "grep", "blame", "describe", "tag", "remote",
+                    "shortlog", "version", "fetch",
+                }
+                if subcommand not in safe_git:
+                    return True
+                if subcommand == "branch" and any(arg in {"-d", "-D", "--delete"} for arg in args):
+                    return True
+                if subcommand == "tag" and any(arg in {"-d", "--delete"} for arg in args):
+                    return True
+                if subcommand == "remote" and any(arg in {"add", "remove", "set-url"} for arg in args):
+                    return True
+                continue
+            if executable in {"python", "python3"}:
+                if not args or args[0] in {"--version", "-V"}:
+                    continue
+                if len(args) >= 2 and args[0] == "-m" and args[1] in {"pytest", "unittest", "compileall"}:
+                    continue
+                if args[0] in {"run.py", "./run.py"} and len(args) >= 2 and args[1] in {"--doctor", "--gui-smoke-test"}:
+                    continue
+                return True
+            if executable in {"pytest", "py.test"}:
+                continue
+            if executable == "node" and args[:1] == ["--check"]:
+                continue
+            if executable == "npm" and args[:1] == ["test"]:
+                continue
+            return True
+        return False
 
     def _apply_critical_tool_policy(self) -> None:
         critical_names = {
@@ -120,9 +221,17 @@ class ToolBroker:
             "agent": str(agent or ""),
             "task": str(task or ""),
         }
+        self._task_action_log = []
+
+    def consume_task_actions(self) -> list[dict[str, str]]:
+        """Return successful tool names only; arguments/results are never retained."""
+        actions = list(self._task_action_log)
+        self._task_action_log = []
+        return actions
 
     def clear_task_context(self) -> None:
         self._task_context = {"agent": "", "task": ""}
+        self._task_action_log = []
 
     @staticmethod
     def _explicit_screenshot_request(task: str) -> bool:
@@ -185,6 +294,35 @@ class ToolBroker:
         }
 
     def _register_builtin_tools(self) -> None:
+        self.registry.register(ToolSpec(
+            name="rea_status",
+            description="Check optional REA MCP bridge status and Node.js prerequisites.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self._rea_status(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_list_tools",
+            description="Connect to REA MCP and list the exact advertised reverse-engineering tools and schemas.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self.rea_connector.list_tools(),
+        ))
+
+        self.registry.register(ToolSpec(
+            name="rea_call",
+            description="Call an exact advertised REA MCP tool with schema-validated arguments for authorized reverse engineering.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["tool", "arguments"],
+                "additionalProperties": False,
+            },
+            handler=self._rea_call,
+            requires_confirmation=True,
+            action=True,
+        ))
         self.registry.register(ToolSpec(
             name="discover_kali_tools",
             description="List common Kali/Linux security tools and whether each executable is installed. This never executes a security tool.",
@@ -257,6 +395,30 @@ class ToolBroker:
             name="skill_catalog",
             description="List available declarative Jenefar skills and whether each skill is enabled.",
             handler=lambda _args: self.skills.list(),
+        ))
+        self.registry.register(ToolSpec(
+            name="skill_learn",
+            description=(
+                "Permanently learn a reusable, verified workflow as a declarative local SKILL.md. "
+                "Use this when the user explicitly asks to learn/save a skill, or after a successful "
+                "multi-step workflow that is genuinely reusable. Save concise general instructions only: "
+                "never store passwords, API keys, personal data, raw security targets, or executable code. "
+                "The skill is automatically enabled, but it cannot grant permissions or bypass tool approval/scope policy."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "maxLength": 100},
+                    "description": {"type": "string", "maxLength": 1000},
+                    "keywords": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 50},
+                    "system_prompt": {"type": "string", "maxLength": 6000},
+                    "connectors": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+                    "permissions": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+                },
+                "required": ["name", "description", "keywords", "system_prompt", "connectors", "permissions"],
+                "additionalProperties": False,
+            },
+            handler=self._skill_learn,
         ))
         self.registry.register(ToolSpec(
             name="skill_enable",
@@ -1141,6 +1303,17 @@ class ToolBroker:
             action=True,
         ))
 
+    def _skill_learn(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Save a prompt-only learned skill inside configured local skill roots."""
+        return self.skills.save_learned_skill(
+            name=str(args.get("name") or ""),
+            description=str(args.get("description") or ""),
+            keywords=[str(item) for item in (args.get("keywords") or [])],
+            system_prompt=str(args.get("system_prompt") or ""),
+            connectors=[str(item) for item in (args.get("connectors") or [])],
+            permissions=[str(item) for item in (args.get("permissions") or [])],
+        )
+
     def _memory_remember(self, args: dict[str, Any]) -> dict[str, Any]:
         layer = str(args["layer"]).strip().lower()
         title = str(args["title"])
@@ -1484,9 +1657,11 @@ class ToolBroker:
 
         # Critical tools always pause. Routine tools only use the legacy strict
         # confirmation mode when it is explicitly enabled.
+        is_critical = bool(spec.critical)
+        if name == "terminal_execute":
+            is_critical = self._terminal_command_is_critical(str(arguments.get("command") or ""))
         needs_confirmation = bool(
-            spec.critical
-            or (spec.requires_confirmation and self.require_confirmation)
+            is_critical or (spec.requires_confirmation and self.require_confirmation)
         )
         if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
@@ -1494,7 +1669,7 @@ class ToolBroker:
             user_prompt = (
                 f"Kya main {name.replace('_', ' ')} kar doon? "
                 "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
-                if spec.critical
+                if is_critical
                 else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
             )
             self.audit.record(
@@ -1513,16 +1688,29 @@ class ToolBroker:
                 "tool": name,
                 "message": (
                     "This action is marked critical and needs your confirmation before I execute it."
-                    if spec.critical
+                    if is_critical
                     else "This action needs your confirmation before I execute it."
                 ),
                 "user_prompt": user_prompt,
-                "critical": bool(spec.critical),
+                "critical": is_critical,
             })
 
         try:
             self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
+            if (
+                self._task_context.get("task")
+                and name not in {
+                    "memory_recall", "memory_remember", "skill_catalog", "skill_learn",
+                    "skill_enable", "skill_disable", "skill_install_manifest",
+                    "connector_catalog",
+                }
+            ):
+                result_status = str(value.get("status", "")).lower() if isinstance(value, dict) else ""
+                if result_status not in {"error", "denied", "approval_required", "failed"}:
+                    # Keep only the registered tool name, never raw arguments or results.
+                    self._task_action_log.append({"tool": name})
+                    self._task_action_log = self._task_action_log[-30:]
             self.audit.record("tool_executed", tool=name, arguments=arguments, result=value)
             self._activity("thinking", f"Tool result: {name} -> {str(value)[:6000]}")
             return json.dumps({"status": "ok", "result": value}, ensure_ascii=False, default=str)

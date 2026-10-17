@@ -40,7 +40,14 @@ class DesktopAutomation:
                 status["screen_error"] = f"{type(exc).__name__}: {exc}"
         except Exception as exc:
             status["import_error"] = f"{type(exc).__name__}: {exc}"
-        if not status["pyautogui"]:
+        try:
+            import mss  # noqa: F401
+            from PIL import Image  # noqa: F401
+            status["screenshot_capture"] = True
+        except Exception as exc:
+            status["screenshot_capture"] = False
+            status["screenshot_error"] = f"{type(exc).__name__}: {exc}"
+        if not status["pyautogui"] or not status["screenshot_capture"]:
             status["install_command"] = "python -m pip install -r requirements-desktop.txt"
         return status
 

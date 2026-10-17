@@ -4,6 +4,8 @@ import os
 import time
 from dataclasses import dataclass
 
+from jenefar.core.model_ids import normalize_model_id
+
 
 @dataclass(frozen=True)
 class ProviderConfig:
@@ -61,12 +63,24 @@ class ProviderPool:
         valid = [name for name in names if name in self.CONFIGS]
         return valid or ["openai"]
 
+    @staticmethod
+    def _generic_gemini_key() -> str:
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        if "generativelanguage.googleapis.com" not in base_url:
+            return ""
+        return os.getenv("LLM_API_KEY", "").strip() or os.getenv("API_KEY", "").strip()
+
     def configured(self, name: str) -> bool:
         config = self.CONFIGS[name]
         key = os.getenv(config.api_key_env, "").strip()
         if key:
             if name == "openai" and key.startswith("sk-or-"):
                 return False
+            return True
+        if name == "gemini" and self._generic_gemini_key():
             return True
         # Backward compatibility: the existing Jenefar setup may have stored an
         # OpenRouter key in OPENAI_API_KEY before provider-aware routing existed.
@@ -78,11 +92,16 @@ class ProviderPool:
         selected = (
             os.getenv(role_env, "").strip()
             or os.getenv(config.model_env, "").strip()
+            or (
+                os.getenv("LLM_MODEL_NAME", "").strip()
+                if name == "gemini" and self._generic_gemini_key()
+                else ""
+            )
             or config.default_model
         )
         if name == "gemini" and selected in {"gemini-2.5-flash-lite", "models/gemini-2.5-flash-lite"}:
             selected = "gemini-3.5-flash-lite"
-        return selected
+        return normalize_model_id(selected, name)
 
     def available(self, name: str) -> bool:
         return self.configured(name) and time.monotonic() >= self.cooldowns.get(name, 0.0)
@@ -101,6 +120,8 @@ class ProviderPool:
             legacy = os.getenv("OPENAI_API_KEY", "").strip()
             if legacy.startswith("sk-or-"):
                 return legacy
+        if name == "gemini":
+            return self._generic_gemini_key()
         return ""
 
     def reset(self, name: str) -> None:
@@ -122,8 +143,26 @@ class ProviderPool:
         return result
 
 
+def is_quota_exhausted_provider_error(exc: Exception) -> bool:
+    """Return True for exhausted provider quotas/credits, not ordinary rate limits."""
+    message = str(exc).lower()
+    markers = (
+        "insufficient_quota",
+        "credit_balance_exhausted",
+        "exceeded your current quota",
+        "quota exceeded",
+        "resource_exhausted",
+        "billing hard limit",
+        "billing_limit",
+        "exhausted quota",
+    )
+    return any(marker in message for marker in markers)
+
+
 def is_retryable_provider_error(exc: Exception) -> bool:
     """Classify provider failures that should permit automatic failover."""
+    if is_quota_exhausted_provider_error(exc):
+        return True
     message = str(exc).lower()
     status = getattr(exc, "status_code", None)
     response = getattr(exc, "response", None)
@@ -152,4 +191,4 @@ def is_retryable_provider_error(exc: Exception) -> bool:
     return any(marker in message for marker in retry_markers)
 
 
-__all__ = ["ProviderConfig", "ProviderPool", "is_retryable_provider_error"]
+__all__ = ["ProviderConfig", "ProviderPool", "is_quota_exhausted_provider_error", "is_retryable_provider_error"]

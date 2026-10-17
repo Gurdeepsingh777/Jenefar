@@ -373,12 +373,18 @@ def main() -> int:
         from jenefar.core.llm import LLMClient
         from jenefar.offline.local_llm import LocalLLMClient
         client = LLMClient()
+        local_client = LocalLLMClient()
+        local_info = local_client.detect()
         print({
             "provider_order": client.providers.order(),
             "providers": client.provider_status("fast"),
             "local": {
+                "api_mode": os.getenv("JENEFAR_LOCAL_LLM_API", "auto"),
                 "base_url": os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1"),
-                "model_detected": bool(LocalLLMClient().detect()),
+                "model_detected": bool(local_info),
+                "active_api": local_info.api if local_info else None,
+                "active_model": local_info.model if local_info else None,
+                "diagnostic": None if local_info else local_client._last_detection_error,
             },
         })
         return 0
@@ -428,6 +434,7 @@ def main() -> int:
             vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
+            voice_audio_handler=browser_voice.handle_audio if browser_voice_enabled else None,
         )
         avatar_server.start()
 
@@ -460,15 +467,15 @@ def main() -> int:
             print(
                 f"[JENEFAR] Browser STT: {stt['provider']}/{stt['model']} "
                 f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
-                "Browser TTS=OpenAI/Edge generated audio -> Web SpeechSynthesis fallback"
+                "Browser TTS=OpenAI -> expressive Gemini TTS -> Edge -> Web SpeechSynthesis fallback"
             )
         else:
-            print("[JENEFAR] Backend STT provider unavailable; browser SpeechRecognition remains the input path.")
+            print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
 
         try:
             if browser_voice_enabled:
                 print("[JENEFAR] Browser microphone voice: ENABLED.")
-                print("[JENEFAR] Chrome/Chromium will ask for microphone permission in the avatar UI.")
+                print("[JENEFAR] Your browser may ask for microphone permission in the avatar UI.")
                 print("[JENEFAR] Browser microphone + server-generated browser audio are the primary voice path; Web SpeechSynthesis is the final fallback.")
                 print("[JENEFAR] Python TTS is disabled in this browser runtime.")
                 threading.Event().wait()
@@ -685,12 +692,15 @@ def main() -> int:
             browser_voice = BrowserVoiceBridge(orchestrator, avatar=avatar)
 
         avatar_model = prepare_avatar_model()
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        audio_status = ProviderVoiceRuntime.audio_status()
         avatar_server = AvatarServer(
             avatar,
             port=args.avatar_port,
             vrm_path=avatar_model,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice else None,
+            voice_audio_handler=browser_voice.handle_audio if browser_voice else None,
         )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
@@ -699,6 +709,17 @@ def main() -> int:
             + (str(avatar_model) if avatar_model else "unavailable; procedural fallback only")
         )
         if browser_voice is not None:
+            if audio_status["stt"]:
+                stt = audio_status["stt"]
+                print(
+                    f"[JENEFAR] Browser microphone STT: {stt['provider']}/{stt['model']} "
+                    f"fallback={','.join(stt.get('fallback', [])) or 'none'}."
+                )
+            else:
+                print(
+                    "[JENEFAR] No provider STT key configured; mic will use browser SpeechRecognition. "
+                    "Set GROQ_API_KEY or a direct OPENAI_API_KEY for server transcription."
+                )
             print("[JENEFAR] Browser microphone + browser SpeechSynthesis voice path enabled.")
         if args.desktop:
             from jenefar.avatar.desktop import launch_desktop

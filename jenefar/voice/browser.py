@@ -20,6 +20,10 @@ class BrowserVoiceBridge:
     def __init__(self, orchestrator, avatar=None):
         self.orchestrator = orchestrator
         self.avatar = avatar
+        # Reuse the STT runtime so exhausted-provider cooldowns survive across
+        # microphone utterances instead of retrying a dead API on every recording.
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        self._stt_runtime = ProviderVoiceRuntime(orchestrator)
         self._last_text = ""
         self._last_at = 0.0
         self._repeat_window = float(
@@ -33,6 +37,7 @@ class BrowserVoiceBridge:
         self._active_task = None
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._tts_lock = threading.Lock()
+        self._openai_tts_disabled = False
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -68,12 +73,135 @@ class BrowserVoiceBridge:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         return "" if not key or key.startswith("sk-or-") else key
 
+    @staticmethod
+    def _direct_gemini_tts_key() -> str:
+        direct = os.getenv("GEMINI_API_KEY", "").strip()
+        if direct:
+            return direct
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        if "generativelanguage.googleapis.com" not in base_url:
+            return ""
+        return os.getenv("LLM_API_KEY", "").strip() or os.getenv("API_KEY", "").strip()
+
+    @staticmethod
+    def _gemini_tts_style(text: str) -> str:
+        """Choose expressive delivery metadata without altering the spoken words."""
+        configured = os.getenv("JENEFAR_GEMINI_TTS_STYLE", "").strip()
+        if configured:
+            return configured[:500]
+        lowered = str(text or "").casefold()
+        empathetic = (
+            "sorry", "maaf", "takleef", "pareshan", "i understand",
+            "don't worry", "chinta mat", "error", "problem", "issue",
+        )
+        excited = (
+            "congratulations", "mubarak", "great news", "bahut achha",
+            "amazing", "wonderful", "shabash", "ho gaya",
+        )
+        serious = ("warning", "danger", "important", "security risk", "unsafe", "critical")
+        if any(marker in lowered for marker in empathetic):
+            return (
+                "Warm, gentle, empathetic adult female conversational voice. "
+                "Speak a little more slowly, with reassuring softness, human pauses, "
+                "subtle pitch variation, and caring emphasis. Natural Indian Hinglish pronunciation."
+            )
+        if any(marker in lowered for marker in serious):
+            return (
+                "Calm, serious, clear and grounded conversational delivery. "
+                "Use measured pacing, natural pauses and firm but not harsh emphasis. "
+                "Natural Indian Hinglish pronunciation."
+            )
+        if any(marker in lowered for marker in excited):
+            return (
+                "Warm, genuinely happy and encouraging adult female conversational voice. "
+                "Sound smiling and lively, with brighter intonation, varied pitch and natural rhythm; "
+                "avoid exaggerated acting. Natural Indian Hinglish pronunciation."
+            )
+        if "?" in lowered or any(marker in lowered for marker in ("kya ", "kaise ", "kyun ", "why ", "how ")):
+            return (
+                "Friendly, attentive adult female conversational voice. "
+                "Sound curious and engaged with a gentle rise on questions, varied pitch, "
+                "clear words and relaxed natural pauses. Natural Indian Hinglish pronunciation."
+            )
+        return (
+            "Warm, natural, emotionally expressive adult female conversational voice for Jenefar. "
+            "Use relaxed Indian Hinglish pronunciation, varied pitch and cadence, small human pauses, "
+            "soft emphasis on meaningful words, and a friendly confident tone. "
+            "Do not sound like a news reader, audiobook narrator or robot; avoid overacting."
+        )
+
+    def _synthesize_gemini_audio(self, text: str) -> tuple[str, str]:
+        """Expressive Google Gemini TTS fallback, independent of chat-model quota."""
+        key = self._direct_gemini_tts_key()
+        if not key:
+            return "", ""
+        import httpx
+
+        model = os.getenv("JENEFAR_GEMINI_TTS_MODEL", "gemini-3.8-flash-tts").strip()
+        voice = os.getenv("JENEFAR_GEMINI_TTS_VOICE", "Aoede").strip() or "Aoede"
+        payload = {
+            "model": model,
+            "input": [{
+                "type": "user_input",
+                "content": [{
+                    "type": "text",
+                    "text": str(text or "")[:4096],
+                    "annotations": [{
+                        "type": "speech_metadata",
+                        "style": self._gemini_tts_style(text),
+                    }],
+                }],
+            }],
+            "response_format": {"type": "audio"},
+            "generation_config": {"speech_config": [{"voice": voice}]},
+        }
+        try:
+            response = httpx.post(
+                "https://generativelanguage.googleapis.com/v1beta/interactions",
+                headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                json=payload,
+                timeout=httpx.Timeout(45.0, connect=5.0),
+            )
+            response.raise_for_status()
+            result = response.json()
+            audio_data = (result.get("output_audio") or {}).get("data")
+            mime = (result.get("output_audio") or {}).get("mime_type") or "audio/wav"
+            if not audio_data:
+                # REST responses expose audio blocks inside steps; SDK convenience
+                # objects instead expose output_audio directly.
+                for step in result.get("steps", []):
+                    if not isinstance(step, dict) or step.get("type") != "model_output":
+                        continue
+                    for block in step.get("content", []):
+                        if isinstance(block, dict) and block.get("type") == "audio" and block.get("data"):
+                            audio_data = block["data"]
+                            mime = block.get("mime_type") or "audio/wav"
+                            break
+                    if audio_data:
+                        break
+            if not audio_data:
+                raise RuntimeError("Gemini TTS response contained no audio data.")
+            # The upstream API already returns base64 audio, matching the avatar
+            # event contract used for OpenAI and Edge generated audio.
+            print(f"[JENEFAR] Browser TTS: expressive Gemini {model} / {voice}.")
+            return str(audio_data), str(mime)
+        except Exception as exc:
+            print(
+                "[JENEFAR] Expressive Gemini TTS unavailable; "
+                f"trying the next voice fallback: {type(exc).__name__}: {exc}"
+            )
+            return "", ""
+
     def _synthesize_edge_audio(self, text: str) -> tuple[str, str]:
         try:
             import edge_tts
             voice = os.getenv("JENEFAR_EDGE_TTS_VOICE", "en-IN-NeerjaNeural")
-            rate = os.getenv("JENEFAR_EDGE_TTS_RATE", "-4%")
-            communicate = edge_tts.Communicate(text[:4096], voice, rate=rate)
+            rate = os.getenv("JENEFAR_EDGE_TTS_RATE", "-2%")
+            pitch = os.getenv("JENEFAR_EDGE_TTS_PITCH", "+2Hz")
+            communicate = edge_tts.Communicate(text[:4096], voice, rate=rate, pitch=pitch)
             with tempfile.NamedTemporaryFile(suffix=".mp3", prefix="jenefar_edge_", delete=False) as tmp:
                 output_path = tmp.name
             try:
@@ -95,8 +223,11 @@ class BrowserVoiceBridge:
 
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
-        if not key:
-            return self._synthesize_edge_audio(text)
+        if not key or self._openai_tts_disabled:
+            # The Gemini TTS model has explicit emotional/style controls; prefer
+            # it over the plain Edge voice when a Google API key is available.
+            audio = self._synthesize_gemini_audio(text)
+            return audio if audio[0] else self._synthesize_edge_audio(text)
 
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
         voice = os.getenv("JENEFAR_BROWSER_TTS_VOICE", "coral").strip() or "coral"
@@ -105,7 +236,7 @@ class BrowserVoiceBridge:
             (
                 "Speak as a warm, natural, emotionally expressive adult female voice. "
                 "Use a relaxed Indian conversational style for Roman Hinglish. "
-                "Sound like a real person talking naturally, not like a narrator or robot. "
+                "Sound like a real person talking naturally, not a narrator or robot. "
                 "Use gentle pauses, natural emphasis, and a friendly confident tone. "
                 "Do not spell out Romanized Hindi words."
             ),
@@ -127,11 +258,16 @@ class BrowserVoiceBridge:
                 "audio/wav",
             )
         except Exception as exc:
+            error_text = str(exc).lower()
+            if any(marker in error_text for marker in ("insufficient_quota", "credit_balance_exhausted", "no credits remaining")):
+                self._openai_tts_disabled = True
+                print("[JENEFAR] OpenAI TTS quota exhausted; skipping further OpenAI TTS attempts this run.")
             print(
                 "[JENEFAR] Browser TTS generation failed; "
-                f"trying Edge TTS fallback: {type(exc).__name__}: {exc}"
+                f"trying expressive Gemini TTS: {type(exc).__name__}: {exc}"
             )
-            return self._synthesize_edge_audio(text)
+            audio = self._synthesize_gemini_audio(text)
+            return audio if audio[0] else self._synthesize_edge_audio(text)
 
     def submit_text(self, text: str) -> dict[str, Any]:
         raw = " ".join(str(text or "").strip().split())
@@ -198,6 +334,63 @@ class BrowserVoiceBridge:
 
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
+
+    def handle_audio(self, audio: bytes, content_type: str = "audio/webm") -> dict[str, Any]:
+        """Transcribe a browser MediaRecorder blob, then enqueue it as normal user text."""
+        if not audio:
+            return {"ok": False, "error": "No microphone audio was received."}
+        if len(audio) > 12 * 1024 * 1024:
+            return {"ok": False, "error": "Audio recording is too large (limit: 12 MiB)."}
+        if content_type and not str(content_type).lower().startswith("audio/"):
+            return {"ok": False, "error": "Expected an audio recording from the browser microphone."}
+
+        import shutil
+        import subprocess
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            return {
+                "ok": False,
+                "error": "Browser mic fallback needs ffmpeg. Install it with: sudo apt install ffmpeg",
+            }
+        try:
+            converted = subprocess.run(
+                [
+                    ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
+                    "-i", "pipe:0", "-f", "s16le", "-acodec", "pcm_s16le",
+                    "-ac", "1", "-ar", "16000", "pipe:1",
+                ],
+                input=audio,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=20,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "Audio conversion timed out; please try a shorter utterance."}
+        except Exception as exc:
+            return {"ok": False, "error": f"Audio conversion failed: {type(exc).__name__}: {exc}"}
+
+        if converted.returncode != 0 or len(converted.stdout) < 3200:
+            detail = converted.stderr.decode("utf-8", errors="replace").strip()[-400:]
+            return {
+                "ok": False,
+                "error": "Could not decode microphone audio." + (f" {detail}" if detail else ""),
+            }
+        try:
+            transcript = asyncio.run(
+                self._stt_runtime.transcribe_pcm(converted.stdout)
+            )
+        except Exception as exc:
+            return {"ok": False, "error": f"Speech-to-text unavailable: {type(exc).__name__}: {exc}"}
+
+        transcript = " ".join(str(transcript or "").split()).strip()
+        if not transcript:
+            return {"ok": True, "ignored": True, "reason": "empty_transcript"}
+        result = self.submit_text(transcript)
+        result["transcript"] = self._display_text(transcript)
+        return result
+
 
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)

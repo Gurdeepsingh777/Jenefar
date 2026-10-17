@@ -1,0 +1,28 @@
+services:
+  jenefar-telegram:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jenefar-telegram-agent
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      SCRATCHPAD_DIR: /app/data/scratchpad
+      SKILL_STORE_DIR: /app/data/skills
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - jenefar_scratchpad:/app/data/scratchpad
+      - jenefar_skills:/app/data/skills
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  jenefar_scratchpad:
+  jenefar_skills:

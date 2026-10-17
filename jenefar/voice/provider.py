@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import math
 import os
@@ -29,12 +30,32 @@ class ProviderVoiceRuntime:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         return "" if not key or key.startswith("sk-or-") else key
 
+    @staticmethod
+    def _direct_gemini_key() -> str:
+        key = os.getenv("GEMINI_API_KEY", "").strip()
+        if key:
+            return key
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        if "generativelanguage.googleapis.com" in base_url:
+            return (
+                os.getenv("LLM_API_KEY", "").strip()
+                or os.getenv("API_KEY", "").strip()
+            )
+        return ""
+
     @classmethod
     def _configured_audio_providers(cls) -> list[str]:
         raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "groq,openai")
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
         ordered = requested or ["groq", "openai"]
-        ordered = [name for name in ordered if name in ("openai", "groq")]
+        ordered = [name for name in ordered if name in ("openai", "groq", "gemini")]
+        # Older .env files only list Groq/OpenAI. Automatically append Gemini when
+        # its key is configured so an exhausted OpenAI quota cannot disable voice.
+        if "gemini" not in ordered:
+            ordered.append("gemini")
         return [name for name in ordered if cls._provider_configured(name)]
 
     @classmethod
@@ -43,6 +64,8 @@ class ProviderVoiceRuntime:
             return bool(cls._direct_openai_key())
         if name == "groq":
             return bool(os.getenv("GROQ_API_KEY", "").strip())
+        if name == "gemini":
+            return bool(cls._direct_gemini_key())
         return False
 
     @staticmethod
@@ -117,11 +140,21 @@ class ProviderVoiceRuntime:
 
     @staticmethod
     def _stt_model(provider: str) -> str:
-        return (
-            os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
-            if provider == "openai"
-            else os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
+        if provider == "openai":
+            return os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
+        if provider == "groq":
+            return os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        configured_model = (
+            os.getenv("JENEFAR_GEMINI_STT_MODEL", "").strip()
+            or os.getenv("GEMINI_MODEL", "").strip()
         )
+        if not configured_model and "generativelanguage.googleapis.com" in base_url:
+            configured_model = os.getenv("LLM_MODEL_NAME", "").strip()
+        return configured_model or "gemini-3.8-flash"
 
     @staticmethod
     def _tts_model(provider: str) -> str:
@@ -138,12 +171,8 @@ class ProviderVoiceRuntime:
         )
 
     def _provider_order(self) -> list[str]:
-        raw = os.getenv("JENEFAR_VOICE_PROVIDER_ORDER", "groq,openai")
-        requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
-        order = [name for name in requested if name in ("openai", "groq")]
-        if not order:
-            order = ["groq", "openai"]
-        return [name for name in order if self._provider_configured(name)]
+        # Use the same compatibility path as startup capability reporting.
+        return self._configured_audio_providers()
 
     def _tts_provider_order(self) -> list[str]:
         """Return configured TTS providers; native playback is explicit opt-in."""
@@ -182,7 +211,10 @@ class ProviderVoiceRuntime:
 
     def _cooldown_seconds(self, exc: Exception) -> float:
         message = str(exc).lower()
-        if "insufficient_quota" in message or "credit_balance_exhausted" in message:
+        if any(marker in message for marker in (
+            "insufficient_quota", "credit_balance_exhausted",
+            "resource_exhausted", "quota exceeded",
+        )):
             return float(os.getenv("JENEFAR_VOICE_QUOTA_COOLDOWN_SECONDS", "3600"))
         return float(os.getenv("JENEFAR_PROVIDER_COOLDOWN_SECONDS", "60"))
 
@@ -210,11 +242,11 @@ class ProviderVoiceRuntime:
         from openai import AsyncOpenAI
 
         audio.seek(0)
-        client = AsyncOpenAI(api_key=ProviderVoiceRuntime._direct_openai_key())
-        result = await client.audio.transcriptions.create(
-            model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
-            file=audio,
-        )
+        async with AsyncOpenAI(api_key=ProviderVoiceRuntime._direct_openai_key()) as client:
+            result = await client.audio.transcriptions.create(
+                model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe"),
+                file=audio,
+            )
         return str(result.text or "").strip()
 
     @staticmethod
@@ -240,6 +272,78 @@ class ProviderVoiceRuntime:
 
         return await asyncio.to_thread(request)
 
+    @staticmethod
+    async def _transcribe_gemini(audio: io.BytesIO) -> str:
+        """Transcribe audio with Gemini when OpenAI/Groq STT is unavailable."""
+        import httpx
+
+        api_key = ProviderVoiceRuntime._direct_gemini_key()
+        if not api_key:
+            raise RuntimeError("Gemini STT is not configured.")
+        audio.seek(0)
+        encoded_audio = base64.b64encode(audio.read()).decode("ascii")
+        model = ProviderVoiceRuntime._stt_model("gemini")
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent"
+        )
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": (
+                                "Transcribe only the speech in this audio. Return only the words "
+                                "spoken, with no explanation or labels. Preserve the original "
+                                "language and meaning, including Hindi, Hinglish, or English; do "
+                                "not translate or add words. For Hindi/Hinglish, prefer Roman "
+                                "script when the speaker uses Roman Hinglish."
+                            )
+                        },
+                        {
+                            "inlineData": {
+                                "mimeType": "audio/wav",
+                                "data": encoded_audio,
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {"maxOutputTokens": 1024},
+        }
+        timeout = float(os.getenv("JENEFAR_GEMINI_STT_TIMEOUT", "35"))
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                url,
+                headers={"x-goog-api-key": api_key},
+                json=payload,
+            )
+        if response.status_code >= 400:
+            try:
+                error_body = response.json()
+                detail = str(error_body.get("error", {}).get("message", "")).strip()
+            except Exception:
+                detail = ""
+            error = RuntimeError(
+                f"Gemini STT HTTP {response.status_code}"
+                + (f": {detail[:400]}" if detail else "")
+            )
+            error.status_code = response.status_code
+            raise error
+        try:
+            body = response.json()
+            parts = body["candidates"][0]["content"]["parts"]
+            transcript = " ".join(
+                str(part.get("text", "")).strip()
+                for part in parts
+                if isinstance(part, dict) and str(part.get("text", "")).strip()
+            ).strip()
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RuntimeError("Gemini STT returned an invalid response.") from exc
+        if not transcript:
+            raise RuntimeError("Gemini STT returned no transcription text.")
+        return transcript
+
     async def transcribe_pcm(
         self, pcm: bytes, *, sample_rate: int = 16_000, channels: int = 1
     ) -> str:
@@ -247,13 +351,18 @@ class ProviderVoiceRuntime:
         providers = self._provider_order()
         if not providers:
             raise RuntimeError(
-                "No speech-to-text provider is configured. Set OPENAI_API_KEY or GROQ_API_KEY."
+                "No speech-to-text provider is configured. Set GEMINI_API_KEY, "
+                "GROQ_API_KEY, or OPENAI_API_KEY."
             )
 
         last_error: Exception | None = None
         for provider in providers:
-            if provider in {"edge", "espeak", "local"}:
-                available = self._tts_configured(provider)
+            if provider == "gemini":
+                # ProviderPool's native Gemini key is GEMINI_API_KEY; voice also
+                # supports the Telegram agent's LLM_API_KEY alias for Google URLs.
+                available = self._provider_configured(provider) and (
+                    time.monotonic() >= self._audio_pool.cooldowns.get(provider, 0.0)
+                )
             else:
                 available = self._audio_pool.available(provider)
             if not available:
@@ -261,7 +370,10 @@ class ProviderVoiceRuntime:
             try:
                 if provider == "openai":
                     return await self._transcribe_openai(audio)
-                return await self._transcribe_groq(audio)
+                if provider == "groq":
+                    return await self._transcribe_groq(audio)
+                if provider == "gemini":
+                    return await self._transcribe_gemini(audio)
             except Exception as exc:
                 last_error = exc
                 if not is_retryable_provider_error(exc):

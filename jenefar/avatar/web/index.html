@@ -27,6 +27,9 @@
       </div>
       <div class="top-clock" id="ui-clock">--:--</div>
       <div class="top-status">
+        <button type="button" class="model-quick-button" id="model-settings-button" aria-controls="model-panel" aria-expanded="false">
+          MODEL <span id="active-model-label">Loading…</span>
+        </button>
         <span class="status-dot"></span><span>ONLINE</span>
       </div>
     </div>
@@ -48,16 +51,42 @@
     </section>
     <aside class="system-card">
       <div class="card-title">SYSTEM STATUS</div>
-      <div class="status-grid">
-        <div><span class="ring-meter cpu">32%</span><small>CPU</small></div>
-        <div><span class="ring-meter ram">46%</span><small>RAM</small></div>
-        <div><span class="ring-meter gpu">28%</span><small>GPU</small></div>
+      <div class="status-grid" aria-label="Live system resource usage">
+        <div>
+          <span class="ring-meter cpu" id="metric-cpu" role="progressbar" aria-label="CPU usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--meter-value:0"><span id="metric-cpu-value">--%</span></span>
+          <small>CPU</small><small class="metric-detail" id="metric-cpu-detail">Waiting for telemetry</small>
+        </div>
+        <div>
+          <span class="ring-meter ram" id="metric-ram" role="progressbar" aria-label="RAM usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--meter-value:0"><span id="metric-ram-value">--%</span></span>
+          <small>RAM</small><small class="metric-detail" id="metric-ram-detail">Waiting for telemetry</small>
+        </div>
+        <div>
+          <span class="ring-meter gpu meter-unavailable" id="metric-gpu" role="img" aria-label="GPU telemetry unavailable"><span id="metric-gpu-value">N/A</span></span>
+          <small>GPU</small><small class="metric-detail" id="metric-gpu-detail">Sensor unavailable</small>
+        </div>
       </div>
+      <div class="metrics-updated" id="metrics-updated" role="status">Waiting for live system telemetry…</div>
       <div class="service-list">
         <div><span class="service-light"></span>Online <b id="service-online">●</b></div>
         <div><span class="service-light"></span>Voice <b id="service-voice">●</b></div>
         <div><span class="service-light"></span>VRM <b id="service-vrm">●</b></div>
       </div>
+      <div class="rea-connector-row">
+        <span><i id="rea-status-dot" data-state="checking"></i><b id="rea-status-label">REA MCP: CHECKING</b></span>
+        <button type="button" id="rea-connect-button">CONNECT</button>
+      </div>
+    </aside>
+    <aside class="model-panel" id="model-panel" aria-labelledby="model-panel-title" hidden>
+      <div class="model-panel-head">
+        <div><div class="card-title" id="model-panel-title">MODEL CONTROL</div><div class="model-panel-subtitle">Live runtime configuration</div></div>
+        <button type="button" id="model-panel-close" aria-label="Close model settings">×</button>
+      </div>
+      <label for="model-choice">Available provider models</label>
+      <select id="model-choice"><option value="">Loading configured providers…</option></select>
+      <label for="model-id-input">Model ID</label>
+      <input id="model-id-input" autocomplete="off" spellcheck="false" placeholder="Choose a listed model or enter a custom model ID">
+      <button type="button" class="model-apply-button" id="apply-model-button">APPLY MODEL</button>
+      <p id="model-feedback" role="status" aria-live="polite">Checking configured providers…</p>
     </aside>
     <section class="command-stack" aria-label="Quick commands">
       <button type="button" class="command-chip" data-command="open app">▣ <span>Open App</span></button>
@@ -130,7 +159,8 @@
       </div>
     </aside>
     <div class="bottom-dock">
-      <button type="button" class="talk-button" id="mic-button"><span>●</span>Talk</button>
+      <button type="button" class="talk-button" id="mic-button" aria-pressed="false" aria-label="Turn microphone on"><span aria-hidden="true">●</span><span class="mic-label">MIC OFF</span></button>
+      <button type="button" class="live-voice-button" id="realtime-button" aria-pressed="false" aria-label="Start live conversational voice"><span aria-hidden="true">◉</span><span id="realtime-button-label">LIVE VOICE</span></button>
       <button type="button" data-command="vision"><span>◈</span>Vision</button>
       <button type="button" class="dock-core" id="dock-core">J</button>
       <button type="button" data-command="chat"><span>□</span>Chat</button>
@@ -140,6 +170,7 @@
       <span id="mic-status">CLICK TALK TO LISTEN</span>
       <span id="speech-status">BROWSER SPEECH</span>
       <span id="voice-status">BROWSER VOICE</span>
+      <span id="realtime-state" role="status" aria-live="polite">STANDARD VOICE</span>
       <span id="vrm-status">HUD</span>
     </div>
   </main>
@@ -166,16 +197,10 @@
       frame.addEventListener("load", clearHudPlate);
       setTimeout(clearHudPlate, 400);
     }
-    const mic=document.getElementById("mic-button");
-    const strip=document.getElementById("mic-status");
-    if(mic&&strip){
-      mic.addEventListener("click",()=>{
-        strip.textContent = mic.getAttribute("aria-pressed")==="true" ? "MIC OFF" : "MIC LISTENING — allow the prompt";
-      });
-    }
   })();
   </script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/vrm.js"></script>
+  <script src="/realtime.js"></script>
 </body>
 </html>

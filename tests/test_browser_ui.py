@@ -7,21 +7,28 @@ WEB = ROOT / "jenefar" / "avatar" / "web"
 def test_premium_dashboard_has_single_workspace_markup():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert html.count('id="activity-panel"') == 1
-    assert html.count('id="activity-connection"') == 1
     assert html.count('id="clear-workspace"') == 1
-    assert html.count('id="activity-running"') == 1
-    assert html.count('id="activity-queued"') == 1
-    assert html.count('id="activity-done"') == 1
-    assert html.count('id="activity-errors"') == 1
+    assert html.count('id="stat-running"') == 1
+    assert html.count('id="stat-queue"') == 1
+    assert html.count('id="stat-done"') == 1
+    assert html.count('id="stat-error"') == 1
+    assert html.count('id="workspace-log"') == 1
 
 
 def test_browser_mic_starts_only_after_explicit_user_action():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert "requestMicrophonePermission" in js
-    assert 'navigator.mediaDevices.getUserMedia({audio:true,video:false})' in js
+    assert "navigator.mediaDevices?.getUserMedia" in js
+    assert "audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}" in js
+    assert "new MediaRecorder(fallbackStream" in js
+    assert 'fetch("/voice/audio"' in js
     assert 'micEnabled=false;' in js
     assert 'setVoiceInputStatus("CLICK MIC ON TO START",false);' in js
     assert 'micButton.onclick=async()=>{' in js
+    assert 'if(canRecord){\n        // Prefer server-side STT to Chromium' in js
+    assert 'setVoiceInputStatus("CLICK MIC ON — SERVER STT READY",false);' in js
+    assert "const speechThreshold=0.010;" in js
+    assert "NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL" in js
 
 
 def test_browser_mic_has_recovery_for_web_speech_end_and_errors():
@@ -44,7 +51,7 @@ def test_premium_ui_has_reference_dashboard_sections():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     for marker in (
         "side-nav", "chat-glass", "system-card", "quick-apps",
-        "command-stack", "bottom-dock", "realtime-controls",
+        "command-stack", "bottom-dock", "status-strip",
     ):
         assert marker in html
 
@@ -53,7 +60,8 @@ def test_mic_button_state_helper_and_permission_flow_are_present():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert "function setMicButton(active, busy=false)" in js
-    assert 'navigator.mediaDevices.getUserMedia({audio:true,video:false})' in js
+    assert "navigator.mediaDevices?.getUserMedia" in js
+    assert "audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}" in js
     assert '.talk-button.is-active' in css
     assert '.talk-button.is-busy' in css
 
@@ -68,7 +76,7 @@ def test_cinematic_scene_has_holographic_environment():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert 'id="holo-earth"' in html
-    assert 'id="earth-canvas"' in html
+    assert 'id="holo-earth"' in html and 'id="earth-canvas"' not in html
     assert 'id="holo-particles"' in html
     assert 'function setupHolographicEnvironment' in js
     assert 'earth-canvas' in js
@@ -96,9 +104,11 @@ def test_ui_js_has_balanced_basic_delimiters():
 
 def test_index_has_valid_script_tags_for_runtime():
     html = (WEB / "index.html").read_text(encoding="utf-8")
-    assert '<script src="/app.js"></script>' in html
+    assert '<script type="module" src="/app.js"></script>' in html
     assert '<script type="module" src="/vrm.js"></script>' in html
     assert '<script src="/realtime.js"></script>' in html
+    assert 'id="realtime-button"' in html
+    assert 'id="realtime-state"' in html
 
 
 def test_browser_runtime_has_single_voice_path():
@@ -117,8 +127,12 @@ def test_roman_hinglish_output_is_explicitly_enforced():
 
 def test_browser_bridge_does_not_construct_native_audio_output():
     voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
-    assert "ProviderVoiceRuntime" not in voice
+    # ProviderVoiceRuntime is a transcription-only adapter here; audio playback
+    # remains browser-side and never uses a native Python speaker stream.
+    assert "self._stt_runtime.transcribe_pcm" in voice
     assert "asyncio.run(self.voice.speak" not in voice
+    assert "sounddevice" not in voice
+    assert "_play_wav" not in voice
 
 
 def test_orchestrator_does_not_append_provider_metadata_to_user_output():
@@ -136,7 +150,7 @@ def test_final_layout_has_dedicated_regions():
 def test_browser_speech_is_the_only_playback_path():
     bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
     app = (WEB / "app.js").read_text(encoding="utf-8")
-    assert "ProviderVoiceRuntime" not in bridge
+    assert "self._stt_runtime.transcribe_pcm" in bridge
     assert "speechSynthesis" in app
     assert 'utterance.lang="en-IN"' in app
 
@@ -267,6 +281,9 @@ def test_avatar_mode_uses_browser_voice_unless_an_explicit_voice_mode_owns_audio
     assert "BrowserVoiceBridge" in run
     assert "if not args.realtime and not args.voice and not args.voice_continuous:" in run
     assert "voice_handler=browser_voice.handle_text if browser_voice else None" in run
+    # --avatar is the user's launch command; it needs the binary-audio STT route too.
+    avatar_block = run.split("if args.avatar:", 1)[1].split("\n    else:", 1)[0]
+    assert "voice_audio_handler=browser_voice.handle_audio if browser_voice else None" in avatar_block
 
 
 
@@ -330,13 +347,13 @@ def test_avatar_events_can_carry_browser_audio():
 def test_live_task_monitor_markup_and_runtime_mirroring():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     js = (WEB / "app.js").read_text(encoding="utf-8")
-    css = (WEB / "style.css").read_text(encoding="utf-8")
-    assert 'id="task-screen"' in html
-    assert 'id="task-screen-log"' in html
-    assert "function updateTaskScreen(event)" in js
-    assert "updateTaskScreen(event);" in js
-    assert "LIVE TASK MONITOR / ENLARGED HOLOGRAPHIC SCREEN" in css
-    assert "#task-screen{" in css
+    hud_css = (WEB / "style-hud-center.css").read_text(encoding="utf-8")
+    assert 'id="activity-panel"' in html
+    assert 'id="workspace-log"' in html
+    assert "function addActivity(event)" in js
+    assert "addActivity(event);" in js
+    assert "LIVE WORKSPACE" in html
+    assert ".workspace-log" in hud_css
 
 
 def test_workspace_create_tool_and_workspace_scope_include_documents():
@@ -364,7 +381,7 @@ def test_browser_tts_has_natural_edge_fallback():
     voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
     assert "def _synthesize_edge_audio" in voice
     assert "en-IN-NeerjaNeural" in voice
-    assert 'return self._synthesize_edge_audio(text)' in voice
+    assert 'return audio if audio[0] else self._synthesize_edge_audio(text)' in voice
 
 
 def test_critical_only_approval_policy():
@@ -383,9 +400,11 @@ def test_critical_tool_returns_natural_yes_no_prompt():
     from jenefar.tools.broker import ToolBroker
 
     broker = ToolBroker(require_confirmation=False)
+    # A destructive command is classified as critical and is never executed
+    # by this test; it must stop at the approval gate.
     result = broker.invoke(
         "terminal_execute",
-        {"command": "printf jenefar", "timeout": 5},
+        {"command": "rm -rf /tmp/jenefar-never-delete-test", "timeout": 5},
     )
     assert '"status": "approval_required"' in result
     assert "Kya main terminal execute kar doon?" in result
@@ -435,9 +454,10 @@ def test_holographic_window_mirror_integration():
     css = (WEB / "style.css").read_text(encoding="utf-8")
     server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
     broker = (ROOT / "jenefar" / "tools" / "broker.py").read_text(encoding="utf-8")
-    assert 'id="desktop-mirror"' in html
+    # The current HUD uses the embedded avatar window; desktop mirror is an
+    # optional backend feature and is not rendered in this dashboard markup.
+    assert 'id="hud-avatar-frame"' in html
     assert '"/desktop/mirror.jpg' in app
-    assert "Phase 9: clear avatar + real live-window mirror" in css
     assert 'path == "/desktop/mirror.jpg"' in server
     assert 'name="desktop_mirror_start"' in broker
 
@@ -509,3 +529,52 @@ def test_broker_online_schemas_are_non_strict_function_schemas():
     schemas = ToolBroker(require_confirmation=False).schemas()
     assert schemas
     assert all(item.get("strict") is False for item in schemas)
+
+def test_dashboard_uses_live_telemetry_and_has_model_controls():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    assert 'id="metric-cpu"' in html
+    assert 'id="metric-ram"' in html
+    assert 'id="metric-gpu"' in html
+    assert 'id="model-settings-button"' in html
+    assert 'id="model-choice"' in html
+    assert 'id="model-id-input"' in html
+    assert 'fetch("/system/metrics?ts="+Date.now()' in app
+    assert "setInterval(refreshSystemMetrics,1500)" in app
+    assert 'path == "/system/metrics"' in server
+    assert 'path == "/model/status"' in server
+    assert 'path == "/model/select"' in server
+    assert 'class="ring-meter cpu">32%' not in html
+    assert 'class="ring-meter ram">46%' not in html
+    assert 'class="ring-meter gpu">28%' not in html
+
+def test_right_dashboard_stack_has_compact_non_overlapping_layout_rules():
+    hud_css = (WEB / "style-hud-center.css").read_text(encoding="utf-8")
+    assert "Phase 14: compact, non-overlapping right-side system / command / task stack" in hud_css
+    assert ".system-card{\n    top:74px!important" in hud_css
+    assert ".command-stack{\n    top:255px!important" in hud_css
+    assert "#activity-panel{\n    top:414px!important" in hud_css
+    assert 'id="rea-connect-button"' in (WEB / "index.html").read_text(encoding="utf-8")
+
+
+def test_model_panel_uses_provider_discovery_and_rea_is_a_live_connector():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    catalog = (ROOT / "jenefar" / "core" / "model_catalog.py").read_text(encoding="utf-8")
+    assert "provider.models" in app
+    assert 'fetch("/rea/status?ts="+Date.now()' in app
+    assert 'fetch("/rea/connect"' in app
+    assert 'path == "/rea/status"' in server
+    assert 'path == "/rea/connect"' in server
+    assert "list_provider_models(name, pool)" in server
+    assert 'generativelanguage.googleapis.com/v1beta/models' in catalog
+
+
+def test_browser_tts_prefers_expressive_gemini_before_edge_fallback():
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert "def _synthesize_gemini_audio" in bridge
+    assert "speech_metadata" in bridge
+    assert "JENEFAR_GEMINI_TTS_MODEL" in bridge
+    assert "self._synthesize_gemini_audio(text)" in bridge
+    assert "trying expressive Gemini TTS" in bridge
