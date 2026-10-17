@@ -20,6 +20,10 @@ class BrowserVoiceBridge:
     def __init__(self, orchestrator, avatar=None):
         self.orchestrator = orchestrator
         self.avatar = avatar
+        # Reuse the STT runtime so exhausted-provider cooldowns survive across
+        # microphone utterances instead of retrying a dead API on every recording.
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        self._stt_runtime = ProviderVoiceRuntime(orchestrator)
         self._last_text = ""
         self._last_at = 0.0
         self._repeat_window = float(
@@ -247,9 +251,8 @@ class BrowserVoiceBridge:
                 "error": "Could not decode microphone audio." + (f" {detail}" if detail else ""),
             }
         try:
-            from jenefar.voice.provider import ProviderVoiceRuntime
             transcript = asyncio.run(
-                ProviderVoiceRuntime(self.orchestrator).transcribe_pcm(converted.stdout)
+                self._stt_runtime.transcribe_pcm(converted.stdout)
             )
         except Exception as exc:
             return {"ok": False, "error": f"Speech-to-text unavailable: {type(exc).__name__}: {exc}"}
