@@ -40,7 +40,14 @@ class LLMClient:
         self.local = LocalLLMClient(model_role=self.default_role)
 
     def available(self) -> bool:
-        return any(self.providers.configured(name) for name in self.providers.order())
+        if any(self.providers.configured(name) for name in self.providers.order()):
+            return True
+        # Local-only installations must still be able to run the orchestrator.
+        # Detection is intentionally deferred until no cloud provider is configured.
+        try:
+            return self.local.detect(model_role=self.default_role) is not None
+        except Exception:
+            return False
 
     def selected_model(self, model_role: str | None = None) -> tuple[str, str]:
         role = (model_role or self.default_role or "fast").strip().lower()
