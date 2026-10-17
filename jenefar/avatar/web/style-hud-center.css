@@ -238,3 +238,85 @@
   #rea-status-dot[data-state="connected"]{background:#55ffd6!important}
   #rea-status-dot[data-state="ready"]{background:#f3c86a!important}
 }
+
+
+/* Phase 15: reserve a separate vertical lane for all four quick commands. */
+@media (min-width:1251px) {
+  .system-card {
+    top:74px!important;
+    right:18px!important;
+    width:315px!important;
+    z-index:70!important;
+  }
+  .command-stack {
+    top:300px!important;
+    right:18px!important;
+    width:315px!important;
+    gap:5px!important;
+    z-index:68!important;
+  }
+  .command-stack .command-chip {
+    box-sizing:border-box!important;
+    min-height:32px!important;
+    line-height:1.2!important;
+  }
+  #activity-panel {
+    top:455px!important;
+    right:18px!important;
+    bottom:88px!important;
+    width:315px!important;
+    height:auto!important;
+    min-height:150px!important;
+    max-height:none!important;
+    z-index:69!important;
+  }
+}
+
+@media (min-width:1001px) and (max-width:1250px) {
+  .system-card {
+    top:72px!important;
+    right:14px!important;
+    width:300px!important;
+  }
+  .command-stack {
+    top:300px!important;
+    right:14px!important;
+    width:300px!important;
+    gap:5px!important;
+    z-index:68!important;
+  }
+  .command-stack .command-chip {
+    box-sizing:border-box!important;
+    min-height:30px!important;
+    line-height:1.2!important;
+  }
+  #activity-panel {
+    top:455px!important;
+    right:14px!important;
+    bottom:88px!important;
+    width:300px!important;
+    height:auto!important;
+    min-height:150px!important;
+    max-height:none!important;
+    z-index:69!important;
+  }
+}
+
+/* Keep the stack usable on shorter laptop displays instead of letting the
+   workspace cover the last quick command. */
+@media (min-width:1001px) and (max-height:780px) {
+  .command-stack {
+    top:262px!important;
+    gap:3px!important;
+  }
+  .command-stack .command-chip {
+    min-height:25px!important;
+    padding:5px 8px!important;
+  }
+  #activity-panel {
+    top:374px!important;
+    bottom:74px!important;
+    min-height:120px!important;
+    overflow:hidden!important;
+  }
+}
