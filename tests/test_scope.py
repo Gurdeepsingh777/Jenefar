@@ -33,3 +33,10 @@ def test_exact_host_does_not_authorize_entire_cidr():
     policy = ScopePolicy(["192.168.29.10"])
     assert policy.allows("192.168.29.10")
     assert not policy.allows("192.168.29.0/24")
+
+
+def test_mac_bssid_scope_is_exact_and_normalized():
+    policy = ScopePolicy(["AA:BB:CC:DD:EE:FF"])
+    assert policy.allows("aa:bb:cc:dd:ee:ff")
+    assert policy.allows("AA-BB-CC-DD-EE-FF")
+    assert not policy.allows("AA:BB:CC:DD:EE:00")
