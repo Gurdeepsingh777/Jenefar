@@ -240,7 +240,12 @@ def test_gemini_stt_can_reuse_telegram_llm_key(monkeypatch):
 
 def test_browser_stt_fails_over_from_openai_quota_to_gemini(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_API_KEY", "test-gemini-key")
+    monkeypatch.setenv(
+        "LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
+    monkeypatch.setenv("LLM_MODEL_NAME", "gemini-3.8-flash")
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.setenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,groq")
     runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
@@ -261,7 +266,7 @@ def test_browser_stt_fails_over_from_openai_quota_to_gemini(monkeypatch):
 
     monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_openai", staticmethod(fail_openai))
     monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_gemini", staticmethod(succeed_gemini))
-    result = asyncio.run(runtime.transcribe_pcm(b"\\x00\\x00" * 16000))
+    result = asyncio.run(runtime.transcribe_pcm(b"\x00\x00" * 16000))
     assert result == "Hello Jenefar, meri awaaz suno."
     assert calls == ["openai", "gemini"]
     assert not runtime._audio_pool.available("openai")
@@ -293,7 +298,7 @@ def test_gemini_stt_sends_audio_and_extracts_transcript(monkeypatch):
             return FakeResponse()
 
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: FakeClient())
-    audio = ProviderVoiceRuntime._wav_bytes(b"\\x00\\x00" * 1600)
+    audio = ProviderVoiceRuntime._wav_bytes(b"\x00\x00" * 1600)
     result = asyncio.run(ProviderVoiceRuntime._transcribe_gemini(audio))
     assert result == "Hello Jenefar"
     assert captured["url"].endswith("/models/gemini-test-model:generateContent")
