@@ -220,6 +220,27 @@ class LocalLLMClient:
         return {}
 
     @staticmethod
+    def _bounded_int_env(name: str, default: int, lower: int, upper: int) -> int:
+        try:
+            value = int(os.getenv(name, str(default)).strip())
+        except (TypeError, ValueError):
+            value = default
+        return max(lower, min(upper, value))
+
+    @classmethod
+    def _ollama_request_options(cls) -> dict[str, Any]:
+        think_value = os.getenv("JENEFAR_LOCAL_LLM_THINK", "false").strip().lower()
+        return {
+            "think": think_value in {"1", "true", "yes", "on"},
+            "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m",
+            "options": {
+                "num_ctx": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 8192, 2048, 65536),
+                "num_predict": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 768, 128, 8192),
+                "temperature": 0.2,
+            },
+        }
+
+    @staticmethod
     def _request_json(url: str, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
@@ -303,10 +324,16 @@ class LocalLLMClient:
 
         alternate_payload = dict(payload)
         if alternate.api == "ollama":
-            # Ollama's native endpoint doesn't require the OpenAI tool_choice field.
+            # Add native Ollama controls even when falling back from /v1.
+            alternate_payload.update(self._ollama_request_options())
             alternate_payload.pop("tool_choice", None)
-        elif alternate_payload.get("tools"):
-            alternate_payload.setdefault("tool_choice", "auto")
+        else:
+            # Don't leak Ollama-specific request fields into an OpenAI-compatible
+            # server if fallback goes in the opposite direction.
+            for key in ("think", "keep_alive", "options"):
+                alternate_payload.pop(key, None)
+            if alternate_payload.get("tools"):
+                alternate_payload.setdefault("tool_choice", "auto")
 
         try:
             result = self._request_json(alternate_endpoint, alternate_payload, timeout=timeout)
@@ -364,22 +391,7 @@ class LocalLLMClient:
                 # reasoning and return empty visible content/tool calls. For an
                 # assistant runtime, prefer a direct answer unless explicitly
                 # opted in to reasoning.
-                think_value = os.getenv("JENEFAR_LOCAL_LLM_THINK", "false").strip().lower()
-                payload["think"] = think_value in {"1", "true", "yes", "on"}
-
-                def _bounded_int(name: str, default: int, lower: int, upper: int) -> int:
-                    try:
-                        value = int(os.getenv(name, str(default)).strip())
-                    except (TypeError, ValueError):
-                        value = default
-                    return max(lower, min(upper, value))
-
-                payload["keep_alive"] = os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m"
-                payload["options"] = {
-                    "num_ctx": _bounded_int("JENEFAR_LOCAL_LLM_NUM_CTX", 8192, 2048, 65536),
-                    "num_predict": _bounded_int("JENEFAR_LOCAL_LLM_NUM_PREDICT", 768, 128, 8192),
-                    "temperature": 0.2,
-                }
+                payload.update(self._ollama_request_options())
             if local_tools:
                 payload["tools"] = local_tools
                 if info.api == "openai":
