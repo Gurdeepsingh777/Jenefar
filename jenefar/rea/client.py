@@ -7,7 +7,6 @@ import subprocess
 import threading
 import time
 from typing import Any
-from urllib.parse import urlsplit
 
 
 class ReaMCPClient:
@@ -24,8 +23,6 @@ class ReaMCPClient:
         self.command = os.getenv("JENEFAR_REA_COMMAND", "npx").strip() or "npx"
         raw_args = os.getenv("JENEFAR_REA_ARGS", "-y,rea-agents@6.5.0,mcp")
         self.args = [item.strip() for item in raw_args.split(",") if item.strip()]
-        self.env = dict(os.environ)
-        self.cwd = os.getcwd()
         self.timeout = max(5.0, min(600.0, float(os.getenv("JENEFAR_REA_TIMEOUT_SECONDS", "120"))))
         self.max_result_chars = max(1000, min(100000, int(os.getenv("JENEFAR_REA_MAX_RESULT_CHARS", "20000"))))
         self._lock = threading.RLock()
@@ -264,28 +261,36 @@ class ReaMCPClient:
             result.extend(chunk)
         return bytes(result)
 
+    def _read_line(self, deadline: float, maximum: int = 8192) -> bytes:
+        result = bytearray()
+        while len(result) < maximum:
+            char = self._read_exact(1, deadline)
+            result.extend(char)
+            if result.endswith(b"\r\n"):
+                return bytes(result)
+        raise RuntimeError("REA MCP header line is too long.")
+
     def _read_message(self, deadline: float) -> dict[str, Any]:
+        first_line = self._read_line(deadline)
+        # Current MCP stdio uses Content-Length framing. Tolerate a plain
+        # newline-delimited JSON message as a compatibility fallback.
+        stripped = first_line.strip()
+        if stripped.startswith(b"{"):
+            message = json.loads(stripped.decode("utf-8"))
+            if not isinstance(message, dict):
+                raise RuntimeError("REA MCP returned a non-object JSON-RPC message.")
+            return message
         headers: dict[str, str] = {}
-        while True:
-            line = bytearray()
-            # Read header byte-by-byte to avoid buffered reads hiding body bytes
-            # from select on later requests.
-            while True:
-                chunk = self._read_exact(1, deadline)
-                line.extend(chunk)
-                if line.endswith(b"\r\n"):
-                    break
-                if len(line) > 8192:
-                    raise RuntimeError("REA MCP header line is too long.")
-            if line == b"\r\n":
-                break
-            header = bytes(line[:-2]).decode("ascii", errors="replace")
+        line = first_line
+        while line != b"\r\n":
+            header = line[:-2].decode("ascii", errors="replace")
             if ":" not in header:
                 raise RuntimeError("REA MCP returned a malformed header.")
             key, value = header.split(":", 1)
             headers[key.strip().lower()] = value.strip()
+            line = self._read_line(deadline)
         try:
-            length = int(headers["content-length"])
+            length = int(headers["content-length"]);
         except (KeyError, ValueError) as exc:
             raise RuntimeError("REA MCP response has no valid Content-Length header.") from exc
         if length < 0 or length > 32 * 1024 * 1024:
