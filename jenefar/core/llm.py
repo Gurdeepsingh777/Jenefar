@@ -401,6 +401,93 @@ class LLMClient:
             max_tool_rounds=max_tool_rounds, model=model, model_role=model_role,
         )
 
+    @staticmethod
+    def _select_local_tools(prompt: str, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep local-model context small by advertising tools only for action tasks."""
+        if not tools:
+            return []
+        mode = os.getenv("JENEFAR_LOCAL_LLM_TOOL_MODE", "auto").strip().lower()
+        if mode in {"all", "always"}:
+            return tools
+        if mode in {"none", "never", "off", "false", "0"}:
+            return []
+
+        task = str(prompt or "").casefold()
+        categories = [
+            (
+                ("\\brea\\b", "\\bmcp\\b", "reverse engineer", "reverse-engineer"),
+                ("rea_",),
+            ),
+            (
+                ("repository", "\\brepo\\b", "project", "source code", "codebase", "file", "folder",
+                 "\\bgit\\b", "commit", "pull request", "pytest", "test suite", "debug", "refactor",
+                 "edit code", "modify code", "fix code", "fix this bug", "write code", "update code"),
+                ("repository_", "workspace_", "file_", "python_", "local_development_", "git_", "terminal_execute"),
+            ),
+            (
+                ("search the web", "web search", "search online", "latest news", "website", "url",
+                 "fetch url", "github repository", "look this up online"),
+                ("research_", "github_", "web_", "fetch_", "search_web", "url_"),
+            ),
+            (
+                ("desktop", "screenshot", "screen", "window", "gui", "click", "open app", "focus app",
+                 "move window", "browser tab"),
+                ("desktop_", "window_", "browser_", "screen_", "gui_"),
+            ),
+            (
+                ("nmap", "vulnerability", "penetration test", "pentest", "kali", "exploit",
+                 "security scan", "scan this target", "bug bounty"),
+                ("kali_", "security_", "bugbounty_", "cybersecurity_"),
+            ),
+            (
+                ("remember", "memory", "previous conversation", "saved note", "knowledge graph"),
+                ("memory_", "knowledge_", "note_", "session_"),
+            ),
+            (
+                ("robot", "arduino", "mqtt", "ros2", "serial port", "sensor"),
+                ("robot_", "mqtt_", "ros2_"),
+            ),
+            (
+                ("play music", "youtube", "local mp3", "recognize this song", "whatsapp"),
+                ("browser_play_youtube", "play_local_mp3", "recognize_song", "whatsapp_"),
+            ),
+            (
+                ("schedule", "automation", "remind me", "timer", "event trigger"),
+                ("automation_", "schedule_", "event_"),
+            ),
+        ]
+
+        matching_prefixes: list[str] = []
+        for markers, prefixes in categories:
+            import re
+            if any(re.search(marker, task) for marker in markers):
+                matching_prefixes.extend(prefixes)
+        if not matching_prefixes:
+            # Conversational/explanatory prompts should not send the entire tool
+            # catalog to a 27B local model. This materially reduces prompt size
+            # and avoids local inference timeouts for ordinary typed questions.
+            return []
+
+        selected = [
+            tool for tool in tools
+            if any(str(tool.get("name", "")).casefold().startswith(prefix) for prefix in matching_prefixes)
+        ]
+        if len(selected) <= 12:
+            return selected
+
+        # For broad requests, put tools whose names overlap the actual task first,
+        # and cap the catalog size to reduce local prompt processing time.
+        import re
+        words = {
+            word for word in re.findall(r"[a-z][a-z0-9_]{2,}", task)
+            if word not in {"please", "could", "would", "should", "this", "that", "with", "from", "have", "into"}
+        }
+        def score(tool: dict[str, Any]) -> int:
+            name = str(tool.get("name", "")).casefold().replace("_", " ")
+            description = str(tool.get("description", "")).casefold()
+            return sum(3 for word in words if word in name) + sum(1 for word in words if word in description)
+        return sorted(selected, key=score, reverse=True)[:12]
+
     def _complete_local(
         self,
         prompt: str,
@@ -411,13 +498,14 @@ class LLMClient:
         max_tool_rounds: int,
         model_role: str,
     ) -> LLMResponse:
-        tools = (
+        all_tools = (
             tool_broker.schemas(
                 allow_action_tools=allow_action_tools,
                 include_confirmation_tools=True,
             )
             if tool_broker is not None else []
         )
+        tools = self._select_local_tools(prompt, all_tools)
         text, pending = self.local.complete(
             prompt=prompt, instructions=instructions, tools=tools,
             tool_broker=tool_broker, max_tool_rounds=max_tool_rounds,
