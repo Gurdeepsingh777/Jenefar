@@ -461,7 +461,7 @@ def main() -> int:
             print(
                 f"[JENEFAR] Browser STT: {stt['provider']}/{stt['model']} "
                 f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
-                "Browser TTS=OpenAI/Edge generated audio -> Web SpeechSynthesis fallback"
+                "Browser TTS=OpenAI -> expressive Gemini TTS -> Edge -> Web SpeechSynthesis fallback"
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
