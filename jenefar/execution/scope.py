@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from urllib.parse import urlparse
+
+
+_MAC_ADDRESS = re.compile(r"(?i)^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$")
 
 
 class ScopePolicy:
@@ -22,6 +26,11 @@ class ScopePolicy:
         value = str(target or "").strip()
         if not value:
             return ""
+        # Preserve a MAC/BSSID as an exact authorization token. urlparse treats
+        # colon-separated MAC addresses like host:port values and would reduce
+        # them to the first byte pair, which is unsafe for wireless scope checks.
+        if _MAC_ADDRESS.fullmatch(value):
+            return value.casefold().replace("-", ":")
         # Bare CIDRs aren't URLs: preserve the entire range so it can be
         # compared as a network rather than silently reducing it to a host.
         try:
