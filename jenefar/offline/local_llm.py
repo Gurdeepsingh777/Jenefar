@@ -264,12 +264,12 @@ class LocalLLMClient:
         ))
         if not has_404:
             return False
-        return not any(marker in message for marker in (
-            "model not found",
-            "model does not exist",
-            "model is not found",
+        model_missing = "model" in message and any(marker in message for marker in (
+            "not found",
+            "does not exist",
             "no such model",
         ))
+        return not model_missing
 
     def _request_chat_with_fallback(
         self,
