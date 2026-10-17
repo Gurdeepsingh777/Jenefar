@@ -649,30 +649,72 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="kali_catalog",
-            description="List the curated Kali Linux tool catalog with tactic/category and installed status. Read-only.",
+            description=(
+                "Search Jenefar's curated Kali tool metadata plus executables discovered dynamically on PATH. "
+                "Filters are natural-language/fuzzy, so queries such as 'network scanning tools' do not require "
+                "an exact category name. Use query to find a named/new tool, installed_only to show only available "
+                "commands, include_all only when the user requests a full command inventory, and limit to bound results. "
+                "Read-only; never executes tools or installs packages."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "tactic": {"type": "string"},
-                    "category": {"type": "string"},
+                    "tactic": {"type": "string", "maxLength": 120},
+                    "category": {"type": "string", "maxLength": 160},
+                    "query": {"type": "string", "maxLength": 160},
+                    "installed_only": {"type": "boolean"},
+                    "include_all": {"type": "boolean"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 300},
                 },
                 "required": [],
                 "additionalProperties": False,
             },
             handler=lambda args: self.kali.catalog_list(
-                str(args.get("category") or "") or None,
-                str(args.get("tactic") or "") or None,
+                category=str(args.get("category") or "") or None,
+                tactic=str(args.get("tactic") or "") or None,
+                query=str(args.get("query") or "") or None,
+                installed_only=bool(args.get("installed_only", False)),
+                include_all=bool(args.get("include_all", False)),
+                limit=int(args.get("limit", 80)),
+            ),
+        ))
+        self.registry.register(ToolSpec(
+            name="kali_tool_help",
+            description=(
+                "Inspect a named local Kali/Linux command before using an unfamiliar tool. "
+                "Reads its local man page or bounded --help/-h output; if it is not installed, searches the local "
+                "apt-cache for package suggestions. No software is installed. Must be called before using any newly "
+                "discovered tool with kali_tool_execute."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 8},
+                },
+                "required": ["tool"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.kali.inspect_tool(
+                tool=str(args["tool"]),
+                timeout=int(args.get("timeout", 5)),
             ),
         ))
         self.registry.register(ToolSpec(
             name="kali_tool_execute",
-            description="Execute one installed tool from the curated Kali catalog with explicit confirmation. Network targets must be inside authorized_targets.",
+            description=(
+                "Execute one installed command from Kali/Linux using a direct argv list (never a shell). "
+                "Curated tools are available immediately; every unfamiliar PATH-discovered tool must first be inspected "
+                "with kali_tool_help. Network-impacting commands require every detected target to be in authorized_targets. "
+                "The exact command, target(s), timeout, and scope result are shown in the approval prompt before execution. "
+                "Always prepare a plan from the tool help, then request execution only when the user's task and authorization are clear."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "tool": {"type": "string"},
-                    "args": {"type": "array", "items": {"type": "string"}, "maxItems": 80},
-                    "target": {"type": "string"},
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "args": {"type": "array", "items": {"type": "string", "maxLength": 8000}, "maxItems": 80},
+                    "target": {"type": "string", "maxLength": 500},
                     "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
                 },
                 "required": ["tool", "args", "target", "timeout"],
