@@ -426,12 +426,24 @@ class LLMClient:
         online = internet_available()
         _, selected_role = self.selected_model(model_role)
         failures: list[str] = []
+        runtime_override = ModelRouter.runtime_override()
+        runtime_provider = (runtime_override or {}).get("provider", "")
+        provider_order = self.providers.order()
+        if runtime_provider in provider_order:
+            provider_order = [runtime_provider] + [
+                name for name in provider_order if name != runtime_provider
+            ]
 
         if online:
-            for provider in self.providers.order():
+            for provider in provider_order:
                 if not self.providers.available(provider):
                     continue
-                model = self.explicit_model or self.providers.model(provider, selected_role)
+                runtime_model = (runtime_override or {}).get("model", "")
+                model = self.explicit_model or (
+                    runtime_model
+                    if runtime_model and (not runtime_provider or provider == runtime_provider)
+                    else self.providers.model(provider, selected_role)
+                )
                 try:
                     result = self._complete_online(
                         provider, prompt, instructions=instructions,
