@@ -11,6 +11,8 @@ from jenefar.avatar.controller import AvatarController
 from jenefar.avatar.settings import UISettings
 from jenefar.avatar.system_metrics import read_system_metrics
 from jenefar.core.model_router import ModelRouter
+from jenefar.core.model_catalog import list_provider_models
+from jenefar.core.model_ids import normalize_model_id
 from jenefar.core.provider_pool import ProviderPool
 from jenefar.evaluation.dashboard import render_dashboard
 from jenefar.realtime.server import (
@@ -105,24 +107,29 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             if path == "/model/status":
                 pool = ProviderPool()
                 states = pool.status("fast")
-                providers = [
-                    {
+                providers = []
+                for name, state in states.items():
+                    if not state["configured"]:
+                        continue
+                    catalog = list_provider_models(name, pool)
+                    providers.append({
                         "id": name,
                         "label": name.replace("_", " ").title(),
                         "model": state["model"],
                         "available": state["available"],
-                    }
-                    for name, state in states.items()
-                    if state["configured"]
-                ]
+                        "models": catalog.get("models", []),
+                        "catalog_source": catalog.get("source", "unknown"),
+                        "catalog_diagnostic": catalog.get("diagnostic"),
+                    })
                 override = ModelRouter.runtime_override()
                 selected = ModelRouter().resolve("fast")
-                active_provider = (override or {}).get("provider", "")
+                active_provider = (override or {}).get("provider", "") or selected.provider or ""
                 if active_provider not in pool.CONFIGS:
                     active_provider = next(
                         (
                             name for name in pool.order()
-                            if pool.configured(name) and pool.model(name, "fast") == selected.model
+                            if pool.configured(name)
+                            and normalize_model_id(pool.model(name, "fast"), name) == selected.model
                         ),
                         "",
                     )
@@ -142,6 +149,21 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                         "runtime_override": bool(override),
                     },
                 )
+                return
+            if path == "/rea/status":
+                broker = self.tool_broker
+                if broker is None or not hasattr(broker, "rea_connector"):
+                    self._json(503, {"enabled": False, "ready": False, "connected": False,
+                                     "last_error": "REA connector is not wired into this runtime."})
+                    return
+                status = broker.rea_connector.status()
+                try:
+                    status["skill_registered"] = True
+                    status["skill_enabled"] = broker.skills.is_enabled("rea_reverse_engineering")
+                except Exception:
+                    status["skill_registered"] = False
+                    status["skill_enabled"] = False
+                self._json(200, status)
                 return
             if path == "/events":
                 subscriber = self.controller.subscribe()
@@ -251,12 +273,22 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                         {"error": f"{provider} is not configured. Add its API key to .env first."},
                     )
                     return
+                model = normalize_model_id(model, provider)
                 if not model or len(model) > 160 or not re.fullmatch(
                     r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,159}", model
                 ):
                     self._json(
                         400,
                         {"error": "Enter a valid model ID (letters, numbers, . _ : / + -)."},
+                    )
+                    return
+                catalog = list_provider_models(provider, pool)
+                if catalog.get("source") == "provider-api" and model not in catalog.get("models", []):
+                    suggestions = ", ".join(catalog.get("models", [])[:5])
+                    detail = f" Use an available model: {suggestions}." if suggestions else ""
+                    self._json(
+                        400,
+                        {"error": f"Model '{model}' was not returned by the {provider} API for this key.{detail}"},
                     )
                     return
                 ModelRouter.set_runtime_override(model, provider)
@@ -267,6 +299,32 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                         "active": {"provider": provider, "model": model, "source": "browser-runtime"},
                     },
                 )
+                return
+
+            if path == "/rea/connect":
+                broker = self.tool_broker
+                if broker is None or not hasattr(broker, "rea_connector"):
+                    self._json(503, {"status": "error", "error": "REA connector is not wired into this runtime."})
+                    return
+                try:
+                    result = broker.rea_connector.list_tools()
+                    self._json(200, {
+                        "status": "connected",
+                        "connected": True,
+                        "ready": True,
+                        "skill_registered": True,
+                        "skill_enabled": broker.skills.is_enabled("rea_reverse_engineering"),
+                        "server": result.get("server", "rea"),
+                        "tool_count": result.get("count", len(result.get("tools", []))),
+                        "tool_examples": [item.get("name") for item in result.get("tools", [])[:8]],
+                    })
+                except Exception as exc:
+                    self._json(502, {
+                        "status": "error",
+                        "connected": False,
+                        "ready": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    })
                 return
 
             if path == "/settings":
