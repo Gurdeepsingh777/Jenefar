@@ -55,13 +55,27 @@ class ProviderPool:
         self.cooldowns: dict[str, float] = {}
 
     def order(self) -> list[str]:
-        raw = os.getenv(
-            "JENEFAR_PROVIDER_ORDER",
-            "openai,openrouter,gemini,groq",
-        )
-        names = [item.strip().lower() for item in raw.split(",") if item.strip()]
-        valid = [name for name in names if name in self.CONFIGS]
-        return valid or ["openai"]
+        # Prefer providers with useful free tiers, then optionally use OpenAI
+        # if the user has configured a working paid key. Local Ollama is the
+        # automatic final fallback in LLMClient.complete().
+        default_order = ["groq", "gemini", "openrouter", "openai"]
+        raw = os.getenv("JENEFAR_PROVIDER_ORDER", "").strip()
+        if not raw:
+            return default_order
+
+        names = tuple(item.strip().lower() for item in raw.split(",") if item.strip())
+        # Migrate the old sample orders automatically: many existing .env files
+        # were created from an older .env.example and otherwise keep the old
+        # cloud-provider priority forever. Explicit custom orders are preserved.
+        legacy_defaults = {
+            ("openai", "openrouter", "gemini", "groq"),
+            ("gemini", "openrouter", "groq", "openai"),
+        }
+        if names in legacy_defaults:
+            return default_order
+
+        valid = list(dict.fromkeys(name for name in names if name in self.CONFIGS))
+        return valid or default_order
 
     @staticmethod
     def _generic_gemini_key() -> str:
@@ -155,6 +169,16 @@ def is_quota_exhausted_provider_error(exc: Exception) -> bool:
         "billing hard limit",
         "billing_limit",
         "exhausted quota",
+        "daily limit",
+        "daily quota",
+        "daily cap",
+        "limit for today",
+        "try again tomorrow",
+        "requests per day",
+        "requests/day",
+        "tokens per day",
+        "free tier limit",
+        "free tier quota",
     )
     return any(marker in message for marker in markers)
 
