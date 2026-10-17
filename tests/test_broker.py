@@ -57,6 +57,7 @@ def test_kali_execution_approval_displays_exact_command_and_target(monkeypatch):
         "args": ["-sV", "192.168.29.10"],
         "target": "192.168.29.10",
         "timeout": 30,
+        "plan": "Run a bounded service check against the explicitly authorized lab host and report observed services.",
     }))
     assert result["status"] == "approval_required"
     pending = broker.pending[result["pending_id"]]
