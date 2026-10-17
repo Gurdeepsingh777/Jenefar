@@ -260,7 +260,7 @@ async function startRealtime() {
     const needsOpenAIAccess = /HTTP Error 400|HTTPError.*400|insufficient_quota|credit_balance_exhausted|no credits|billing|API key/i.test(message);
     setState(
       needsOpenAIAccess
-        ? "LIVE VOICE NEEDS OPENAI REALTIME ACCESS/CREDITS — USE MIC FOR EXPRESSIVE VOICE"
+        ? "LIVE VOICE NEEDS OPENAI REALTIME ACCESS/MODEL/CREDITS — USE MIC FOR EXPRESSIVE VOICE"
         : "LIVE VOICE FAILED — " + message.slice(0, 70),
       false,
     );
