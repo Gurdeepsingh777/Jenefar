@@ -360,7 +360,10 @@ class KaliToolManager:
                 timeout=min(int(timeout), 5),
                 env={"MANPAGER": "cat", "PAGER": "cat", "MANWIDTH": "100"},
             )
-            if candidate and not candidate.startswith("[unavailable:"):
+            if candidate and not candidate.startswith("[unavailable:") and not any(
+                marker in candidate.casefold()
+                for marker in ("no manual entry", "nothing appropriate", "no entry for", "cannot open")
+            ):
                 help_text, source = candidate, "man page"
 
         if not help_text and actual_name.casefold() not in GUI_ONLY_TOOLS:
@@ -425,7 +428,20 @@ class KaliToolManager:
                 except ValueError:
                     # Only a fully-qualified hostname is considered an implicit target;
                     # words, local paths, URLs' querystrings and flags are ignored.
-                    if re.fullmatch(r"(?i)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", parsed):
+                    ignored_extensions = {
+                        "txt", "list", "lst", "json", "xml", "csv", "log", "html", "htm",
+                        "pdf", "png", "jpg", "jpeg", "gif", "mp3", "wav", "pcap", "pcapng",
+                        "zip", "gz", "db", "sqlite", "pem", "key", "crt", "py", "sh", "bin",
+                        "out", "md", "doc", "docx", "yaml", "yml", "conf", "ini", "nmap",
+                    }
+                    suffix = parsed.rsplit(".", 1)[-1].casefold() if "." in parsed else ""
+                    if (
+                        "/" not in parsed
+                        and not parsed.startswith("-")
+                        and suffix not in ignored_extensions
+                        and re.fullmatch(r"(?i)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", parsed)
+                    ):
+                        candidates.append(parsed.lower())
                         candidates.append(parsed.lower())
             index += 1
         return list(dict.fromkeys(item for item in candidates if item))
@@ -454,13 +470,31 @@ class KaliToolManager:
         flagged_targets = self._target_candidates(values)
         supplied_target = str(target or "").strip()
         targets = list(dict.fromkeys(([supplied_target] if supplied_target else []) + flagged_targets))
+        target_flags = {
+            "-u", "--url", "--host", "-h", "--target", "--domain", "-d",
+            "--hostname", "--server", "-t", "--ip", "--target-ip",
+        }
+        normalized_args = [value.casefold() for value in values]
+        bypass_flags = {
+            "-il", "--input-list", "--input-file", "--targets-file", "--url-list",
+            "--host-list", "--random-targets", "-ir",
+        }
+        prohibited = sorted(
+            value for value in normalized_args
+            if value in bypass_flags
+            or any(value.startswith(flag + "=") for flag in bypass_flags if flag.startswith("--"))
+            or value.startswith("-il") and len(value) > 3
+        )
         likely_network = (
             actual_name.casefold() in NETWORK_TOOL_NAMES
             or info.category.casefold() in NETWORK_CATEGORIES
-            or any(value in SCOPE_BYPASS_FLAGS for value in (arg.casefold() for arg in values))
+            or bool(flagged_targets)
+            or any(value in target_flags for value in normalized_args)
+            or bool(prohibited)
         )
-        lowered_args = {value.casefold() for value in values}
-        prohibited = sorted(lowered_args & SCOPE_BYPASS_FLAGS)
+        # Only remote target values are scope-checked; local filename arguments
+        # such as wordlist.txt or report.xml are not treated as hostnames.
+        lowered_args = set(normalized_args)
         if prohibited and likely_network:
             raise PermissionError(
                 "This generic Kali execution path blocks target-list/random-target flags because it cannot prove every destination is authorized: "
@@ -471,7 +505,8 @@ class KaliToolManager:
             raise PermissionError(
                 f"'{actual_name}' appears to be a network-impacting tool. Provide its exact target in the target field or a recognized target argument, then authorize it in JENEFAR_AUTHORIZED_TARGETS/config.yaml."
             )
-        for candidate in targets:
+        targets_to_check = targets if (likely_network or supplied_target) else []
+        for candidate in targets_to_check:
             if not self.scope.allows(candidate):
                 raise PermissionError(self.scope.explain(candidate))
 
