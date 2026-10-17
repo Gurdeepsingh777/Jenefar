@@ -306,6 +306,7 @@ class ToolBroker:
             parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
             handler=lambda _args: self.rea_connector.list_tools(),
         ))
+
         self.registry.register(ToolSpec(
             name="rea_call",
             description="Call an exact advertised REA MCP tool with schema-validated arguments for authorized reverse engineering.",
