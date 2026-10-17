@@ -257,7 +257,13 @@ async function startRealtime() {
   } catch (error) {
     const message = String(error?.message || error || "Unknown error");
     await stopRealtime({ quiet: true });
-    setState("LIVE VOICE FAILED — " + message.slice(0, 70), false);
+    const needsOpenAIAccess = /HTTP Error 400|HTTPError.*400|insufficient_quota|credit_balance_exhausted|no credits|billing|API key/i.test(message);
+    setState(
+      needsOpenAIAccess
+        ? "LIVE VOICE NEEDS OPENAI REALTIME ACCESS/CREDITS — USE MIC FOR EXPRESSIVE VOICE"
+        : "LIVE VOICE FAILED — " + message.slice(0, 70),
+      false,
+    );
     console.error("[JENEFAR] Could not start live voice", error);
     throw error;
   }
