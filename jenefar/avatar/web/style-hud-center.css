@@ -320,3 +320,61 @@
     overflow:hidden!important;
   }
 }
+
+
+/* Phase 16: compute the right rail from actual panel heights.
+   This prevents the system card, quick commands, and workspace from overlapping
+   on short displays or when live status text wraps onto an extra line. */
+@media (min-width:1001px) {
+  .command-stack {
+    top: var(--jenefar-right-commands-top, 300px) !important;
+  }
+  #activity-panel {
+    top: var(--jenefar-right-workspace-top, 455px) !important;
+    bottom: 88px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+  }
+  #activity-panel .workspace-log {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* Tighten the status card before allocating the remaining vertical space. */
+@media (min-width:1001px) and (max-height:780px) {
+  .system-card { padding: 7px !important; }
+  .system-card .ring-meter {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 9px !important;
+  }
+  .system-card .ring-meter::after { inset: 3px !important; }
+  .system-card .metric-detail { display: none !important; }
+  .system-card .metrics-updated {
+    margin-top: 3px !important;
+    font-size: 6px !important;
+  }
+  .system-card .service-list { margin-top: 4px !important; }
+  .system-card .rea-connector-row {
+    margin-top: 4px !important;
+    padding-top: 4px !important;
+  }
+  .command-stack .command-chip {
+    min-height: 25px !important;
+    padding: 5px 8px !important;
+  }
+}
+
+@media (min-width:1001px) and (max-height:620px) {
+  .system-card .status-grid,
+  .system-card .metrics-updated,
+  .system-card .service-list,
+  .system-card .rea-connector-row {
+    display: none !important;
+  }
+  .system-card { min-height: 0 !important; }
+}
