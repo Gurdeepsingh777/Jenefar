@@ -38,3 +38,20 @@ def test_retryable_errors():
     assert is_retryable_provider_error(Exception("AuthenticationError: invalid api key"))
     assert is_retryable_provider_error(Exception("connection timeout"))
     assert not is_retryable_provider_error(BadRequest("bad request"))
+
+
+def test_generic_telegram_gemini_key_is_usable_by_avatar_llm(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_API_KEY", "generic-gemini-key")
+    monkeypatch.setenv(
+        "LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
+    monkeypatch.setenv("LLM_MODEL_NAME", "gemini-3.8-flash")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("JENEFAR_GEMINI_MODEL_FAST", raising=False)
+
+    pool = ProviderPool()
+    assert pool.configured("gemini")
+    assert pool.api_key("gemini") == "generic-gemini-key"
+    assert pool.model("gemini", "fast") == "gemini-3.8-flash"
