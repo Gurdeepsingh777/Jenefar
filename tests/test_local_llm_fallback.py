@@ -112,6 +112,52 @@ def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
     assert history[-1]["content"].find("local note") >= 0
 
 
+def test_auto_mode_retries_alternate_chat_protocol_after_route_404(monkeypatch):
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_API", "auto")
+    client = LocalLLMClient()
+    from jenefar.offline.local_llm import LocalModelInfo
+
+    monkeypatch.setattr(
+        client,
+        "detect",
+        lambda model_role=None: LocalModelInfo(
+            "http://127.0.0.1:11434/v1", "qwen3:8b", "openai"
+        ),
+    )
+    requests = []
+
+    def fake_request(url, payload, *, timeout):
+        requests.append(url)
+        if url.endswith("/v1/chat/completions"):
+            raise RuntimeError(
+                f"HTTP 404 from local LLM endpoint {url}: 404 page not found"
+            )
+        assert url == "http://127.0.0.1:11434/api/chat"
+        return {"message": {"role": "assistant", "content": "Offline answer works."}}
+
+    monkeypatch.setattr(client, "_request_json", fake_request)
+    answer, pending = client.complete(
+        prompt="Reply offline",
+        instructions="You are Jenefar.",
+    )
+
+    assert answer == "Offline answer works."
+    assert pending == []
+    assert requests == [
+        "http://127.0.0.1:11434/v1/chat/completions",
+        "http://127.0.0.1:11434/api/chat",
+    ]
+
+
+def test_local_route_404_detection_does_not_treat_missing_model_as_route_error():
+    assert LocalLLMClient._is_chat_route_not_found(
+        RuntimeError("HTTP 404 from local LLM endpoint: 404 page not found")
+    )
+    assert not LocalLLMClient._is_chat_route_not_found(
+        RuntimeError("HTTP 404 from local LLM endpoint: model 'qwen3:8b' not found")
+    )
+
+
 def test_tool_arguments_accept_openai_strings_and_ollama_objects():
     assert LocalLLMClient._tool_arguments('{"path":"/tmp/demo"}') == {"path": "/tmp/demo"}
     assert LocalLLMClient._tool_arguments({"path": "/tmp/demo"}) == {"path": "/tmp/demo"}
