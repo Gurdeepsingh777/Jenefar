@@ -91,8 +91,8 @@ def test_rea_client_preserves_multiple_jsonrpc_messages_from_one_read():
         os.write(
             write_fd,
             (
-                '{"jsonrpc":"2.0","id":1,"result":{"first":true}}\\n'
-                '{"jsonrpc":"2.0","id":2,"result":{"second":true}}\\n'
+                '{"jsonrpc":"2.0","id":1,"result":{"first":true}}\n'
+                '{"jsonrpc":"2.0","id":2,"result":{"second":true}}\n'
             ).encode("utf-8"),
         )
         first = client._read_message(time.monotonic() + 2)
