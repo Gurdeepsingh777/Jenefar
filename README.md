@@ -80,21 +80,6 @@ Voice provider behavior:
 - `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
 - Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
 
-### LLM provider failover (free-tier first)
-
-Jenefar tries configured online providers in this default order: **Groq -> Gemini -> OpenRouter -> optional OpenAI**. If none returns a usable response, the assistant automatically tries the installed local Ollama model (for example, Qwen). A provider that reports exhausted credits/quota or a daily/free-tier cap is placed into a longer cooldown so the next request does not repeatedly hit the same exhausted endpoint. Temporary rate limits use a shorter cooldown.
-
-To use cloud fallbacks, create your own API keys using each provider's official console and put them in the local `.env` file:
-
-- `GROQ_API_KEY` and optionally `GROQ_MODEL`
-- `GEMINI_API_KEY` and optionally `GEMINI_MODEL`
-- `OPENROUTER_API_KEY` and `OPENROUTER_MODEL=openrouter/free`
-- `OPENAI_API_KEY` only if you want a final optional paid-provider attempt
-
-The sample `.env.example` uses `JENEFAR_PROVIDER_ORDER=groq,gemini,openrouter,openai`. Existing `.env` files with the old shipped default order are migrated automatically; an explicitly customized order is preserved. You can edit `JENEFAR_PROVIDER_ORDER` to change the priority.
-
-**Important:** free provider APIs are not unlimited. Their request/token limits and model availability depend on the provider and account and can change. When free cloud limits are reached, Jenefar cools down that provider and moves to the next one; the local Ollama model is the final no-cloud-credits fallback. Do not paste API keys into GitHub or commit your `.env` file.
-
 ### REA MCP bridge troubleshooting
 
 Jenefar REA ko official documented command `npx -y rea-agents@6.5.0 mcp` se start karta hai. MCP requests newline-delimited JSON-RPC ke roop me bheje jaate hain; connection fail ho to ab REA subprocess ka stderr aur exit code diagnostic me include hota hai. REA connect fail ho to pehle prerequisites aur package diagnostic check karein:
@@ -917,56 +902,55 @@ Local/offline mode ke liye Ollama ya kisi OpenAI-compatible local LLM server ko 
 Agar sirf CLI/dependency verification karni ho, `python run.py --doctor` sufficient hai.
 ## Multi-provider LLM failover
 
-Jenefar can use multiple online LLM providers and automatically move to the next configured provider when a request fails because of authentication, rate limiting, timeout, connection, or service-availability errors.
+Jenefar's default cloud route is **Groq -> Gemini -> OpenRouter -> optional OpenAI**. Providers are tried left-to-right. When an online provider returns a quota/credit, daily-cap, authentication, rate-limit, timeout, connection, or service-availability error, Jenefar moves on to the next configured provider. Quota/daily-cap failures receive a longer cooldown; temporary rate limits use a shorter cooldown. If no online provider returns a usable answer, Jenefar automatically tries the installed local Ollama model (for example Qwen), unless local fallback is explicitly disabled.
 
 Recommended configuration:
 
 ```env
-JENEFAR_PROVIDER_ORDER=openai,openrouter,gemini,groq,cerebras
+JENEFAR_PROVIDER_ORDER=groq,gemini,openrouter,openai
 JENEFAR_PROVIDER_COOLDOWN_SECONDS=60
+JENEFAR_PROVIDER_QUOTA_COOLDOWN_SECONDS=3600
 
-OPENAI_API_KEY=
-OPENAI_MODEL=
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-120b
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
 
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash-lite
-
-GROQ_API_KEY=
-GROQ_MODEL=llama-3.3-70b-versatile
-
-CEREBRAS_API_KEY=
-CEREBRAS_MODEL=gpt-oss-120b
+# Optional final paid-provider attempt:
+OPENAI_API_KEY=
+OPENAI_MODEL=
 ```
 
 Provider-specific model variables may also be set per role, for example:
 
 ```env
-JENEFAR_OPENROUTER_MODEL_CODING=
 JENEFAR_GROQ_MODEL_FAST=
+JENEFAR_OPENROUTER_MODEL_CODING=
 JENEFAR_GEMINI_MODEL_RESEARCH=
 ```
 
-The provider order is evaluated left-to-right. A provider that repeatedly fails with a retryable error enters a short cooldown so Jenefar does not repeatedly hammer a rate-limited or unavailable endpoint. If every online provider fails, the existing Ollama/OpenAI-compatible local model remains the final fallback unless `JENEFAR_DISABLE_LOCAL_FALLBACK=1` or `python run.py --online-only` is used.
+Existing `.env` files containing either of the older shipped sample orders are migrated to the free-tier-first order automatically; a custom `JENEFAR_PROVIDER_ORDER` is preserved. The provider registry also supports Cerebras as an optional provider if you explicitly add `cerebras` to the order.
 
-Check configuration without sending an LLM request:
+Check the current configuration without sending an LLM request:
 
 ```bash
 python run.py --provider-status
 ```
 
-API keys are read from environment variables and are never printed by provider status.
+API keys are read from environment variables and are never printed by provider status. Keep them in your local `.env` file; never commit secrets or paste them into GitHub issues.
+
+Free API access is not unlimited or guaranteed: request/token limits and model availability vary by provider and account and may change. When cloud free-tier limits are reached, Jenefar switches to another configured route and then to local Ollama/Qwen; it does not bypass provider authentication, usage limits, or private consumer-chat endpoints.
 
 Official provider pages:
-
 - OpenRouter: https://openrouter.ai/
 - Google Gemini API: https://ai.google.dev/gemini-api
 - Groq: https://console.groq.com/
 - Cerebras: https://inference-docs.cerebras.ai/
 
-Free-tier availability, quotas, and model availability can change by provider and account; choose models from the provider's current documentation rather than assuming a model remains free.
 
 ## Model/provider configuration
 
