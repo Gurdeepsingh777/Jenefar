@@ -73,12 +73,135 @@ class BrowserVoiceBridge:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         return "" if not key or key.startswith("sk-or-") else key
 
+    @staticmethod
+    def _direct_gemini_tts_key() -> str:
+        direct = os.getenv("GEMINI_API_KEY", "").strip()
+        if direct:
+            return direct
+        base_url = (
+            os.getenv("LLM_BASE_URL", "").strip()
+            or os.getenv("BASE_URL", "").strip()
+        ).lower()
+        if "generativelanguage.googleapis.com" not in base_url:
+            return ""
+        return os.getenv("LLM_API_KEY", "").strip() or os.getenv("API_KEY", "").strip()
+
+    @staticmethod
+    def _gemini_tts_style(text: str) -> str:
+        """Choose expressive delivery metadata without altering the spoken words."""
+        configured = os.getenv("JENEFAR_GEMINI_TTS_STYLE", "").strip()
+        if configured:
+            return configured[:500]
+        lowered = str(text or "").casefold()
+        empathetic = (
+            "sorry", "maaf", "takleef", "pareshan", "i understand",
+            "don't worry", "chinta mat", "error", "problem", "issue",
+        )
+        excited = (
+            "congratulations", "mubarak", "great news", "bahut achha",
+            "amazing", "wonderful", "shabash", "ho gaya",
+        )
+        serious = ("warning", "danger", "important", "security risk", "unsafe", "critical")
+        if any(marker in lowered for marker in empathetic):
+            return (
+                "Warm, gentle, empathetic adult female conversational voice. "
+                "Speak a little more slowly, with reassuring softness, human pauses, "
+                "subtle pitch variation, and caring emphasis. Natural Indian Hinglish pronunciation."
+            )
+        if any(marker in lowered for marker in serious):
+            return (
+                "Calm, serious, clear and grounded conversational delivery. "
+                "Use measured pacing, natural pauses and firm but not harsh emphasis. "
+                "Natural Indian Hinglish pronunciation."
+            )
+        if any(marker in lowered for marker in excited):
+            return (
+                "Warm, genuinely happy and encouraging adult female conversational voice. "
+                "Sound smiling and lively, with brighter intonation, varied pitch and natural rhythm; "
+                "avoid exaggerated acting. Natural Indian Hinglish pronunciation."
+            )
+        if "?" in lowered or any(marker in lowered for marker in ("kya ", "kaise ", "kyun ", "why ", "how ")):
+            return (
+                "Friendly, attentive adult female conversational voice. "
+                "Sound curious and engaged with a gentle rise on questions, varied pitch, "
+                "clear words and relaxed natural pauses. Natural Indian Hinglish pronunciation."
+            )
+        return (
+            "Warm, natural, emotionally expressive adult female conversational voice for Jenefar. "
+            "Use relaxed Indian Hinglish pronunciation, varied pitch and cadence, small human pauses, "
+            "soft emphasis on meaningful words, and a friendly confident tone. "
+            "Do not sound like a news reader, audiobook narrator or robot; avoid overacting."
+        )
+
+    def _synthesize_gemini_audio(self, text: str) -> tuple[str, str]:
+        """Expressive Google Gemini TTS fallback, independent of chat-model quota."""
+        key = self._direct_gemini_tts_key()
+        if not key:
+            return "", ""
+        import httpx
+
+        model = os.getenv("JENEFAR_GEMINI_TTS_MODEL", "gemini-3.8-flash-tts").strip()
+        voice = os.getenv("JENEFAR_GEMINI_TTS_VOICE", "Aoede").strip() or "Aoede"
+        payload = {
+            "model": model,
+            "input": [{
+                "type": "user_input",
+                "content": [{
+                    "type": "text",
+                    "text": str(text or "")[:4096],
+                    "annotations": [{
+                        "type": "speech_metadata",
+                        "style": self._gemini_tts_style(text),
+                    }],
+                }],
+            }],
+            "response_format": {"type": "audio"},
+            "generation_config": {"speech_config": [{"voice": voice}]},
+        }
+        try:
+            response = httpx.post(
+                "https://generativelanguage.googleapis.com/v1beta/interactions",
+                headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                json=payload,
+                timeout=httpx.Timeout(45.0, connect=5.0),
+            )
+            response.raise_for_status()
+            result = response.json()
+            audio_data = (result.get("output_audio") or {}).get("data")
+            mime = (result.get("output_audio") or {}).get("mime_type") or "audio/wav"
+            if not audio_data:
+                # REST responses expose audio blocks inside steps; SDK convenience
+                # objects instead expose output_audio directly.
+                for step in result.get("steps", []):
+                    if not isinstance(step, dict) or step.get("type") != "model_output":
+                        continue
+                    for block in step.get("content", []):
+                        if isinstance(block, dict) and block.get("type") == "audio" and block.get("data"):
+                            audio_data = block["data"]
+                            mime = block.get("mime_type") or "audio/wav"
+                            break
+                    if audio_data:
+                        break
+            if not audio_data:
+                raise RuntimeError("Gemini TTS response contained no audio data.")
+            # The upstream API already returns base64 audio, matching the avatar
+            # event contract used for OpenAI and Edge generated audio.
+            print(f"[JENEFAR] Browser TTS: expressive Gemini {model} / {voice}.")
+            return str(audio_data), str(mime)
+        except Exception as exc:
+            print(
+                "[JENEFAR] Expressive Gemini TTS unavailable; "
+                f"trying the next voice fallback: {type(exc).__name__}: {exc}"
+            )
+            return "", ""
+
     def _synthesize_edge_audio(self, text: str) -> tuple[str, str]:
         try:
             import edge_tts
             voice = os.getenv("JENEFAR_EDGE_TTS_VOICE", "en-IN-NeerjaNeural")
-            rate = os.getenv("JENEFAR_EDGE_TTS_RATE", "-4%")
-            communicate = edge_tts.Communicate(text[:4096], voice, rate=rate)
+            rate = os.getenv("JENEFAR_EDGE_TTS_RATE", "-2%")
+            pitch = os.getenv("JENEFAR_EDGE_TTS_PITCH", "+2Hz")
+            communicate = edge_tts.Communicate(text[:4096], voice, rate=rate, pitch=pitch)
             with tempfile.NamedTemporaryFile(suffix=".mp3", prefix="jenefar_edge_", delete=False) as tmp:
                 output_path = tmp.name
             try:
@@ -101,7 +224,10 @@ class BrowserVoiceBridge:
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
         if not key or self._openai_tts_disabled:
-            return self._synthesize_edge_audio(text)
+            # The Gemini TTS model has explicit emotional/style controls; prefer
+            # it over the plain Edge voice when a Google API key is available.
+            audio = self._synthesize_gemini_audio(text)
+            return audio if audio[0] else self._synthesize_edge_audio(text)
 
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
         voice = os.getenv("JENEFAR_BROWSER_TTS_VOICE", "coral").strip() or "coral"
@@ -110,7 +236,7 @@ class BrowserVoiceBridge:
             (
                 "Speak as a warm, natural, emotionally expressive adult female voice. "
                 "Use a relaxed Indian conversational style for Roman Hinglish. "
-                "Sound like a real person talking naturally, not like a narrator or robot. "
+                "Sound like a real person talking naturally, not a narrator or robot. "
                 "Use gentle pauses, natural emphasis, and a friendly confident tone. "
                 "Do not spell out Romanized Hindi words."
             ),
@@ -138,9 +264,10 @@ class BrowserVoiceBridge:
                 print("[JENEFAR] OpenAI TTS quota exhausted; skipping further OpenAI TTS attempts this run.")
             print(
                 "[JENEFAR] Browser TTS generation failed; "
-                f"trying Edge TTS fallback: {type(exc).__name__}: {exc}"
+                f"trying expressive Gemini TTS: {type(exc).__name__}: {exc}"
             )
-            return self._synthesize_edge_audio(text)
+            audio = self._synthesize_gemini_audio(text)
+            return audio if audio[0] else self._synthesize_edge_audio(text)
 
     def submit_text(self, text: str) -> dict[str, Any]:
         raw = " ".join(str(text or "").strip().split())
