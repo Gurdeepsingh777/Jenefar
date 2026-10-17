@@ -32,12 +32,21 @@ class SkillManager:
             for item in configured_roots.split(os.pathsep)
             if item.strip()
         ]
+        repo_roots = []
+        if str(os.getenv("JENEFAR_REA_SKILL_ENABLED", "true")).strip().lower() in {"1", "true", "yes", "on"}:
+            # REA's official reverse-engineering workflow is prompt-only guidance.
+            # Its MCP server is registered separately by the REA connector.
+            repo_roots.append(ROOT / "skills" / "rea")
         self.skill_roots = [
             Path(item).expanduser().resolve()
             for item in (skill_roots or env_roots)
         ]
         if not self.skill_roots:
             self.skill_roots = [ROOT / "skills"]
+        for root in repo_roots:
+            resolved = root.resolve()
+            if resolved not in self.skill_roots:
+                self.skill_roots.append(resolved)
         self._lock = threading.Lock()
         self._skills: dict[str, SkillManifest] = {
             skill.name: skill for skill in BUILTIN_SKILLS
