@@ -249,9 +249,18 @@ class KaliToolManager:
         tokens = [token for token in normalized.split() if token not in STOP_WORDS and len(token) > 1]
         if not tokens:
             return True
-        # Flexible natural-language matching prevents phrases such as
-        # "network scanning tools" from filtering a valid catalog to [].
-        return any(token in fields for token in tokens)
+        # Normalize common natural-language variants and synonyms before matching.
+        expanded: list[str] = []
+        for token in tokens:
+            if token in {"scan", "scanning", "scanner", "scanners", "scans"}:
+                expanded.extend(("scan", "scanner", "nmap", "masscan", "rustscan", "port"))
+            elif token in {"network", "networks", "networking"}:
+                expanded.extend(("network", "nmap", "masscan", "rustscan", "netexec"))
+            else:
+                expanded.append(token)
+        # OR matching is intentional: descriptive filters should never hide all
+        # valid tools just because the user used a category phrase.
+        return any(token in fields for token in expanded)
 
     def catalog_list(
         self,
@@ -442,7 +451,6 @@ class KaliToolManager:
                         and re.fullmatch(r"(?i)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", parsed)
                     ):
                         candidates.append(parsed.lower())
-                        candidates.append(parsed.lower())
             index += 1
         return list(dict.fromkeys(item for item in candidates if item))
 
@@ -471,7 +479,7 @@ class KaliToolManager:
         supplied_target = str(target or "").strip()
         targets = list(dict.fromkeys(([supplied_target] if supplied_target else []) + flagged_targets))
         target_flags = {
-            "-u", "--url", "--host", "-h", "--target", "--domain", "-d",
+            "-u", "--url", "--host", "--target", "--domain", "-d",
             "--hostname", "--server", "-t", "--ip", "--target-ip",
         }
         normalized_args = [value.casefold() for value in values]
