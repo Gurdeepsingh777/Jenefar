@@ -257,7 +257,7 @@ class LocalLLMClient:
             raw = str(details.get("parameter_size") or "")
         if not raw:
             raw = str(model or "")
-        match = re.search(r"(?<![a-z0-9])([0-9]+(?:\\.[0-9]+)?)\\s*b(?:illion)?(?![a-z])", raw, re.I)
+        match = re.search(r"(?<![a-z0-9])([0-9]+(?:\.[0-9]+)?)\s*b(?:illion)?(?![a-z])", raw, re.I)
         if match:
             try:
                 return float(match.group(1))
@@ -318,7 +318,7 @@ class LocalLLMClient:
                     if len(content) > 4200:
                         message["content"] = (
                             content[:3200]
-                            + "\\n[Middle of long system context omitted for timeout recovery.]\\n"
+                            + "\n[Middle of long system context omitted for timeout recovery.]\n"
                             + content[-800:]
                         )
                 elif message.get("role") == "user":
@@ -326,7 +326,7 @@ class LocalLLMClient:
                     if len(content) > 8000:
                         message["content"] = (
                             content[:6500]
-                            + "\\n[Middle of long user input omitted for timeout recovery.]\\n"
+                            + "\n[Middle of long user input omitted for timeout recovery.]\n"
                             + content[-1000:]
                         )
         if info.api == "ollama":
