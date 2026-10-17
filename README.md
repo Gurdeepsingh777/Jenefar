@@ -900,6 +900,22 @@ python run.py
 Local/offline mode ke liye Ollama ya kisi OpenAI-compatible local LLM server ko start karke `python run.py` chala sakte ho.
 
 Agar sirf CLI/dependency verification karni ho, `python run.py --doctor` sufficient hai.
+
+## REA-derived skills
+
+Jenefar bundles a small, declarative set of adapted REA workflow skills under `skills/rea/`. They are loaded by the existing `SkillManager`; their text is guidance only and does not execute arbitrary code.
+
+- `rea_reverse_engineering`: investigate authorized binaries, app packages, Electron/JavaScript, firmware and captured runtime behavior using REA's actual advertised MCP tools.
+- `rea_analysis_optimization`: measure and reduce unnecessary analysis work while preserving evidence and correctness.
+- `rea_ci_tests_audit`: inspect regression tests, fixture drift, false-green tests and CI costs.
+- `rea_tool_design`: shape tool/API/MCP contracts and evidence/error semantics.
+- `rea_changelog_update`: prepare release notes from pinned history with evidence-based contributor attribution.
+
+The reverse-engineering skill was already part of Jenefar's REA integration; this update strengthens its target-routing, evidence and failure-handling guidance and adds the four development workflow skills. They are adapted, not byte-for-byte copies of upstream instructions. See [morluto/rea](https://github.com/morluto/rea) and its [skill directory](https://github.com/morluto/rea/tree/main/.agents/skills).
+
+All skills remain subject to Jenefar's authorization and approval boundaries. The skill text does not install analysis engines, register MCP servers, or bypass missing provider prerequisites. REA/MCP tools need to actually be available for execution.
+
+
 ## Multi-provider LLM failover
 
 Jenefar's default cloud route is **Groq -> Gemini -> OpenRouter -> optional OpenAI**. Providers are tried left-to-right. When an online provider returns a quota/credit, daily-cap, authentication, rate-limit, timeout, connection, or service-availability error, Jenefar moves on to the next configured provider. Quota/daily-cap failures receive a longer cooldown; temporary rate limits use a shorter cooldown. If no online provider returns a usable answer, Jenefar automatically tries the installed local Ollama model (for example Qwen), unless local fallback is explicitly disabled.
