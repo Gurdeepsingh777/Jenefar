@@ -1210,3 +1210,122 @@ body.vrm-loaded #photo-avatar{display:none}
 #realtime-state[data-active="true"]{color:#79ffd9}
 @media(max-width:1050px){.live-voice-button{padding:8px 9px;letter-spacing:.03em}#realtime-state{max-width:115px}}
 @media(max-width:620px){.live-voice-button{font-size:8px;padding:7px 8px}#realtime-state{max-width:85px}}
+
+/* Runtime model selector and measured hardware telemetry */
+.ring-meter{
+  position:relative;
+  border:0;
+  background:conic-gradient(var(--meter-color,#67e8ff) calc(var(--meter-value,0)*1%),rgba(255,255,255,.07) 0);
+  color:#e9fbff;
+  isolation:isolate;
+}
+.ring-meter::after{
+  content:"";
+  position:absolute;
+  inset:5px;
+  z-index:-1;
+  border-radius:50%;
+  background:rgba(6,16,29,.96);
+  box-shadow:inset 0 0 18px rgba(66,170,255,.12);
+}
+.ring-meter>span{position:relative;z-index:1;font-variant-numeric:tabular-nums}
+.ring-meter.cpu{--meter-color:#3de9ff}
+.ring-meter.ram{--meter-color:#2789ff}
+.ring-meter.gpu{--meter-color:#a574ff}
+.ring-meter.meter-unavailable{
+  background:conic-gradient(rgba(150,168,190,.24) 0%,rgba(150,168,190,.06) 100%);
+  color:#8294ad;
+}
+.ring-meter.meter-unavailable::after{background:rgba(6,16,29,.96)}
+.metric-detail{
+  min-height:10px;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:7px!important;
+  letter-spacing:0!important;
+  color:#8da7c0!important;
+  font-variant-numeric:tabular-nums;
+}
+.metrics-updated{
+  margin-top:8px;
+  font-size:8px;
+  letter-spacing:.04em;
+  color:#83a8c5;
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.model-quick-button{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  max-width:190px;
+  padding:6px 9px;
+  border:1px solid rgba(103,232,255,.22);
+  border-radius:9px;
+  background:rgba(103,232,255,.07);
+  color:#bcefff;
+  font:inherit;
+  font-size:8px;
+  letter-spacing:.10em;
+  cursor:pointer;
+}
+.model-quick-button #active-model-label{
+  display:inline-block;
+  max-width:115px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#effbff;
+  letter-spacing:0;
+  text-transform:none;
+}
+.model-quick-button:hover{border-color:rgba(103,232,255,.55);background:rgba(103,232,255,.13)}
+.model-panel{
+  position:fixed;
+  top:86px;
+  right:24px;
+  z-index:300;
+  width:min(360px,calc(100vw - 28px));
+  padding:16px;
+  border:1px solid rgba(103,232,255,.24);
+  border-radius:16px;
+  background:rgba(5,13,28,.97);
+  box-shadow:0 24px 90px rgba(0,0,0,.58),inset 0 0 30px rgba(33,133,206,.06);
+  backdrop-filter:blur(24px);
+  color:#e7f7ff;
+}
+.model-panel[hidden]{display:none!important}
+.model-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.model-panel-head .card-title{font-size:10px}
+.model-panel-subtitle{margin-top:5px;font-size:9px;color:#809db9;letter-spacing:.05em}
+#model-panel-close{
+  width:29px;height:29px;border:1px solid rgba(255,255,255,.12);
+  border-radius:8px;background:rgba(255,255,255,.05);color:#d8eafa;
+  font-size:19px;cursor:pointer;
+}
+.model-panel>label{display:block;margin:12px 0 6px;font-size:9px;letter-spacing:.12em;color:#9fbed7;text-transform:uppercase}
+#model-choice,#model-id-input{
+  display:block;width:100%;min-width:0;padding:10px 11px;
+  border:1px solid rgba(126,183,222,.20);border-radius:9px;
+  outline:none;background:rgba(1,7,18,.88);color:#eaf8ff;font:inherit;font-size:11px;
+}
+#model-choice:focus,#model-id-input:focus{border-color:rgba(103,232,255,.6);box-shadow:0 0 0 2px rgba(103,232,255,.08)}
+.model-apply-button{
+  width:100%;margin-top:13px;padding:10px 12px;border:1px solid rgba(103,232,255,.45);
+  border-radius:10px;background:linear-gradient(105deg,rgba(22,117,154,.42),rgba(80,73,159,.34));
+  color:#edfcff;font-size:9px;font-weight:700;letter-spacing:.15em;cursor:pointer;
+}
+.model-apply-button:disabled{opacity:.55;cursor:wait}
+#model-feedback{margin:10px 0 0;min-height:15px;color:#8eaec7;font-size:9px;line-height:1.5;overflow-wrap:anywhere}
+#model-feedback[data-state="error"]{color:#ff9aa9}
+#model-feedback[data-state="success"]{color:#73ffd5}
+@media(max-width:800px){
+  .model-panel{top:75px;right:12px;width:calc(100vw - 24px)}
+  .model-quick-button{max-width:145px;padding:6px}
+  .model-quick-button #active-model-label{max-width:78px}
+  .status-grid{gap:5px}
+  .ring-meter{width:60px;height:60px;font-size:12px}
+  .metric-detail{font-size:6px!important}
+}
