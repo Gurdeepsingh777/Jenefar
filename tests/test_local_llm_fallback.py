@@ -103,8 +103,12 @@ def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
     assert pending == []
     assert broker.invocations == [("memory_recall", {"query": "voice setup"})]
     assert requests[0][0] == "http://127.0.0.1:11434/api/chat"
-    assert requests[0][2] == 240
-    history = requests[1][1]["messages"]
+    assert requests[0][2] == 360
+    assert requests[0][1]["think"] is False
+    assert requests[0][1]["keep_alive"] == "10m"
+    assert requests[0][1]["options"]["num_ctx"] == 8192
+    assert requests[0][1]["options"]["num_predict"] == 768
+    history = requests[1][1]["messages"
     assert history[-2]["role"] == "assistant"
     assert history[-2]["tool_calls"][0]["function"]["name"] == "memory_recall"
     assert history[-1]["role"] == "tool"
