@@ -660,6 +660,7 @@ class ToolBroker:
                     "installed_only": {"type": "boolean"},
                     "include_all": {"type": "boolean"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 300},
+                    "offset": {"type": "integer", "minimum": 0, "maximum": 100000},
                 },
                 "required": [],
                 "additionalProperties": False,
@@ -671,6 +672,7 @@ class ToolBroker:
                 installed_only=bool(args.get("installed_only", False)),
                 include_all=bool(args.get("include_all", False)),
                 limit=int(args.get("limit", 80)),
+                offset=int(args.get("offset", 0)),
             ),
         ))
         self.registry.register(ToolSpec(
