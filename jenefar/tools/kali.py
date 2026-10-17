@@ -79,6 +79,13 @@ NETWORK_TOOL_NAMES = {
     "crackmapexec", "evil-winrm", "responder", "bettercap", "wifite",
     "reaver", "kismet", "netdiscover", "arp-scan", "nbtscan", "smbclient",
     "ldapsearch", "kerbrute", "snmpwalk", "onesixtyone", "whatweb",
+    "metasploit", "msfconsole", "burpsuite", "zaproxy",
+}
+EXECUTION_WRAPPERS_BLOCKED = {
+    "sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "ash",
+    "sudo", "su", "doas", "pkexec", "env", "xargs", "busybox",
+    "python", "python2", "python3", "python3.14", "pypy", "perl", "ruby",
+    "php", "node", "nodejs", "lua", "systemd-run", "chroot", "docker", "podman",
 }
 SCOPE_BYPASS_FLAGS = {
     "-il", "--input-list", "--input-file", "--targets-file", "--url-list",
@@ -439,45 +446,61 @@ class KaliToolManager:
             "--hostname", "--server", "-t", "--ip", "--target-ip",
             "--bssid", "--ap-mac", "-b",
         }
+        ignored_extensions = {
+            "txt", "list", "lst", "json", "xml", "csv", "log", "html", "htm",
+            "pdf", "png", "jpg", "jpeg", "gif", "mp3", "wav", "pcap", "pcapng",
+            "zip", "gz", "db", "sqlite", "pem", "key", "crt", "py", "sh", "bin",
+            "out", "md", "doc", "docx", "yaml", "yml", "conf", "ini", "nmap",
+        }
+        domain_pattern = r"(?i)(?<![a-z0-9_-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![a-z0-9_-])"
+        ipv4_pattern = r"(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?(?![0-9.])"
+        mac_pattern = r"(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}"
         index = 0
         while index < len(args):
             value = str(args[index]).strip()
+            if not value:
+                index += 1
+                continue
+
+            suffix = value.rsplit(".", 1)[-1].casefold() if "." in value else ""
+            looks_like_file = suffix in ignored_extensions and "://" not in value
+            # Catch a target nested in a tool-specific script/console argument
+            # (e.g. msfconsole -x "set RHOSTS 1.2.3.4") so the separately
+            # supplied target cannot accidentally authorize a different host.
+            if not looks_like_file:
+                for match in re.finditer(ipv4_pattern, value):
+                    try:
+                        candidates.append(str(ipaddress.ip_network(match.group(0), strict=False)))
+                    except ValueError:
+                        continue
+                for match in re.finditer(mac_pattern, value):
+                    candidates.append(match.group(0).lower().replace("-", ":"))
+                for match in re.finditer(domain_pattern, value):
+                    domain = match.group(0).lower()
+                    if domain.rsplit(".", 1)[-1].casefold() not in ignored_extensions:
+                        candidates.append(domain)
+                for match in re.finditer(r"(?i)(?<![0-9a-f:])([0-9a-f]*:[0-9a-f:]{2,})(?![0-9a-f:])", value):
+                    try:
+                        candidates.append(str(ipaddress.ip_address(match.group(1))))
+                    except ValueError:
+                        continue
+
             if value in flags_with_values and index + 1 < len(args):
                 candidates.append(str(args[index + 1]).strip())
                 index += 2
                 continue
-            if any(value.startswith(flag + "=") for flag in ("--url", "--host", "--target", "--domain", "--hostname", "--server", "--ip", "--target-ip")):
+            if any(value.startswith(flag + "=") for flag in (
+                "--url", "--host", "--target", "--domain", "--hostname", "--server",
+                "--ip", "--target-ip", "--bssid", "--ap-mac",
+            )):
                 candidates.append(value.split("=", 1)[1].strip())
-            elif value:
-                parsed = value
-                mac_match = re.search(r"(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}", value)
-                if mac_match:
-                    candidates.append(mac_match.group(0).lower().replace("-", ":"))
-                if "://" in value:
-                    parsed = urlparse(value).hostname or value
-                try:
-                    network = ipaddress.ip_network(parsed.strip("[]"), strict=False)
-                    candidates.append(str(network))
-                except ValueError:
-                    # Only a fully-qualified hostname is considered an implicit target;
-                    # words, local paths, URLs' querystrings and flags are ignored.
-                    ignored_extensions = {
-                        "txt", "list", "lst", "json", "xml", "csv", "log", "html", "htm",
-                        "pdf", "png", "jpg", "jpeg", "gif", "mp3", "wav", "pcap", "pcapng",
-                        "zip", "gz", "db", "sqlite", "pem", "key", "crt", "py", "sh", "bin",
-                        "out", "md", "doc", "docx", "yaml", "yml", "conf", "ini", "nmap",
-                    }
-                    suffix = parsed.rsplit(".", 1)[-1].casefold() if "." in parsed else ""
-                    if (
-                        "/" not in parsed
-                        and not parsed.startswith("-")
-                        and suffix not in ignored_extensions
-                        and re.fullmatch(r"(?i)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", parsed)
-                    ):
-                        candidates.append(parsed.lower())
+            elif "://" in value:
+                parsed_host = urlparse(value).hostname
+                if parsed_host:
+                    candidates.append(parsed_host.lower())
             index += 1
-        return list(dict.fromkeys(item for item in candidates if item))
 
+        return list(dict.fromkeys(item for item in candidates if item))
     def _execution_details(
         self, *, tool: str, args: list[str], target: str = "", timeout: int = 120,
         require_inspection: bool = True,
@@ -485,6 +508,10 @@ class KaliToolManager:
         name = str(tool or "").strip()
         if not name or len(name) > 120 or "/" in name or "\x00" in name:
             raise ValueError("Provide a command name, not a path or shell expression.")
+        if name.casefold() in EXECUTION_WRAPPERS_BLOCKED:
+            raise PermissionError(
+                f"'{name}' is a shell/interpreter/wrapper, not a Kali tool. Use the dedicated approved workspace/terminal workflow instead; it cannot be nested inside kali_tool_execute."
+            )
         if not isinstance(args, (list, tuple)):
             raise ValueError("Tool args must be a JSON array of individual arguments, not a shell string.")
         values = [str(arg) for arg in args]
