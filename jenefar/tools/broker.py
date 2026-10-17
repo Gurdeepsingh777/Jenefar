@@ -370,6 +370,38 @@ class ToolBroker:
             action=True,
         ))
         self.registry.register(ToolSpec(
+            name="rea_status",
+            description="Check the optional REA MCP server connection and advertised reverse-engineering tools.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self._rea_status(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_list_tools",
+            description="List the reverse-engineering tools advertised by REA's MCP server. Discover exact names/schemas before a new workflow.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            handler=lambda _args: self.rea_connector.list_tools(),
+        ))
+        self.registry.register(ToolSpec(
+            name="rea_call",
+            description=(
+                "Call a schema-validated tool advertised by REA for authorized reverse-engineering and artifact analysis. "
+                "Supply the exact tool name and JSON-object arguments from rea_list_tools; do not invent tool names. "
+                "This uses the registered MCP process, not arbitrary shell command construction."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["tool", "arguments"],
+                "additionalProperties": False,
+            },
+            handler=self._rea_call,
+            requires_confirmation=True,
+            action=True,
+        ))
+        self.registry.register(ToolSpec(
             name="discover_kali_tools",
             description="List common Kali/Linux security tools and whether each executable is installed. This never executes a security tool.",
             handler=lambda _args: [
