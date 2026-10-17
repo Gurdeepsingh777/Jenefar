@@ -40,6 +40,56 @@ def test_retryable_errors():
     assert not is_retryable_provider_error(BadRequest("bad request"))
 
 
+def test_quota_exhaustion_is_distinguished_from_ordinary_rate_limit():
+    from jenefar.core.provider_pool import is_quota_exhausted_provider_error
+
+    assert is_quota_exhausted_provider_error(
+        RuntimeError("429 insufficient_quota credit_balance_exhausted")
+    )
+    assert is_quota_exhausted_provider_error(
+        RuntimeError("RESOURCE_EXHAUSTED: You exceeded your current quota")
+    )
+    assert not is_quota_exhausted_provider_error(
+        RuntimeError("429 rate limit reached; retry in 5 seconds")
+    )
+
+
+def test_llm_uses_longer_cooldown_for_exhausted_provider_quota(monkeypatch):
+    from jenefar.core.llm import LLMClient
+
+    monkeypatch.setenv("JENEFAR_PROVIDER_QUOTA_COOLDOWN_SECONDS", "7200")
+    monkeypatch.setattr("jenefar.core.llm.internet_available", lambda: True)
+    client = LLMClient()
+    monkeypatch.setattr(client.providers, "order", lambda: ["gemini"])
+    monkeypatch.setattr(client.providers, "available", lambda _provider: True)
+    monkeypatch.setattr(client.providers, "model", lambda _provider, _role: "online-model")
+    cooldowns = []
+    monkeypatch.setattr(
+        client.providers,
+        "cooldown",
+        lambda provider, seconds=None: cooldowns.append((provider, seconds)),
+    )
+    monkeypatch.setattr(
+        client,
+        "_complete_online",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("429 insufficient_quota credit_balance_exhausted")
+        ),
+    )
+    monkeypatch.setattr(
+        client,
+        "_complete_local",
+        lambda *_args, **_kwargs: __import__(
+            "jenefar.core.llm", fromlist=["LLMResponse"]
+        ).LLMResponse("Offline answer", "local"),
+    )
+
+    result = client.complete("Test quota fallback")
+
+    assert result.provider == "local"
+    assert cooldowns == [("gemini", 7200.0)]
+
+
 def test_generic_telegram_gemini_key_is_usable_by_avatar_llm(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
