@@ -111,3 +111,69 @@ def test_openai_compatible_404_falls_back_to_ollama_and_strips_tool_choice(monke
     assert result["message"]["content"] == "Recovered through Ollama"
     assert updated_info.api == "ollama"
     assert updated_info.base_url == "http://127.0.0.1:11434"
+
+
+def test_openai_responses_empty_text_raises_for_provider_failover(monkeypatch):
+    from types import SimpleNamespace
+
+    from jenefar.core.llm import LLMClient
+
+    client = LLMClient()
+
+    class Responses:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(output=[], output_text="", id="empty-response")
+
+    monkeypatch.setattr(client, "_client", lambda _provider: SimpleNamespace(responses=Responses()))
+
+    import pytest
+    with pytest.raises(RuntimeError, match="returned an empty text response"):
+        client._complete_openai_responses(
+            "openai",
+            "Please answer",
+            instructions="Be helpful.",
+            use_web_search=False,
+            tool_broker=None,
+            allow_action_tools=False,
+            max_tool_rounds=1,
+            model="test-model",
+            model_role="fast",
+        )
+
+
+def test_openai_compatible_chat_empty_text_raises_for_provider_failover(monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+
+    from jenefar.core.llm import LLMClient
+
+    client = LLMClient()
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="", tool_calls=[]),
+            )
+        ]
+    )
+
+    class Completions:
+        @staticmethod
+        def create(**_kwargs):
+            return response
+
+    chat = SimpleNamespace(completions=Completions())
+    monkeypatch.setattr(client, "_client", lambda _provider: SimpleNamespace(chat=chat))
+
+    with pytest.raises(RuntimeError, match="returned an empty chat response"):
+        client._complete_chat(
+            "gemini",
+            "Please answer",
+            instructions="Be helpful.",
+            tool_broker=None,
+            allow_action_tools=False,
+            max_tool_rounds=1,
+            model="test-model",
+            model_role="fast",
+        )
