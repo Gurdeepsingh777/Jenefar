@@ -33,7 +33,11 @@ def test_kali_catalog_help_and_confirmed_executor_are_registered():
 def test_kali_execution_approval_displays_exact_command_and_target(monkeypatch):
     import json
 
-    broker = ToolBroker(require_confirmation=True)
+    activity = []
+    broker = ToolBroker(
+        require_confirmation=True,
+        activity_handler=lambda state, text: activity.append((state, text)),
+    )
     monkeypatch.setattr(
         broker.kali,
         "preview",
@@ -57,8 +61,12 @@ def test_kali_execution_approval_displays_exact_command_and_target(monkeypatch):
     assert result["status"] == "approval_required"
     pending = broker.pending[result["pending_id"]]
     assert pending.arguments["tool"] == "nmap"
-    # The exact preview is surfaced through the current activity/approval prompt.
-    assert "kali_tool_execute" == result["tool"]
+    # The exact preview is surfaced through the activity/approval prompt.
+    prompts = [text for state, text in activity if state == "waiting_approval"]
+    assert prompts
+    assert "/usr/bin/nmap -sV 192.168.29.10" in prompts[-1]
+    assert "192.168.29.10" in prompts[-1]
+    assert "Authorization scope: PASS" in prompts[-1]
 
 
 def test_rea_tools_are_registered_and_mutating_bridge_call_is_gated(monkeypatch):
