@@ -208,6 +208,19 @@ class JenefarOrchestrator:
                 self._avatar_state("speaking", output)
                 return output
 
+            if self._is_ip_info_query(text):
+                output = self._local_ip_info_response()
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.45,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+                return output
+
             if self._is_local_time_query(text):
                 output = self._local_time_response(text, response_language)
                 self.session.add("assistant", output)
@@ -501,6 +514,74 @@ class JenefarOrchestrator:
             f"{target} ka live mirror blue screen par chala diya hai. "
             "Native window ko hide karna current desktop backend me available nahi tha."
         )
+
+    @staticmethod
+    def _is_ip_info_query(text: str) -> bool:
+        """Recognize a direct request for this computer's IP info, not a scan."""
+        lowered = " ".join(str(text or "").casefold().split())
+        if not lowered:
+            return False
+        # If the user explicitly asks for scanning, preserve the separate security
+        # workflow. A plain "check my IP" request must never be promoted into one.
+        scan_markers = (
+            "nmap", "masscan", "port scan", "network scan", "subnet scan",
+            "scan my network", "scan this network", "open ports", "sweep",
+        )
+        if any(marker in lowered for marker in scan_markers):
+            return False
+
+        import re
+
+        patterns = (
+            r"\\b(check|show|find|get|display|tell me)\\b.{0,40}\\b(my|current|public|local)\\b.{0,16}\\bip(?:v[46])?(?:\\s+address)?\\b",
+            r"\\bwhat(?:'s| is)\\s+(?:my|the)\\s+(?:(?:current|public|local)\\s+)?ip(?:v[46])?(?:\\s+address)?\\b",
+            r"\\bmy\\s+(?:(?:current|public|local)\\s+)?ip(?:v[46])?(?:\\s+address)?\\b",
+            r"\\b(?:mera|meri)\\s+(?:(?:public|local)\\s+)?ip(?:\\s+address)?\\b",
+            r"\\bip\\s+(?:batao|check karo|address kya hai)\\b",
+        )
+        return any(re.search(pattern, lowered) for pattern in patterns)
+
+    def _local_ip_info_response(self) -> str:
+        """Return actual local/public IP observations without invoking the LLM or scanner."""
+        try:
+            raw = self.tool_broker.invoke("network_ip_info", {})
+            payload = json.loads(raw)
+        except Exception as exc:
+            return (
+                "IP information check nahi ho paaya. "
+                f"Read-only network info tool error: {type(exc).__name__}: {exc}. "
+                "Koi network scan execute nahi kiya gaya."
+            )
+
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            error = str(payload.get("error") or "tool returned an invalid result") if isinstance(payload, dict) else "invalid tool result"
+            return f"IP information check nahi ho paaya: {error}. Koi network scan execute nahi kiya gaya."
+
+        data = payload.get("result") or {}
+        if not isinstance(data, dict):
+            return "IP information tool ne invalid data return kiya. Koi network scan execute nahi kiya gaya."
+
+        local_v4 = [
+            f"{item.get('address')} ({item.get('interface')})"
+            for item in data.get("local_ipv4", [])
+            if isinstance(item, dict) and item.get("address")
+        ]
+        local_v6 = [
+            f"{item.get('address')} ({item.get('interface')})"
+            for item in data.get("local_ipv6", [])
+            if isinstance(item, dict) and item.get("address")
+        ]
+        public_v4 = str(data.get("public_ipv4") or "").strip()
+        lines = ["Aapke computer ki IP information:"]
+        lines.append("Local IPv4: " + (", ".join(local_v4) if local_v4 else "active interface address detect nahi hua"))
+        if local_v6:
+            lines.append("Local IPv6: " + ", ".join(local_v6))
+        if public_v4:
+            lines.append("Public IPv4: " + public_v4 + " (ipify HTTPS lookup)")
+        else:
+            lines.append("Public IPv4: abhi fetch nahi ho saka; internet/service unavailable ho sakti hai.")
+        lines.append("Ye sirf IP information check tha—koi Nmap, port scan ya subnet scan nahi chalaya.")
+        return "\\n".join(lines)
 
     @staticmethod
     def _is_local_time_query(text: str) -> bool:
