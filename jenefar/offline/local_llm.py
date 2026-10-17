@@ -241,6 +241,113 @@ class LocalLLMClient:
         }
 
     @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        message = str(exc).casefold()
+        return any(marker in message for marker in (
+            "timed out", "timeout", "read timed out", "socket timeout",
+            "urlopen error timed out", "operation timed out",
+        ))
+
+    @staticmethod
+    def _model_parameter_billions(model: str, details: Any = None) -> float | None:
+        import re
+
+        raw = ""
+        if isinstance(details, dict):
+            raw = str(details.get("parameter_size") or "")
+        if not raw:
+            raw = str(model or "")
+        match = re.search(r"(?<![a-z0-9])([0-9]+(?:\\.[0-9]+)?)\\s*b(?:illion)?(?![a-z])", raw, re.I)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                return None
+        return None
+
+    def _find_smaller_ollama_model(self, info: LocalModelInfo) -> LocalModelInfo | None:
+        """Select a smaller model only if it is already installed; never pull models automatically."""
+        if info.api != "ollama":
+            return None
+        try:
+            payload = self._get_json(f"{self._origin(info.base_url)}/api/tags", timeout=4.0)
+        except Exception as exc:
+            print(f"[JENEFAR] Could not inspect installed Ollama fallback models: {type(exc).__name__}: {exc}")
+            return None
+
+        records = payload.get("models")
+        if not isinstance(records, list):
+            return None
+        current_size = self._model_parameter_billions(info.model)
+        candidates: list[tuple[float, str]] = []
+        names: set[str] = set()
+        for item in records:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("model") or "").strip()
+            if not name or name == info.model or name in names:
+                continue
+            names.add(name)
+            lowered = name.casefold()
+            if any(marker in lowered for marker in ("-vl:", "-vision", "embed", "rerank")):
+                continue
+            size = self._model_parameter_billions(name, item.get("details"))
+            if size is None or (current_size is not None and size >= current_size):
+                continue
+            candidates.append((size, name))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        preferred = os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip()
+        chosen = next((name for _size, name in candidates if name == preferred), candidates[0][1])
+        return LocalModelInfo(info.base_url, chosen, "ollama")
+
+    @staticmethod
+    def _compact_retry_payload(payload: dict[str, Any], info: LocalModelInfo) -> dict[str, Any]:
+        """Reduce context/generation pressure once after a local request times out."""
+        compact = dict(payload)
+        compact["messages"] = [dict(message) for message in payload.get("messages", [])]
+        compact["tools"] = payload.get("tools") or []
+        if not compact["tools"]:
+            # For plain questions only, keep the beginning and end of a very long
+            # system prompt so core instructions survive without wasting context.
+            for message in compact["messages"]:
+                if message.get("role") == "system":
+                    content = str(message.get("content") or "")
+                    if len(content) > 4200:
+                        message["content"] = (
+                            content[:3200]
+                            + "\\n[Middle of long system context omitted for timeout recovery.]\\n"
+                            + content[-800:]
+                        )
+                elif message.get("role") == "user":
+                    content = str(message.get("content") or "")
+                    if len(content) > 8000:
+                        message["content"] = (
+                            content[:6500]
+                            + "\\n[Middle of long user input omitted for timeout recovery.]\\n"
+                            + content[-1000:]
+                        )
+        if info.api == "ollama":
+            compact.update({
+                "think": False,
+                "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m",
+            })
+            options = dict(compact.get("options") or {})
+            options["num_ctx"] = min(2048, int(options.get("num_ctx", 2048)))
+            options["num_predict"] = min(192, int(options.get("num_predict", 192)))
+            options.setdefault("temperature", 0.2)
+            compact["options"] = options
+            compact.pop("tool_choice", None)
+        else:
+            compact.pop("think", None)
+            compact.pop("keep_alive", None)
+            compact.pop("options", None)
+            compact["max_tokens"] = min(192, int(compact.get("max_tokens", 192)))
+        return compact
+
+    @staticmethod
     def _request_json(url: str, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
@@ -398,13 +505,60 @@ class LocalLLMClient:
                     payload["tool_choice"] = "auto"
 
             try:
-                timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600"))
+                configured_timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600"))
             except ValueError:
-                timeout = 600.0
-            timeout = max(15.0, min(900.0, timeout))
-            result, info = self._request_chat_with_fallback(
-                info, payload, timeout=timeout
+                configured_timeout = 600.0
+            configured_timeout = max(15.0, min(900.0, configured_timeout))
+            primary_cap = self._bounded_int_env(
+                "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 120, 30, 300
             )
+            retry_cap = self._bounded_int_env(
+                "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 180, 30, 300
+            )
+            primary_timeout = min(configured_timeout, float(primary_cap))
+            try:
+                result, info = self._request_chat_with_fallback(
+                    info, payload, timeout=primary_timeout
+                )
+            except RuntimeError as primary_error:
+                if not self._is_timeout_error(primary_error):
+                    raise
+                compact_payload = self._compact_retry_payload(payload, info)
+                retry_timeout = min(configured_timeout, float(retry_cap))
+                print(
+                    f"[JENEFAR] Local model {info.model} timed out after "
+                    f"{primary_timeout:g}s; retrying once with compact context "
+                    f"(timeout={retry_timeout:g}s, tools={'kept' if compact_payload.get('tools') else 'not needed'})."
+                )
+                try:
+                    result, info = self._request_chat_with_fallback(
+                        info, compact_payload, timeout=retry_timeout
+                    )
+                except RuntimeError as retry_error:
+                    if not self._is_timeout_error(retry_error):
+                        raise
+                    smaller_info = self._find_smaller_ollama_model(info)
+                    if smaller_info is None:
+                        raise RuntimeError(
+                            f"Local model '{info.model}' timed out on both normal and compact requests "
+                            f"({primary_timeout:g}s + {retry_timeout:g}s); no smaller installed Ollama "
+                            "model was found. Install a smaller local model once (for example "
+                            "'ollama pull qwen3:8b'), or set JENEFAR_LOCAL_LLM_FALLBACK_MODEL to an "
+                            "already-installed smaller model. This download is separate from API credits. "
+                            f"Compact retry error: {retry_error}"
+                        ) from retry_error
+                    fallback_payload = dict(compact_payload)
+                    fallback_payload["model"] = smaller_info.model
+                    print(
+                        f"[JENEFAR] Compact local retry also timed out; switching to already-installed "
+                        f"smaller model {smaller_info.model}."
+                    )
+                    result, info = self._request_chat_with_fallback(
+                        smaller_info,
+                        fallback_payload,
+                        timeout=retry_timeout,
+                    )
+                    self.model = info.model
             if info.api == "ollama":
                 message = result.get("message") or {}
             else:
