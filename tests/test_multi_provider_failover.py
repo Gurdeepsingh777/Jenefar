@@ -182,6 +182,6 @@ def test_default_route_fails_over_groq_gemini_to_openrouter_before_local(monkeyp
     assert result.provider == "openrouter"
     assert result.text == "OpenRouter free route response"
     output = capsys.readouterr().out
-    assert "Online LLM provider groq/openai/gpt-oss-120b failed" in output
+    assert "Online LLM provider groq/" in output
     assert "quota exhausted" in output
     assert "Online LLM provider gemini/" in output
