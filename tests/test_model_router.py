@@ -62,3 +62,21 @@ def test_browser_runtime_model_override_wins_and_can_be_cleared(monkeypatch):
     selected = router.resolve("fast")
     assert selected.model == "configured-fast-model"
     assert selected.source == "JENEFAR_MODEL_FAST"
+
+def test_browser_runtime_override_precedes_per_agent_explicit_model(monkeypatch):
+    monkeypatch.setenv("JENEFAR_MODEL_CODING", "configured-coding-model")
+    try:
+        ModelRouter.set_runtime_override("gemini-3.8-flash", "gemini")
+        selected = ModelRouter().resolve("coding", explicit_model="agent-specific-model")
+        assert selected.model == "gemini-3.8-flash"
+        assert selected.provider == "gemini"
+        assert selected.source == "browser-runtime"
+    finally:
+        ModelRouter.clear_runtime_override()
+
+
+def test_gemini_pro_legacy_short_name_is_normalized():
+    from jenefar.core.model_ids import normalize_model_id
+
+    assert normalize_model_id("gemini-3.1-pro", "gemini") == "gemini-3.1-pro-preview"
+    assert normalize_model_id("models/gemini-3.1-pro-preview", "gemini") == "gemini-3.1-pro-preview"
