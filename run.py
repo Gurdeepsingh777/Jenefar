@@ -15,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--desktop", action="store_true", help="launch Jenefar inside the optional native desktop shell")
     parser.add_argument("--avatar-port", type=int, default=8787, help="local avatar UI port")
     parser.add_argument("--discover-tools", action="store_true", help="list detected Kali/Linux tools without executing them")
+    parser.add_argument("--discover-tools-all", action="store_true", help="list all executable commands currently discoverable on PATH, not just security-related Kali tools")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--setup-vision", action="store_true", help="install the default local Ollama vision model (no hosted API required)")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
@@ -443,7 +444,7 @@ def main() -> int:
         getattr(args, name)
         for name in (
             "doctor", "setup_vision", "provider_status", "online_only", "voice", "voice_continuous",
-            "voice_auto", "avatar", "realtime", "desktop", "discover_tools",
+            "voice_auto", "avatar", "realtime", "desktop", "discover_tools", "discover_tools_all",
             "index_file", "index_dir", "index_document", "index_url", "index_github",
             "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
             "evaluation_report", "trace_report", "runtime_health", "self_healing_policy",
@@ -706,11 +707,33 @@ def main() -> int:
             print(f"[JENEFAR] Research/memory error: {type(exc).__name__}: {exc}")
             return 1
 
-    if args.discover_tools:
-        from jenefar.tools.discovery import discover_tools
-        for tool in discover_tools():
-            status = "installed" if tool.installed else "missing"
-            print(f"{tool.name:16} {status:9} [{tool.category}]")
+    if args.discover_tools or args.discover_tools_all:
+        from jenefar.tools.kali import KaliToolManager
+
+        manager = KaliToolManager()
+        offset = 0
+        page_size = 300 if args.discover_tools_all else 150
+        total = 0
+        while True:
+            items = manager.catalog_list(
+                include_all=bool(args.discover_tools_all),
+                installed_only=bool(args.discover_tools_all),
+                limit=page_size,
+                offset=offset,
+            )
+            for tool in items:
+                status = "installed" if tool["installed"] else "missing"
+                source = tool.get("source", "catalog")
+                path = f" :: {tool['path']}" if tool.get("path") else ""
+                print(
+                    f"{tool['name']:24} {status:9} "
+                    f"[{tool['category']} / {tool['tactic']}] [{source}]{path}"
+                )
+            total += len(items)
+            if not args.discover_tools_all or len(items) < page_size:
+                break
+            offset += len(items)
+        print(f"[JENEFAR] Tool discovery complete: {total} command record(s).")
         return 0
 
     from jenefar.core.orchestrator import JenefarOrchestrator
