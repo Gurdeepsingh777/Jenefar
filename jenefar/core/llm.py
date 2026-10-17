@@ -436,8 +436,10 @@ class LLMClient:
             ),
             (
                 ("nmap", "vulnerability", "penetration test", "pentest", "kali", "exploit",
-                 "security scan", "scan this target", "bug bounty"),
-                ("kali_", "security_", "bugbounty_", "cybersecurity_"),
+                 "security scan", "scan this target", "scan my target", "scan the target",
+                 "authorized target", "port scan", "network scan", "subnet scan", "scan ports",
+                 "bug bounty", "\\bscan\\b.*\\b(ip|host|target|network|subnet|ports?)\\b"),
+                ("scope_check", "kali_", "security_", "bugbounty_", "cybersecurity_"),
             ),
             (
                 ("remember", "memory", "previous conversation", "saved note", "knowledge graph"),
