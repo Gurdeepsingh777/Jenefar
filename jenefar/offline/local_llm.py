@@ -287,7 +287,10 @@ class LocalLLMClient:
         try:
             return self._request_json(endpoint, payload, timeout=timeout), info
         except RuntimeError as primary_error:
-            if self.api != "auto" or not self._is_chat_route_not_found(primary_error):
+            # A stale API preference must not strand the local model on a 404.
+            # Only switch protocol for a missing route; model-not-found errors are
+            # surfaced so detection/configuration can be corrected instead.
+            if not self._is_chat_route_not_found(primary_error):
                 raise
 
         origin = self._origin(info.base_url)
@@ -298,8 +301,15 @@ class LocalLLMClient:
             alternate = LocalModelInfo(origin, info.model, "ollama")
             alternate_endpoint = f"{alternate.base_url}/api/chat"
 
+        alternate_payload = dict(payload)
+        if alternate.api == "ollama":
+            # Ollama's native endpoint doesn't require the OpenAI tool_choice field.
+            alternate_payload.pop("tool_choice", None)
+        elif alternate_payload.get("tools"):
+            alternate_payload.setdefault("tool_choice", "auto")
+
         try:
-            result = self._request_json(alternate_endpoint, payload, timeout=timeout)
+            result = self._request_json(alternate_endpoint, alternate_payload, timeout=timeout)
         except Exception as alternate_error:
             raise RuntimeError(
                 "Local chat endpoint returned 404 and the alternate local protocol also failed. "
