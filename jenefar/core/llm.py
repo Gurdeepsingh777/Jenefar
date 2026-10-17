@@ -169,8 +169,14 @@ class LLMClient:
                 if getattr(item, "type", None) == "function_call"
             ]
             if not calls:
+                answer = str(getattr(response, "output_text", "") or "").strip()
+                if not answer:
+                    # An empty Responses API result is a provider failure, not a
+                    # successful answer. Raising allows failover to another cloud
+                    # provider and then the local Ollama model.
+                    raise RuntimeError(f"{provider} returned an empty text response.")
                 return LLMResponse(
-                    text=response.output_text or "The model returned no text.",
+                    text=answer,
                     provider=provider,
                     response_id=getattr(response, "id", None),
                     model=model,
@@ -278,8 +284,11 @@ class LLMClient:
             tool_calls = getattr(message, "tool_calls", None) or []
 
             if not tool_calls:
+                answer = str(getattr(message, "content", None) or "").strip()
+                if not answer:
+                    raise RuntimeError(f"{provider} returned an empty chat response.")
                 return LLMResponse(
-                    text=getattr(message, "content", None) or "The model returned no text.",
+                    text=answer,
                     provider=provider,
                     response_id=getattr(response, "id", None),
                     model=model,
