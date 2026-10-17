@@ -27,6 +27,9 @@
       </div>
       <div class="top-clock" id="ui-clock">--:--</div>
       <div class="top-status">
+        <button type="button" class="model-quick-button" id="model-settings-button" aria-controls="model-panel" aria-expanded="false">
+          MODEL <span id="active-model-label">Loading…</span>
+        </button>
         <span class="status-dot"></span><span>ONLINE</span>
       </div>
     </div>
@@ -48,16 +51,38 @@
     </section>
     <aside class="system-card">
       <div class="card-title">SYSTEM STATUS</div>
-      <div class="status-grid">
-        <div><span class="ring-meter cpu">32%</span><small>CPU</small></div>
-        <div><span class="ring-meter ram">46%</span><small>RAM</small></div>
-        <div><span class="ring-meter gpu">28%</span><small>GPU</small></div>
+      <div class="status-grid" aria-label="Live system resource usage">
+        <div>
+          <span class="ring-meter cpu" id="metric-cpu" role="progressbar" aria-label="CPU usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--meter-value:0"><span id="metric-cpu-value">--%</span></span>
+          <small>CPU</small><small class="metric-detail" id="metric-cpu-detail">Waiting for telemetry</small>
+        </div>
+        <div>
+          <span class="ring-meter ram" id="metric-ram" role="progressbar" aria-label="RAM usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="--meter-value:0"><span id="metric-ram-value">--%</span></span>
+          <small>RAM</small><small class="metric-detail" id="metric-ram-detail">Waiting for telemetry</small>
+        </div>
+        <div>
+          <span class="ring-meter gpu meter-unavailable" id="metric-gpu" role="img" aria-label="GPU telemetry unavailable"><span id="metric-gpu-value">N/A</span></span>
+          <small>GPU</small><small class="metric-detail" id="metric-gpu-detail">Sensor unavailable</small>
+        </div>
       </div>
+      <div class="metrics-updated" id="metrics-updated" role="status">Waiting for live system telemetry…</div>
       <div class="service-list">
         <div><span class="service-light"></span>Online <b id="service-online">●</b></div>
         <div><span class="service-light"></span>Voice <b id="service-voice">●</b></div>
         <div><span class="service-light"></span>VRM <b id="service-vrm">●</b></div>
       </div>
+    </aside>
+    <aside class="model-panel" id="model-panel" aria-labelledby="model-panel-title" hidden>
+      <div class="model-panel-head">
+        <div><div class="card-title" id="model-panel-title">MODEL CONTROL</div><div class="model-panel-subtitle">Live runtime configuration</div></div>
+        <button type="button" id="model-panel-close" aria-label="Close model settings">×</button>
+      </div>
+      <label for="model-choice">Configured provider / model</label>
+      <select id="model-choice"><option value="">Loading configured providers…</option></select>
+      <label for="model-id-input">Model ID</label>
+      <input id="model-id-input" autocomplete="off" spellcheck="false" placeholder="Select a configured model or enter model ID">
+      <button type="button" class="model-apply-button" id="apply-model-button">APPLY MODEL</button>
+      <p id="model-feedback" role="status" aria-live="polite">Checking configured providers…</p>
     </aside>
     <section class="command-stack" aria-label="Quick commands">
       <button type="button" class="command-chip" data-command="open app">▣ <span>Open App</span></button>
