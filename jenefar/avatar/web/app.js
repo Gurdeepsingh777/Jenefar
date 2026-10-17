@@ -994,7 +994,7 @@ function setupBrowserVoice(){
     if(micButton){
       const label=micButton.querySelector(".mic-label");
       if(label) label.textContent="MIC OFF";
-      micButton.title="Click to enable microphone recording and server-side OpenAI/Groq transcription.";
+      micButton.title="Click to enable microphone recording and server-side OpenAI/Groq/Gemini transcription.";
     }
   }else if(voiceSupported){
     setVoiceInputStatus("CLICK MIC ON TO START",false);
