@@ -205,4 +205,3 @@ def test_browser_audio_is_discarded_if_another_task_starts_during_stt(monkeypatc
     assert result["busy"] is True
     assert result["reason"] == "task_started_during_transcription"
     assert result["accepted"] is False
-\n
