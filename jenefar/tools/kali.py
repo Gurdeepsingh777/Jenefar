@@ -517,20 +517,12 @@ class KaliToolManager:
         values = [str(arg) for arg in args]
         if len(values) > 80 or any("\x00" in item or len(item) > 8000 for item in values):
             raise ValueError("Tool arguments exceed the supported limits.")
-        resolved = self._resolve_executable(name)
-        if not resolved:
-            raise FileNotFoundError(f"Tool '{name}' is not installed or not available on PATH. Use kali_tool_help to search local apt metadata.")
-        actual_name, executable = resolved
-        info = self.catalog.get(actual_name) or self.catalog.get(name) or self._guess_info(actual_name)
-        is_curated = actual_name.casefold() in {item.casefold() for item in self.catalog}
-        if require_inspection and not is_curated and actual_name.casefold() not in self._inspected_tools:
-            raise PermissionError(
-                f"New tool '{actual_name}' has not been inspected in this session. Call kali_tool_help first, read the help/manual, then prepare a plan before requesting execution."
-            )
 
+        # Enforce target-list restrictions before resolving an executable. A
+        # preview must reject an unsafe invocation even on hosts (such as CI)
+        # where the requested scanner is not installed.
         flagged_targets = self._target_candidates(values)
         supplied_target = str(target or "").strip()
-        targets = list(dict.fromkeys(([supplied_target] if supplied_target else []) + flagged_targets))
         target_flags = {
             "-u", "--url", "--host", "--target", "--domain", "-d",
             "--hostname", "--server", "-t", "--ip", "--target-ip",
@@ -546,6 +538,32 @@ class KaliToolManager:
             or any(value.startswith(flag + "=") for flag in bypass_flags if flag.startswith("--"))
             or value.startswith("-il") and len(value) > 3
         )
+        pre_info = self.catalog.get(name)
+        pre_likely_network = (
+            name.casefold() in NETWORK_TOOL_NAMES
+            or bool(flagged_targets)
+            or any(value in target_flags for value in normalized_args)
+            or bool(pre_info and pre_info.category.casefold() in NETWORK_CATEGORIES)
+        )
+        if prohibited and pre_likely_network:
+            raise PermissionError(
+                "This generic Kali execution path blocks target-list/random-target flags because it cannot prove every destination is authorized: "
+                + ", ".join(prohibited)
+                + ". Use an explicit, scope-checked target instead."
+            )
+
+        resolved = self._resolve_executable(name)
+        if not resolved:
+            raise FileNotFoundError(f"Tool '{name}' is not installed or not available on PATH. Use kali_tool_help to search local apt metadata.")
+        actual_name, executable = resolved
+        info = self.catalog.get(actual_name) or self.catalog.get(name) or self._guess_info(actual_name)
+        is_curated = actual_name.casefold() in {item.casefold() for item in self.catalog}
+        if require_inspection and not is_curated and actual_name.casefold() not in self._inspected_tools:
+            raise PermissionError(
+                f"New tool '{actual_name}' has not been inspected in this session. Call kali_tool_help first, read the help/manual, then prepare a plan before requesting execution."
+            )
+
+        targets = list(dict.fromkeys(([supplied_target] if supplied_target else []) + flagged_targets))
         local_wireless_operations = (
             actual_name.casefold() in {"airmon-ng", "iw", "iwconfig", "rfkill"}
             and not flagged_targets
@@ -570,12 +588,6 @@ class KaliToolManager:
         # Only remote target values are scope-checked; local filename arguments
         # such as wordlist.txt or report.xml are not treated as hostnames.
         lowered_args = set(normalized_args)
-        if prohibited and likely_network:
-            raise PermissionError(
-                "This generic Kali execution path blocks target-list/random-target flags because it cannot prove every destination is authorized: "
-                + ", ".join(prohibited)
-                + ". Use an explicit, scope-checked target instead."
-            )
         if likely_network and not targets:
             raise PermissionError(
                 f"'{actual_name}' appears to be a network-impacting tool. Provide its exact target in the target field or a recognized target argument, then authorize it in JENEFAR_AUTHORIZED_TARGETS/config.yaml."
