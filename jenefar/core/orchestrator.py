@@ -559,6 +559,8 @@ class JenefarOrchestrator:
             "host discovery", "live hosts", "online hosts", "hosts online",
             "kitne host", "kitne hosts", "kitne device", "kitne devices",
             "ping sweep", "check online host", "check live host",
+            "scan my network", "scan the network", "scan local network",
+            "scan network", "network scan", "check the network",
         ))
         return explicit_goal or (has_host_goal and (has_range or cidr))
 
