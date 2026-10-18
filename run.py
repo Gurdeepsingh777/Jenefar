@@ -556,18 +556,9 @@ def main() -> int:
         )
         avatar_server.start()
 
-        # Live CPU/RAM/GPU telemetry is a separate loopback-only WebSocket.
-        # Reuse an existing listener without taking ownership of its lifecycle.
+        # Started after runtime diagnostics, immediately before the guarded wait.
         monitoring_server = None
         monitoring_server_owned = False
-        try:
-            monitoring_server = start_monitoring_server()
-            monitoring_server_owned = monitoring_server.running
-        except Exception as exc:
-            print(
-                "[JENEFAR] Monitoring server unavailable: "
-                f"{type(exc).__name__}: {exc}"
-            )
 
         runtime_url = avatar_server.url
         print(f"[JENEFAR] Avatar UI: {runtime_url}")
@@ -622,6 +613,17 @@ def main() -> int:
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
+
+        # Start telemetry only after diagnostics succeed; the following try/finally
+        # owns shutdown and prevents a failed startup path from leaking a thread.
+        try:
+            monitoring_server = start_monitoring_server()
+            monitoring_server_owned = monitoring_server.running
+        except Exception as exc:
+            print(
+                "[JENEFAR] Monitoring server unavailable: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         try:
             if browser_voice_enabled:
