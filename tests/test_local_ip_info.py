@@ -431,3 +431,118 @@ def test_ambiguous_network_scan_asks_for_range_without_running_a_scan():
 
     assert "exact IPv4 CIDR" in reply
     assert "koi scan execute nahi hua" in reply
+
+
+
+def test_structured_host_discovery_result_records_each_live_host_in_scan_order():
+    raw = json.dumps({
+        "status": "ok",
+        "result": {
+            "tool": "nmap",
+            "returncode": 0,
+            "stdout": (
+                "Nmap scan report for 192.168.29.1\n"
+                "Host is up (0.011s latency).\n"
+                "MAC Address: A8:DA:0C:0C:D5:FC (Router Vendor)\n"
+                "Nmap scan report for 192.168.29.35\n"
+                "Host is up (0.10s latency).\n"
+                "Nmap scan report for 192.168.29.165\n"
+                "Host is up.\n"
+                "Nmap done: 256 IP addresses (3 hosts up) scanned in 2.20 seconds\n"
+            ),
+            "stderr": "",
+        },
+    })
+    orchestrator = object.__new__(JenefarOrchestrator)
+
+    result = orchestrator._record_host_discovery_result(
+        raw, "192.168.29.0/24", "3 hosts", local_address="192.168.29.165"
+    )
+
+    assert result["kind"] == "host_discovery"
+    assert result["host_count"] == 3
+    assert [host["ip"] for host in result["hosts"]] == [
+        "192.168.29.1", "192.168.29.35", "192.168.29.165"
+    ]
+    assert result["hosts"][0]["state"] == "UP"
+    assert result["hosts"][0]["latency"] == "0.011s latency"
+    assert result["hosts"][0]["vendor"] == "Router Vendor"
+    assert result["hosts"][2]["is_local"] is True
+    assert orchestrator._latest_host_discovery["target"] == "192.168.29.0/24"
+
+
+def test_port_scan_followup_resolves_second_host_and_limits_scan(monkeypatch):
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator._latest_host_discovery = {
+        "target": "192.168.29.0/24",
+        "own_ip": "192.168.29.165",
+        "hosts": [
+            {"index": 1, "ip": "192.168.29.1", "state": "UP"},
+            {"index": 2, "ip": "192.168.29.35", "state": "UP"},
+            {"index": 3, "ip": "192.168.29.165", "state": "UP", "is_local": True},
+        ],
+    }
+
+    class FakePortBroker:
+        def __init__(self):
+            self.call = None
+
+        def invoke(self, name, arguments, *, confirmed=False):
+            self.call = (name, arguments, confirmed)
+            return json.dumps({
+                "status": "ok",
+                "result": {
+                    "tool": "nmap",
+                    "returncode": 0,
+                    "stdout": (
+                        "Nmap scan report for 192.168.29.35\n"
+                        "Host is up (0.01s latency).\n"
+                        "PORT     STATE SERVICE VERSION\n"
+                        "22/tcp   open  ssh     OpenSSH 9.2\n"
+                        "80/tcp   open  http    nginx 1.24\n"
+                        "443/tcp  closed https\n"
+                        "Nmap done: 1 IP address (1 host up) scanned in 8.00 seconds\n"
+                    ),
+                    "stderr": "",
+                },
+            })
+
+    broker = FakePortBroker()
+    orchestrator.tool_broker = broker
+
+    reply = orchestrator._request_discovered_host_port_scan(
+        "is 2nd host ke port ko scan kro"
+    )
+
+    assert "192.168.29.35" in reply
+    assert "2 open TCP port(s)" in reply
+    name, arguments, confirmed = broker.call
+    assert name == "kali_tool_execute"
+    assert confirmed is True
+    assert arguments["tool"] == "nmap"
+    assert arguments["target"] == "192.168.29.35"
+    assert "--top-ports" in arguments["args"]
+    assert arguments["args"][arguments["args"].index("--top-ports") + 1] == "1000"
+    assert "192.168.29.35" == arguments["args"][-1]
+    assert orchestrator._latest_scan_result["kind"] == "port_scan"
+    assert [port["port"] for port in orchestrator._latest_scan_result["ports"]] == [22, 80]
+    assert orchestrator._latest_scan_result["host_discovery_target"] == "192.168.29.0/24"
+
+
+def test_port_scan_cannot_target_an_ip_outside_recent_live_host_results():
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator._latest_host_discovery = {
+        "target": "192.168.29.0/24",
+        "hosts": [{"index": 1, "ip": "192.168.29.1", "state": "UP"}],
+    }
+
+    class NeverRunBroker:
+        def invoke(self, *_args, **_kwargs):
+            raise AssertionError("A non-discovered host must not be scanned.")
+
+    orchestrator.tool_broker = NeverRunBroker()
+    result = orchestrator._request_discovered_host_port_scan(
+        "scan ports of 192.168.29.99"
+    )
+
+    assert "latest live-host results" in result
