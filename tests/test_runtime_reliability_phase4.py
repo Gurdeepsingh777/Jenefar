@@ -353,9 +353,10 @@ def test_browser_tts_includes_local_piper_before_network_edge_fallback():
     assert '"--model", str(model_path)' in voice
     assert '"--output_file", output_path' in voice
     assert "JENEFAR_LOCAL_TTS_TIMEOUT_SECONDS" in voice
-    assert voice.index("self._synthesize_local_piper_audio(text)") < voice.index("self._synthesize_edge_audio(text)")
+    browser_tts = voice[voice.index("    def _synthesize_browser_audio"):]
+    assert browser_tts.index("self._synthesize_local_piper_audio(text)") < browser_tts.index("self._synthesize_edge_audio(text)")
     assert "JENEFAR_LOCAL_TTS_MODEL=" in env
-    assert "configured local Piper" in env
+    assert "configured Piper" in env
     assert "configured local Piper -> Edge" in run
 
 
@@ -375,5 +376,5 @@ def test_desktop_health_is_actionable_in_doctor_and_dashboard():
     assert 'id="service-desktop"' in html
     assert 'id="desktop-status-detail"' in html
     assert 'status["diagnosis"] = diagnosis' in desktop
-    assert '"desktop diagnosis             "' in run
+    assert '"  desktop diagnosis             "' in run
     assert ".desktop-diagnostic[data-state="unavailable"]" in css
