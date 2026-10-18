@@ -14,7 +14,9 @@ def test_dashboard_ids_match_runtime_and_sse_handler_is_defensive():
     assert 'id="stat-running"' in html
     assert 'document.getElementById("stat-running")' in js
     assert "if(stateEl) stateEl.textContent=stateText;" in js
-    assert "if(captionEl) captionEl.textContent=event.text||caption;" in js
+    assert 'if(captionEl) captionEl.textContent=isRawScannerActivity' in js
+    assert '"Network scan running"' in js
+    assert 'String(event.data?.summary||event.text||caption)' in js
     assert "if(dot){" in js
 
 
