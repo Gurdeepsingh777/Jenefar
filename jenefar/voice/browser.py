@@ -393,11 +393,17 @@ class BrowserVoiceBridge:
         # enqueue a second audio event after the first approval has completed.
         with self._approval_voice_lock:
             if approval_id in self._approval_voice_results:
-                return {
+                cached = {
                     "status": "ok",
                     "result": self._approval_voice_results[approval_id],
                     "duplicate": True,
                 }
+                cached_scan = getattr(self.orchestrator, "_latest_scan_result", None)
+                if isinstance(cached_scan, dict) and cached_scan.get("kind") in {
+                    "host_discovery", "port_scan"
+                }:
+                    cached["structured_scan"] = True
+                return cached
 
             # Reset only after the duplicate guard, so a repeated click can still
             # reuse its cached scan result. A fresh approval must not inherit data
