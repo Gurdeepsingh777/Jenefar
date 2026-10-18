@@ -915,7 +915,7 @@ function renderScanResultsList(){
         action.disabled=true;
         action.textContent="QUEUED…";
         const result=await dispatchDashboardCommand("scan ports of host "+host.ip);
-        if(!result?.accepted&&!result?.busy){
+        if(!result?.accepted){
           portScanRunning=false;
           action.disabled=false;
           action.textContent="SCAN PORTS";
