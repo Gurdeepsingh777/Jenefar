@@ -1416,3 +1416,30 @@ body.vrm-loaded #photo-avatar{display:none}
 .scan-raw-pre{display:block;max-width:100%;max-height:270px;overflow:auto;white-space:pre;overflow-wrap:normal;tab-size:4;margin:0;padding:11px;border-radius:8px;border:1px solid rgba(119,188,232,.12);background:rgba(0,4,12,.42);color:#d4e8f6;font:10px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:text}
 .scan-raw-command{color:#9be8c9}
 .scan-raw-stderr{color:#ffcfaa}
+
+
+/* Network interface selection and authorization guidance in the scan glass. */
+.scan-results-complete.scope-blocked{color:#ffc39d;border-color:rgba(255,163,112,.28);background:rgba(104,42,21,.14)}
+.scan-scope-panel{display:grid;gap:11px;margin:4px 0 13px;padding:14px;border:1px solid rgba(127,197,240,.18);border-radius:14px;background:rgba(3,12,27,.3);min-width:0}
+.scan-scope-kicker{color:#8ee4ff;font-size:9px;font-weight:850;letter-spacing:.14em}
+.scan-scope-reason{margin:0;color:rgba(228,241,251,.86);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
+.scan-scope-label{margin:3px 0 6px;color:rgba(171,209,236,.58);font-size:8px;font-weight:850;letter-spacing:.14em}
+.scan-scope-allowlist{padding:10px 11px;border:1px solid rgba(127,197,240,.12);border-radius:9px;background:rgba(0,5,15,.22);min-width:0}
+.scan-scope-values{color:#cfdfec;font:10px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.scan-network-options{display:grid;gap:8px;min-width:0}
+.scan-network-option{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:9px;padding:10px;border:1px solid rgba(124,187,224,.16);border-radius:10px;background:rgba(7,20,39,.4);min-width:0}
+.scan-network-identity{display:grid;gap:4px;min-width:0}
+.scan-network-identity b{color:#e3f3ff;font-size:10px;font-weight:800}
+.scan-network-identity span{color:rgba(177,212,235,.72);font:9px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.scan-scope-badge{grid-column:1;color:#80e6bd;font-size:8px;font-weight:850;letter-spacing:.1em}
+.scan-scope-badge.denied{color:#ffb797}
+.scan-network-action{grid-column:2;grid-row:1 / span 2;max-width:132px;padding:9px 10px;border:1px solid rgba(108,208,255,.25);border-radius:8px;background:rgba(20,85,125,.18);color:#b6edff;font-size:8px;font-weight:850;letter-spacing:.07em;cursor:pointer}
+.scan-network-action:hover:not(:disabled){background:rgba(20,113,161,.3)}
+.scan-network-action:disabled{opacity:.55;cursor:wait}
+.scan-scope-help,.scan-scope-feedback,.scan-scope-empty{margin:0;color:rgba(176,205,226,.67);font-size:10px;line-height:1.65;overflow-wrap:anywhere}
+.scan-scope-feedback{color:#9de7c9}
+@media(max-width:620px){
+  .scan-scope-panel{padding:10px}
+  .scan-network-option{grid-template-columns:minmax(0,1fr)}
+  .scan-network-action{grid-column:1;grid-row:auto;max-width:none}
+}
