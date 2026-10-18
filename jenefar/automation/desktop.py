@@ -85,8 +85,10 @@ class DesktopAutomation:
                     }
                     status["screenshot_capture"] = True
                 else:
+                    status["screenshot_capture"] = False
                     status["screenshot_error"] = "No accessible monitor geometry was reported by MSS."
         except Exception as exc:
+            status["screenshot_capture"] = False
             status["screenshot_error"] = f"{type(exc).__name__}: {exc}"
             recommendations.append(
                 "Check screenshot dependencies and desktop/session permissions. "
