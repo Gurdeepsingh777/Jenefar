@@ -1443,3 +1443,6 @@ body.vrm-loaded #photo-avatar{display:none}
   .scan-network-option{grid-template-columns:minmax(0,1fr)}
   .scan-network-action{grid-column:1;grid-row:auto;max-width:none}
 }
+
+.scan-network-picker-toggle{display:block;margin:8px 0 10px;padding:9px 12px;border:1px solid rgba(108,208,255,.22);border-radius:8px;background:rgba(20,85,125,.15);color:#afe9ff;font-size:8px;font-weight:850;letter-spacing:.1em;cursor:pointer}
+.scan-network-picker-toggle:hover{background:rgba(20,113,161,.28)}
