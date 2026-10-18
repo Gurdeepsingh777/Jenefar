@@ -216,8 +216,28 @@ def doctor() -> int:
         from jenefar.core.orchestrator import JenefarOrchestrator
         print("  orchestrator import           OK")
         # Construct it only after syntax/import checks; this validates core wiring.
-        JenefarOrchestrator()
+        orchestrator = JenefarOrchestrator()
         print("  orchestrator init             OK")
+
+        # Desktop access is an optional capability, so report it accurately but
+        # do not fail the core doctor when the process is in a headless session.
+        desktop_status = orchestrator.tool_broker.desktop.backend_status()
+        input_ready = bool(desktop_status.get("input_control", desktop_status.get("pyautogui", False)))
+        capture_ready = bool(desktop_status.get("screenshot_capture", False))
+        print(
+            "  desktop input                 "
+            + ("READY" if input_ready else "UNAVAILABLE")
+            + f" ({desktop_status.get('session_type') or 'unknown'})"
+        )
+        screen = desktop_status.get("screen") or desktop_status.get("capture_screen") or desktop_status.get("simulated_screen") or {}
+        print(
+            "  desktop capture               "
+            + ("READY" if capture_ready else "UNAVAILABLE")
+            + f" ({screen.get('width', '?')}x{screen.get('height', '?')})"
+        )
+        print(f"  desktop diagnosis             {desktop_status.get('diagnosis') or 'No diagnostic message available.'}")
+        for recommendation in desktop_status.get("recommendations") or []:
+            print(f"    -> {recommendation}")
     except Exception as exc:
         print(f"  runtime wiring               ERROR ({type(exc).__name__}: {exc})")
         failed = True
@@ -509,20 +529,40 @@ def main() -> int:
             "[JENEFAR] Browser voice runtime: avatar UI + browser microphone + "
             "multi-agent orchestrator + memory + tools."
         )
+        desktop_input_ready = bool(
+            desktop_status.get("input_control", desktop_status.get("pyautogui", False))
+        )
+        desktop_capture_ready = bool(desktop_status.get("screenshot_capture", False))
+        desktop_label = (
+            "READY" if desktop_input_ready and desktop_capture_ready
+            else "PARTIAL" if desktop_input_ready or desktop_capture_ready
+            else "UNAVAILABLE"
+        )
+        desktop_screen = (
+            desktop_status.get("screen")
+            or desktop_status.get("capture_screen")
+            or desktop_status.get("simulated_screen")
+            or {}
+        )
         print(
             "[JENEFAR] Desktop backend: "
-            + ("READY" if desktop_status.get("pyautogui") else "UNAVAILABLE")
+            + desktop_label
             + f" ({desktop_status.get('session_type') or 'unknown'}"
-            + f", {desktop_status.get('screen', {}).get('width', '?')}x"
-            + f"{desktop_status.get('screen', {}).get('height', '?')})"
+            + f", input={'ready' if desktop_input_ready else 'unavailable'}"
+            + f", capture={'ready' if desktop_capture_ready else 'unavailable'}"
+            + f", {desktop_screen.get('width', '?')}x{desktop_screen.get('height', '?')})"
         )
+        if not desktop_input_ready or not desktop_capture_ready:
+            print("[JENEFAR] Desktop diagnosis: " + str(desktop_status.get("diagnosis") or "No diagnosis available."))
+            for recommendation in desktop_status.get("recommendations") or []:
+                print("[JENEFAR] Desktop next step: " + str(recommendation))
         if audio_status["stt"]:
             stt = audio_status["stt"]
             tts = audio_status["tts"]
             print(
                 f"[JENEFAR] Browser STT: {stt['provider']}/{stt['model']} "
                 f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
-                "Browser TTS=OpenAI -> expressive Gemini TTS -> Edge -> Web SpeechSynthesis fallback"
+                "Browser TTS=OpenAI -> Gemini -> configured local Piper -> Edge -> Web SpeechSynthesis fallback"
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
