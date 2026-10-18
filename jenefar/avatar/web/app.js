@@ -42,6 +42,45 @@ async function refreshDesktopMirror(){
 }
 refreshDesktopMirror();
 
+let desktopBackendTimer=null;
+async function refreshDesktopBackendStatus(){
+  const indicator=document.getElementById("service-desktop");
+  const detail=document.getElementById("desktop-status-detail");
+  try{
+    const response=await fetch("/desktop/status?ts="+Date.now(),{cache:"no-store"});
+    const status=await response.json();
+    if(!response.ok) throw new Error(status?.diagnosis||status?.error||"Desktop status unavailable");
+    const inputReady=Boolean(status.input_control??status.pyautogui);
+    const captureReady=Boolean(status.screenshot_capture);
+    const level=inputReady&&captureReady?"ready":inputReady||captureReady?"partial":"unavailable";
+    if(indicator){
+      indicator.textContent=level==="ready"?"READY":level==="partial"?"PARTIAL":"UNAVAILABLE";
+      indicator.dataset.state=level;
+      indicator.title=String(status.diagnosis||"");
+    }
+    const advice=Array.isArray(status.recommendations)?status.recommendations[0]:"";
+    if(detail){
+      detail.textContent=String(status.diagnosis||"Desktop capability status received.")+(advice?" Next: "+advice:"");
+      detail.title=String(status.diagnosis||"");
+      detail.dataset.state=level;
+    }
+  }catch(error){
+    if(indicator){
+      indicator.textContent="UNKNOWN";
+      indicator.dataset.state="unavailable";
+      indicator.title=String(error);
+    }
+    if(detail){
+      detail.textContent="Could not retrieve desktop health. "+String(error);
+      detail.dataset.state="unavailable";
+    }
+  }finally{
+    if(desktopBackendTimer) clearTimeout(desktopBackendTimer);
+    desktopBackendTimer=setTimeout(refreshDesktopBackendStatus,30000);
+  }
+}
+refreshDesktopBackendStatus();
+
 const stage=document.getElementById("stage");
 const canvas=document.getElementById("particles");
 const ctx=canvas?.getContext("2d")||null;
