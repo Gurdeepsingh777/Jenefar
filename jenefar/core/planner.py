@@ -74,6 +74,40 @@ class Planner:
 
     def plan(self, text: str) -> Plan:
         t = text.lower()
+
+        # Host-discovery intent must take precedence over the shorter "my IP"
+        # phrase contained inside requests about an IP range or online hosts.
+        import re
+        has_cidr = bool(re.search(r"(?<![0-9.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}(?![0-9.])", t))
+        range_terms = (
+            "ip range", "ip ki range", "subnet", "cidr", "network range",
+            "meri range", "my range", "local network",
+        )
+        host_terms = (
+            "host", "hosts", "device", "devices", "online", "live host",
+            "ping sweep", "host discovery", "kitne", "count", "discover",
+            "scan", "check",
+        )
+        explicit_discovery = any(marker in t for marker in (
+            "host discovery", "live hosts", "online hosts", "hosts online",
+            "kitne host", "kitne hosts", "kitne device", "kitne devices",
+            "ping sweep", "check online host", "check live host",
+        ))
+        if explicit_discovery or (has_cidr and any(term in t for term in host_terms)) or (
+            any(term in t for term in range_terms) and any(term in t for term in host_terms)
+        ):
+            return self._make_plan(
+                text,
+                "network_host_discovery",
+                "kali",
+                needs_tool=True,
+                confidence=0.99,
+                reason=(
+                    "explicit live-host discovery intent; resolve the selected local range or use the supplied CIDR, "
+                    "check authorization scope, present a bounded Nmap -sn plan, then require approval"
+                ),
+            )
+
         # Simple IP-information queries are local diagnostics, not security scans.
         # The orchestrator handles them directly; this plan also prevents fallback
         # routing from assigning plain "check my IP" requests to a security agent.
