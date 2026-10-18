@@ -694,6 +694,27 @@ class JenefarOrchestrator:
         from jenefar.voice.speech import devanagari_to_roman
         return devanagari_to_roman(raw)
 
+    def _finish_waiting_runtime_task(self, *, state: str, reason: str, provider: str = "approval") -> None:
+        """Finalize a lifecycle task after its last approval is resolved."""
+        lifecycle = getattr(self, "task_lifecycle", None)
+        record = lifecycle.active() if lifecycle is not None else None
+        if not record or record.get("state") != "waiting_approval":
+            return
+        task_id = str(record.get("task_id") or "")
+        try:
+            lifecycle.transition(task_id, state, reason=reason, provider=provider)
+            production = getattr(self, "production", None)
+            if production is not None:
+                production.task_finished(task_id, state=state, agent=str(record.get("agent") or "approval"), provider=provider, error=reason if state in {"failed", "cancelled"} else "")
+            context = getattr(self, "runtime_context", None)
+            if isinstance(context, dict):
+                context.update({"state": state, "last_event": "approval_resolved"})
+            self._runtime_task_id = None
+            self._active_cancel_token = None
+        except (KeyError, ValueError, RuntimeError):
+            # Approval resolution must not hide the actual tool result.
+            return
+
     def _reject_pending_workflow(self, pending_id: str) -> str:
         workflow = self.pending_approval_workflows.get(pending_id)
         result = self.tool_broker.reject(pending_id)
@@ -706,6 +727,7 @@ class JenefarOrchestrator:
             workflow["remaining"] = set()
             self.pending_approval_workflows.pop(pending_id, None)
         self.state = JenefarState.SLEEPING
+        self._finish_waiting_runtime_task(state="cancelled", reason="User rejected pending tool action")
         return "Theek hai, ye action nahi karungi."
 
     @staticmethod
