@@ -344,12 +344,12 @@ def test_nmap_host_discovery_summary_uses_real_reported_count():
             "tool": "nmap",
             "returncode": 0,
             "stdout": (
-                "Starting Nmap 7.95\\n"
-                "Nmap scan report for 192.168.29.1\\n"
-                "Host is up (0.001s latency).\\n"
-                "Nmap scan report for 192.168.29.165\\n"
-                "Host is up.\\n"
-                "Nmap done: 256 IP addresses (2 hosts up) scanned in 2.51 seconds\\n"
+                "Starting Nmap 7.95\n"
+                "Nmap scan report for 192.168.29.1\n"
+                "Host is up (0.001s latency).\n"
+                "Nmap scan report for 192.168.29.165\n"
+                "Host is up.\n"
+                "Nmap done: 256 IP addresses (2 hosts up) scanned in 2.51 seconds\n"
             ),
             "stderr": "",
         },
