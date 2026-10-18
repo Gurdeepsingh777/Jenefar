@@ -641,6 +641,17 @@ function stopFallbackMonitor(releaseStream=false){
   }
 }
 
+async function resumeVoiceIfAssistantIdle(){
+  const taskInProgress=["listening","queued","thinking","result","waiting_approval"].includes(currentState);
+  const audioPlaying=browserSpeechActive
+    || Boolean(browserAudio&&!browserAudio.ended)
+    || ("speechSynthesis" in window&&window.speechSynthesis.speaking);
+  if(taskInProgress||audioPlaying) return;
+  voiceLocked=false;
+  setMicButton(micEnabled,false);
+  resumeBrowserVoice();
+}
+
 async function transcribeCapturedAudio(blob,durationMs){
   if(!micEnabled||voiceLocked||!blob||blob.size<1200||durationMs<550) return;
   fallbackSubmitting=true;
@@ -671,10 +682,11 @@ async function transcribeCapturedAudio(blob,durationMs){
     }
     if(result?.busy){
       fallbackSubmitting=false;
-      // A busy response means another task is still running. Keep capture
-      // locked; the active task's speaking/completed event will unlock it.
+      // Do not unlock during a still-running task. If its completion event
+      // already arrived while STT was pending, the helper safely resumes now.
       setVoiceInputStatus("Jenefar is busy — mic will resume after reply",true);
       setMicButton(true,true);
+      resumeVoiceIfAssistantIdle();
       return;
     }
     if(result?.accepted){
