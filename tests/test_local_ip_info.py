@@ -275,7 +275,7 @@ def test_primary_private_ipv4_network_prefers_default_lan_and_ignores_docker(mon
 def test_explicit_local_network_scan_runs_and_records_structured_result(monkeypatch):
     from jenefar.core.state import JenefarState
 
-    request = "meri ip ki range ko select kro or check kro ki kitne host online h"
+    request = "mere network ko scan karo aur live hosts detect karo aur results window me dikhao"
     network_info_result = {
         "status": "ok",
         "interface": "wlan0",
@@ -321,8 +321,12 @@ def test_explicit_local_network_scan_runs_and_records_structured_result(monkeypa
     orchestrator.config = SimpleNamespace(single_turn_sleep=False)
     orchestrator.tool_broker = FakeHostBroker()
     orchestrator._avatar_state = lambda *_args, **_kwargs: None
-    orchestrator._direct_window_transfer = lambda _text: None
-    orchestrator._direct_screen_read = lambda _text: None
+    orchestrator._direct_window_transfer = lambda _text: (_ for _ in ()).throw(
+        AssertionError("Generic window routing must not intercept an explicit network scan.")
+    )
+    orchestrator._direct_screen_read = lambda _text: (_ for _ in ()).throw(
+        AssertionError("Screen routing must not intercept an explicit network scan.")
+    )
 
     monkeypatch.setattr(
         network_info,
@@ -504,6 +508,7 @@ def test_port_scan_followup_resolves_second_host_and_limits_scan(monkeypatch):
                 "status": "ok",
                 "result": {
                     "tool": "nmap",
+                    "command": "/usr/bin/nmap -Pn -n -sT -sV -T3 --max-retries 1 --top-ports 1000 192.168.29.35",
                     "returncode": 0,
                     "stdout": (
                         "Nmap scan report for 192.168.29.35\n"
@@ -537,6 +542,10 @@ def test_port_scan_followup_resolves_second_host_and_limits_scan(monkeypatch):
     assert arguments["args"][arguments["args"].index("--top-ports") + 1] == "1000"
     assert "192.168.29.35" == arguments["args"][-1]
     assert orchestrator._latest_scan_result["kind"] == "port_scan"
+    assert orchestrator._latest_scan_result["command"] == "/usr/bin/nmap -Pn -n -sT -sV -T3 --max-retries 1 --top-ports 1000 192.168.29.35"
+    assert orchestrator._latest_scan_result["returncode"] == 0
+    assert "22/tcp   open  ssh" in orchestrator._latest_scan_result["stdout"]
+    assert orchestrator._latest_scan_result["stderr"] == ""
     assert [port["port"] for port in orchestrator._latest_scan_result["ports"]] == [22, 80]
     assert orchestrator._latest_scan_result["host_discovery_target"] == "192.168.29.0/24"
 
