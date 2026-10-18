@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from pathlib import Path
 import json
+import math
 import threading
 import time
 from jenefar.core.cancellation import CancellationToken
@@ -32,11 +33,41 @@ class TaskGraph:
         self.results: dict[str, NodeResult] = {}
         self._lock = threading.RLock()
         self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
+        self._load_checkpoint()
+    def _load_checkpoint(self) -> None:
+        """Restore completed node results so idempotent graphs can resume."""
+        if self.checkpoint_path is None or not self.checkpoint_path.is_file():
+            return
+        try:
+            payload = json.loads(self.checkpoint_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        for node_id, raw in payload.items():
+            if not isinstance(raw, dict) or raw.get("state") != "completed":
+                continue
+            try:
+                self.results[str(node_id)] = NodeResult(
+                    node_id=str(raw.get("node_id") or node_id),
+                    state="completed",
+                    value=raw.get("value"),
+                    error=None,
+                    attempts=max(1, int(raw.get("attempts") or 1)),
+                    elapsed=max(0.0, float(raw.get("elapsed") or 0.0)),
+                )
+            except (TypeError, ValueError):
+                continue
+
     def add(self, node: TaskNode) -> None:
         if node.node_id in self.nodes:
             raise ValueError(f"duplicate task node: {node.node_id}")
-        if node.timeout <= 0 or node.retries < 0:
+        timeout = float(node.timeout)
+        retries = int(node.retries)
+        if not math.isfinite(timeout) or timeout <= 0 or retries < 0:
             raise ValueError("invalid timeout/retry configuration")
+        node.timeout = min(timeout, 300.0)
+        node.retries = min(retries, 3)
         self.nodes[node.node_id] = node
     def validate(self) -> None:
         for node in self.nodes.values():
@@ -60,7 +91,12 @@ class TaskGraph:
         tmp.replace(self.checkpoint_path)
     def run(self, *, context: object = None, cancel_token: CancellationToken | None = None, max_workers: int = 4) -> dict[str, NodeResult]:
         self.validate()
-        pending = set(self.nodes)
+        # Preserve completed nodes from checkpoints; rerun failed/incomplete work.
+        self.results = {
+            node_id: result for node_id, result in self.results.items()
+            if node_id in self.nodes and result.state == "completed"
+        }
+        pending = set(self.nodes) - set(self.results)
         workers = max(1, min(max_workers, len(self.nodes) or 1))
         while pending:
             if cancel_token: cancel_token.raise_if_cancelled()
