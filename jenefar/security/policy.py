@@ -39,7 +39,13 @@ def validate_url(url: str, *, allow_http: bool = True, allow_private: bool = Fal
     schemes = ("http", "https") if allow_http else ("https",)
     if parsed.scheme not in schemes or not parsed.hostname:
         raise ValueError("unsupported or malformed URL")
-    host = parsed.hostname
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("credentials embedded in URLs are not allowed")
+    # Normalize the trailing dot before checking loopback aliases; otherwise
+    # values like localhost. can evade a naive localhost-only check.
+    host = parsed.hostname.rstrip(".").lower()
+    if not host:
+        raise ValueError("unsupported or malformed URL")
     try:
         addr = ipaddress.ip_address(host)
         if not allow_private and (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved):
