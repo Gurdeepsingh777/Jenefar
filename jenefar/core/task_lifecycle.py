@@ -200,7 +200,9 @@ class TaskLifecycle:
                 return None
             if state not in ACTIVE_STATES | TERMINAL_STATES:
                 raise ValueError(f"invalid task lifecycle state: {state}")
-            if record.finished_at is not None and state not in TERMINAL_STATES:
+            # Terminal records are immutable; repeated completion calls are
+            # idempotent and cannot rewrite success as failure (or vice versa).
+            if record.finished_at is not None:
                 return record.as_dict()
             if record.started_at is None and state in {"running", "waiting_approval", "cancelling"}:
                 record.started_at = time.time()
