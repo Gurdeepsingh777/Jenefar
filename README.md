@@ -897,6 +897,61 @@ python run.py --trace-report
 
 The self-healing layer is recovery-only. It does not grant permissions, change authorized security targets, auto-approve tools, or weaken existing execution policies.
 
+## Runtime Phases 7–24 — Integrated Production Track
+
+Yeh runtime track current host-discovery/port-scan flow, local-model fallback, existing approval broker aur HUD ko preserve karte hue integrate kiya gaya hai.
+
+### Phase 7 — Adaptive provider routing
+- Har configured cloud provider ke liye bounded latency samples aur failure counts.
+- Warm-up samples ke baad recent latency/failure data se provider preference; `JENEFAR_ADAPTIVE_ROUTING=0` se adaptive ordering off ki ja sakti hai.
+- Runtime trace summaries mein p50/p95/max latency, failure rate aur slow-task counts.
+
+### Phase 8 — Execution budgets
+- `JENEFAR_AGENT_TIMEOUT_SECONDS` default 60 s (10–300 s bounded); agent/role-specific `JENEFAR_AGENT_TIMEOUT_<NAME>` overrides.
+- Deadline cloud Responses/Chat requests, local LLM inference aur tool loop tak propagate hota hai.
+
+### Phase 9 — Runtime operations dashboard
+- `GET /runtime/status` credential-redacted current task, deadline, trace health aur provider telemetry deta hai.
+- HUD ka **RUNTIME OPERATIONS** panel current status aur task history refresh karta hai.
+
+### Phase 10 — Cooperative cancellation
+- Cancellation token LLM client aur local model tool loop tak propagate hota hai.
+- `POST /runtime/cancel` current cancellable task ko cancellation request bhejta hai; ongoing network/tool action immediate stop ho, yeh us adapter ki cancellation support par depend karta hai.
+
+### Phases 11–12 — Task lifecycle and durable history
+- Single active task admission, running / waiting-approval / completed / failed / cancelled transitions.
+- Redacted persistent JSONL history with state/agent/provider/search filters.
+- Endpoints: `GET /runtime/tasks?limit=40` and `GET /runtime/tasks?search=...`; HUD mein history filter aur task cancellation controls hain.
+
+### Phases 13–24 — Production primitives
+- **13 Security:** secret redaction, workspace path containment, private/loopback URL blocking, task/action-bound expiring HMAC approval tokens, hash-chained audit events.
+- **14 Durable execution:** dependency validation, DAG parallelism, bounded retries, cooperative cancellation, checkpoints and rollback hooks.
+- **15 Memory 2.0:** typed/persistent memories, importance/decay scoring, provenance/tags and explicit forgetting.
+- **16 Skill runtime:** versioned manifests, dependency/permission checks and health tracking.
+- **17 Voice session:** bounded turn lifecycle and interruption state.
+- **18 Vision grounding:** visual-element ranking and confidence threshold before an action target is selected.
+- **19 Browser/computer agent:** bounded observe → act → verify adapter loop and optional Playwright adapter.
+- **20 Recovery foundation:** task-level retry/rollback hooks combine with Phase 6 provider/runtime self-healing.
+- **21 Observability:** counters, latency histograms, token/cost accounting primitives, provider samples and live trace summaries.
+- **22 UI integration:** structured JSON status/history routes and dashboard panel—not business logic embedded in the browser.
+- **23 Evaluation:** reproducible benchmark cases and latency/pass-rate summaries.
+- **24 Readiness:** provider/local LLM configuration, explicit approval secret and remote auth/TLS checks.
+
+### Verification commands
+
+Run from the project root after activating the virtual environment:
+
+```bash
+python -m compileall -q jenefar run.py
+python -m pytest -q
+node --check jenefar/avatar/web/app.js
+python run.py --doctor
+python run.py --runtime-health
+python run.py --trace-report
+```
+
+Runtime status/history routes are bound when the dashboard server starts. Browser, microphone, local Ollama, GPU, Wayland/compositor and robotics actions still need real-machine smoke tests; unit tests cannot guarantee a specific host's hardware or permissions.
+
 ## Kali Linux quick start
 
 Jenefar ko fresh Kali Linux machine par verify karne ke liye:
