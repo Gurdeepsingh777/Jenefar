@@ -716,8 +716,9 @@ class JenefarOrchestrator:
         if data is None:
             return summary + " Lekin verified port output parse nahi ho paaya."
         self._latest_scan_result = data
-        if self.avatar is not None:
-            self.avatar.publish("scan_results", str(data["summary"]), data=data)
+        avatar = getattr(self, "avatar", None)
+        if avatar is not None:
+            avatar.publish("scan_results", str(data["summary"]), data=data)
         return str(data["summary"])
 
     def _request_local_host_discovery(self, text: str) -> str:
@@ -836,8 +837,9 @@ class JenefarOrchestrator:
             result_data = self._record_host_discovery_result(
                 raw, target, summary, local_address=local_address
             )
-            if result_data and self.avatar is not None:
-                self.avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
+            avatar = getattr(self, "avatar", None)
+            if result_data and avatar is not None:
+                avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
             return summary
         error = str(payload.get("error") or "authorization/tool preflight blocked execution")
         return (
@@ -897,10 +899,13 @@ class JenefarOrchestrator:
             f"{address_count if address_count is not None else 'unknown'} addresses checked in {target}. "
             "Command Nmap -sn tha; ports aur services scan nahi kiye gaye."
         )
-        # Keep the spoken/chat response minimal. The complete, verified host
-        # list is carried separately in structured_scan data for the transparent
-        # Scan Results window and must not be read aloud or duplicated in chat.
-        summary += " Results screen par live hosts ki list dikh rahi hai."
+        # Keep the full diagnostic summary available to CLI/tests and logs.
+        # BrowserVoiceBridge detects structured scan data separately and sends
+        # only the compact result-window summary to the voice UI.
+        if reports:
+            summary += "\nReported hosts: " + ", ".join(reports[:30])
+            if len(reports) > 30:
+                summary += f" (aur {len(reports) - 30} hosts)"
         return summary
 
     @staticmethod
@@ -1335,8 +1340,9 @@ class JenefarOrchestrator:
                 summary,
                 local_address=str(workflow.get("local_address") or ""),
             )
-            if result_data and self.avatar is not None:
-                self.avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
+            avatar = getattr(self, "avatar", None)
+            if result_data and avatar is not None:
+                avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
             self.session.add("assistant", summary)
             self.memory_engine.record_message(
                 self.session.session_id,
