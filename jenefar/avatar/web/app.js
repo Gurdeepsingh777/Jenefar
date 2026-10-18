@@ -1234,9 +1234,24 @@ async function transcribeCapturedAudio(blob,durationMs){
       return;
     }
     voiceLocked=false;
-    addActivity({state:"error",text:"Audio STT failed: "+errorText});
-    setVoiceInputStatus("VOICE STT ERROR — "+errorText.slice(0,90),false);
+    const modelMissing=/Local Whisper STT is not installed|not available in the local cache|does not point to a model directory/i.test(errorText);
+    const localNoSpeech=/no transcript was produced|did not recognize speech|no speech text/i.test(errorText);
+    addActivity({
+      state:"error",
+      text:"Audio STT failed ("+Math.round(durationMs)+" ms, "+Math.round(blob.size/1024)+" KiB): "+errorText
+    });
+    if(providerUnavailable&&modelMissing){
+      setVoiceInputStatus("VOICE OFFLINE MODEL MISSING — CHECK TERMINAL HINT",false);
+    }else if(providerUnavailable&&localNoSpeech){
+      setVoiceInputStatus("LOCAL WHISPER HEARD NO SPEECH — CHECK MIC LEVEL / TRY AGAIN",false);
+    }else if(providerUnavailable){
+      setVoiceInputStatus("SERVER STT UNAVAILABLE — CHECK QUOTA / LOCAL WHISPER",false);
+    }else{
+      setVoiceInputStatus("VOICE STT ERROR — "+errorText.slice(0,72),false);
+    }
     setMicButton(true,false);
+    // Keep VAD listening after a failed utterance so the user can retry
+    // without toggling the microphone. Full provider details remain in activity.
     resumeBrowserVoice();
   }
 }
