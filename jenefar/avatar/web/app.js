@@ -380,10 +380,10 @@ function showApproval(event){
         ? resultValue.trim()
         : String(resultValue?.result||resultValue?.message||"").trim();
       if(!response.ok) throw new Error(reply||("HTTP "+response.status));
-      if(reply){
+      if(reply&&!resultValue?.structured_scan){
         // Approval results are spoken only by the avatar event/audio pipeline.
-        // Speaking this HTTP response here would overlap the server-generated
-        // TTS event and may stringify an object as "[object Object]".
+        // Structured scan results have their own visual window, so don't duplicate
+        // even the one-line summary in the general activity feed.
         addActivity({state:"result",text:reply});
       }
     }catch(error){
