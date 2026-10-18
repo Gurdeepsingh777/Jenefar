@@ -191,6 +191,7 @@ class TaskLifecycle:
         *,
         reason: str = "",
         provider: str = "",
+        agent: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         with self._lock:
@@ -208,6 +209,8 @@ class TaskLifecycle:
                 record.reason = redact_sensitive(str(reason))
             if provider:
                 record.provider = redact_sensitive(str(provider))
+            if agent:
+                record.agent = redact_sensitive(str(agent))
             if metadata:
                 record.metadata.update(redact_sensitive(metadata))
             if state in TERMINAL_STATES:
