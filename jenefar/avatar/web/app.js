@@ -380,11 +380,15 @@ function showApproval(event){
         ? resultValue.trim()
         : String(resultValue?.result||resultValue?.message||"").trim();
       if(!response.ok) throw new Error(reply||("HTTP "+response.status));
-      if(payload?.structured_scan){
+      if(payload?.structured_scan && typeof payload.structured_scan==="object"){
         // Some approval flows complete before the SSE consumer catches up.
         // Render the structured result directly; openScanResults replaces the
         // previous view and never adds the host list to chat or speech.
         openScanResults(payload.structured_scan, "approval-"+pendingId);
+      }else if(resultValue?.structured_scan){
+        // BrowserVoiceBridge already published a scan_results SSE event with
+        // the structured host/port data. Do not duplicate its one-line summary
+        // in the generic activity feed while that result window is opening.
       }else if(reply){
         addActivity({state:"result",text:reply});
       }
