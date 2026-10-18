@@ -35,6 +35,7 @@ class BrowserVoiceBridge:
             thread_name_prefix="jenefar-task",
         )
         self._active_task = None
+        self._task_generation = 0
         self._last_assistant_text = ""
         self._last_assistant_spoken_at = 0.0
         try:
@@ -327,6 +328,7 @@ class BrowserVoiceBridge:
                 "status": "busy",
             }
 
+        self._task_generation += 1
         self._active_task = self._task_executor.submit(
             self._run_task,
             task_id,
@@ -366,6 +368,7 @@ class BrowserVoiceBridge:
                 "reason": "assistant_busy",
             }
 
+        task_generation_at_start = self._task_generation
         import shutil
         import subprocess
 
@@ -409,6 +412,15 @@ class BrowserVoiceBridge:
         transcript = " ".join(str(transcript or "").split()).strip()
         if not transcript:
             return {"ok": True, "ignored": True, "reason": "empty_transcript"}
+        if self._task_generation != task_generation_at_start:
+            return {
+                "ok": True,
+                "accepted": False,
+                "busy": True,
+                "status": "busy",
+                "reason": "task_started_during_transcription",
+                "transcript": self._display_text(transcript),
+            }
         if self._is_recent_assistant_ip_echo(transcript):
             display = self._display_text(transcript)
             return {
