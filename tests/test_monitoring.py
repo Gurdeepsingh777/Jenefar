@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import json
+import subprocess
+
+from jenefar.monitoring import system_monitor, gpu_sampler
+
+
+def test_get_ram_returns_real_memory_shape():
+    result = system_monitor.get_ram()
+    assert set(result) == {"percent", "used_gb", "total_gb"}
+    assert 0 <= result["percent"] <= 100
+    assert result["used_gb"] >= 0
+    assert result["total_gb"] > 0
+
+
+def test_system_stats_has_stable_payload_shape(monkeypatch):
+    monkeypatch.setattr(system_monitor, "get_cpu", lambda: 12.5)
+    monkeypatch.setattr(system_monitor, "get_ram", lambda: {
+        "percent": 40.0, "used_gb": 4.0, "total_gb": 10.0
+    })
+    monkeypatch.setattr(system_monitor, "get_gpu", lambda: {
+        "available": False, "vendor": None, "name": None, "usage": 0.0,
+        "power_w": None, "memory_used_gb": None, "memory_total_gb": None,
+    })
+    result = system_monitor.get_system_stats()
+    assert isinstance(result["timestamp"], float)
+    assert result["cpu"] == 12.5
+    assert result["ram"]["percent"] == 40.0
+    assert result["gpu"]["available"] is False
+
+
+def test_intel_gpu_json_parser_reads_engine_load(monkeypatch):
+    sample = [{
+        "power": {"GPU": 0.42, "Package": 6.2, "unit": "W"},
+        "engines": {
+            "Render/3D": {"busy": 17.354828, "unit": "%"},
+            "Blitter": {"busy": 2.0, "unit": "%"},
+        },
+    }]
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout=json.dumps(sample), stderr=""
+        )
+
+    monkeypatch.setattr(gpu_sampler, "INTEL_GPU_TOP", "/usr/bin/intel_gpu_top")
+    monkeypatch.setattr(gpu_sampler.subprocess, "run", fake_run)
+    result = gpu_sampler.GPUSampler._intel()
+    assert result is not None
+    assert result["available"] is True
+    assert result["vendor"] == "Intel"
+    assert result["usage"] == 17.4
+    assert result["render_3d_usage"] == 17.4
+    assert result["power_w"] == 0.42
+
+
+def test_intel_sampler_handles_missing_or_invalid_probe(monkeypatch):
+    monkeypatch.setattr(gpu_sampler, "INTEL_GPU_TOP", None)
+    assert gpu_sampler.GPUSampler._intel() is None
+    monkeypatch.setattr(gpu_sampler, "INTEL_GPU_TOP", "/usr/bin/intel_gpu_top")
+
+    def broken_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], 2)
+
+    monkeypatch.setattr(gpu_sampler.subprocess, "run", broken_run)
+    assert gpu_sampler.GPUSampler._intel() is None
+
+
+def test_gpu_cache_returns_a_copy():
+    sampler = gpu_sampler.GPUSampler()
+    sampler._latest = {"available": True, "vendor": "Intel", "usage": 5.0}
+    result = sampler.get()
+    assert result == sampler._latest
+    assert result is not sampler._latest
