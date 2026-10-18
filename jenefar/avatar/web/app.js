@@ -380,10 +380,12 @@ function showApproval(event){
         ? resultValue.trim()
         : String(resultValue?.result||resultValue?.message||"").trim();
       if(!response.ok) throw new Error(reply||("HTTP "+response.status));
-      if(reply&&!resultValue?.structured_scan){
-        // Approval results are spoken only by the avatar event/audio pipeline.
-        // Structured scan results have their own visual window, so don't duplicate
-        // even the one-line summary in the general activity feed.
+      if(payload?.structured_scan){
+        // Some approval flows complete before the SSE consumer catches up.
+        // Render the structured result directly; openScanResults replaces the
+        // previous view and never adds the host list to chat or speech.
+        openScanResults(payload.structured_scan, "approval-"+pendingId);
+      }else if(reply){
         addActivity({state:"result",text:reply});
       }
     }catch(error){
