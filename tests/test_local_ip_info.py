@@ -557,13 +557,13 @@ def test_port_scan_keeps_filtered_ports_and_summarizes_closed_ports():
             "tool": "nmap",
             "returncode": 0,
             "stdout": (
-                "Nmap scan report for 192.168.29.96\\n"
-                "Host is up (0.007s latency).\\n"
-                "PORT     STATE    SERVICE  VERSION\\n"
-                "1095/tcp filtered nicelink\\n"
-                "6059/tcp filtered X11:59\\n"
-                "Not shown: 998 closed tcp ports (conn-refused)\\n"
-                "Nmap done: 1 IP address (1 host up) scanned in 2.28 seconds\\n"
+                "Nmap scan report for 192.168.29.96\n"
+                "Host is up (0.007s latency).\n"
+                "PORT     STATE    SERVICE  VERSION\n"
+                "1095/tcp filtered nicelink\n"
+                "6059/tcp filtered X11:59\n"
+                "Not shown: 998 closed tcp ports (conn-refused)\n"
+                "Nmap done: 1 IP address (1 host up) scanned in 2.28 seconds\n"
             ),
             "stderr": "",
         },
@@ -594,8 +594,8 @@ def test_port_scan_does_not_report_zero_open_ports_when_host_was_not_confirmed()
             "tool": "nmap",
             "returncode": 0,
             "stdout": (
-                "Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn\\n"
-                "Nmap done: 1 IP address (0 hosts up) scanned in 1.69 seconds\\n"
+                "Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn\n"
+                "Nmap done: 1 IP address (0 hosts up) scanned in 1.69 seconds\n"
             ),
             "stderr": "",
         },
@@ -622,9 +622,9 @@ def test_filtered_only_result_does_not_claim_host_is_up():
             "tool": "nmap",
             "returncode": 0,
             "stdout": (
-                "Nmap scan report for 192.168.29.35\\n"
-                "Not shown: 1000 filtered tcp ports (no-response)\\n"
-                "Nmap done: 1 IP address (1 host up) scanned in 12.00 seconds\\n"
+                "Nmap scan report for 192.168.29.35\n"
+                "Not shown: 1000 filtered tcp ports (no-response)\n"
+                "Nmap done: 1 IP address (1 host up) scanned in 12.00 seconds\n"
             ),
             "stderr": "",
         },
