@@ -121,9 +121,21 @@ class JenefarOrchestrator:
         if token is None or token.cancelled or active is None:
             return {"cancelled": False, "active": False, "reason": "no cancellable active task"}
         changed = token.cancel(reason)
-        if active.get("state") not in {"waiting_approval", "cancelling"}:
-            self.task_lifecycle.transition(active["task_id"], "cancelling", reason=token.reason)
-        self.runtime_context.update({"state": "cancelling", "last_event": token.reason})
+        if active.get("state") == "waiting_approval":
+            # Reject all remaining approvals belonging to the single admitted
+            # workflow before releasing the active-task slot.
+            for pending_id in list(getattr(self, "pending_approval_workflows", {})):
+                try:
+                    self.tool_broker.reject(str(pending_id))
+                except Exception:
+                    pass
+            getattr(self, "pending_approval_workflows", {}).clear()
+            self._finish_waiting_runtime_task(state="cancelled", reason=token.reason, provider="user_cancel")
+            self.runtime_context.update({"state": "cancelled", "last_event": token.reason})
+        else:
+            if active.get("state") != "cancelling":
+                self.task_lifecycle.transition(active["task_id"], "cancelling", reason=token.reason)
+            self.runtime_context.update({"state": "cancelling", "last_event": token.reason})
         return {"cancelled": changed, "active": True, "task_id": active["task_id"], "reason": token.reason}
 
     def runtime_status(self) -> dict[str, Any]:
