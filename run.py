@@ -523,6 +523,7 @@ def main() -> int:
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.monitoring.server import start_monitoring_server
 
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
@@ -554,6 +555,19 @@ def main() -> int:
             runtime_cancel_handler=orchestrator.cancel_active_task,
         )
         avatar_server.start()
+
+        # Live CPU/RAM/GPU telemetry is a separate loopback-only WebSocket.
+        # Reuse an existing listener without taking ownership of its lifecycle.
+        monitoring_server = None
+        monitoring_server_owned = False
+        try:
+            monitoring_server = start_monitoring_server()
+            monitoring_server_owned = monitoring_server.running
+        except Exception as exc:
+            print(
+                "[JENEFAR] Monitoring server unavailable: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         runtime_url = avatar_server.url
         print(f"[JENEFAR] Avatar UI: {runtime_url}")
@@ -621,6 +635,8 @@ def main() -> int:
                 threading.Event().wait()
         finally:
             browser_voice.shutdown()
+            if monitoring_server is not None and monitoring_server_owned:
+                monitoring_server.stop()
             avatar_server.stop()
         return 0
 
