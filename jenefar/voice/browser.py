@@ -542,17 +542,22 @@ class BrowserVoiceBridge:
                 display_text = self._display_text(text)
                 speech_text = roman_hinglish_for_voice(display_text)
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
-                self._publish(
-                    "speaking",
-                    display_text,
-                    task_id,
-                    audio_b64=audio_b64,
-                    audio_mime=audio_mime,
-                )
+                if audio_b64:
+                    self._publish(
+                        "speaking",
+                        display_text,
+                        task_id,
+                        audio_b64=audio_b64,
+                        audio_mime=audio_mime,
+                    )
+                else:
+                    # Keep all speech on the avatar event path. The browser's
+                    # native voice is used only if generated audio is unavailable.
+                    self._publish("speaking_fallback", display_text, task_id)
             finally:
+                # Queue completion means synthesis ended, not that browser
+                # playback ended. Do not publish idle and unlock the mic early.
                 self._speech_queue.task_done()
-                if self._speech_queue.empty():
-                    self._publish("idle", "", "")
 
     def shutdown(self) -> None:
         self._task_executor.shutdown(wait=False, cancel_futures=True)
