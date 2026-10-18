@@ -653,3 +653,20 @@ def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
     assert 'browserSpeechGeneration' in app
     assert 'const failPlayback=()=>{' in app
 
+
+
+def test_browser_playback_keeps_one_owner_and_mic_waits_for_audio():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "function stopBrowserAudio(){" in js
+    assert "browserSpeechGeneration" in js
+    assert "if(browserSpeechActive||Boolean(browserAudio&&!browserAudio.ended)||" in js
+
+
+def test_approval_speech_queue_uses_browser_fallback_and_does_not_unlock_early():
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    start = bridge.index("    def _speech_loop(self) -> None:")
+    end = bridge.index("    def shutdown(self) -> None:", start)
+    speech_loop = bridge[start:end]
+    assert 'self._publish("speaking_fallback", display_text, task_id)' in speech_loop
+    assert 'self._publish("idle", "", "")' not in speech_loop
+    assert "Queue completion means synthesis ended, not that browser" in speech_loop
