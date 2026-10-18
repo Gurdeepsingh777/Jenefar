@@ -14,7 +14,9 @@ def test_dashboard_ids_match_runtime_and_sse_handler_is_defensive():
     assert 'id="stat-running"' in html
     assert 'document.getElementById("stat-running")' in js
     assert "if(stateEl) stateEl.textContent=stateText;" in js
-    assert "if(captionEl) captionEl.textContent=event.text||caption;" in js
+    assert 'if(captionEl) captionEl.textContent=isRawScannerActivity' in js
+    assert '"Network scan running"' in js
+    assert 'String(event.data?.summary||event.text||caption)' in js
     assert "if(dot){" in js
 
 
@@ -273,3 +275,106 @@ def test_realtime_session_includes_enabled_persistent_skills(monkeypatch):
     assert "Check the current checkout before running tests." in instructions
     assert "auto_python_test" in instructions
     assert "approval_required" in instructions
+
+
+
+def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
+    orchestrator = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+
+    assert "approval_handler=(" in run
+    assert "browser_voice.approve_pending" in run
+    assert orchestrator.index("if self._is_local_host_port_scan_request(text):") < orchestrator.index("direct_window = self._direct_window_transfer(text)")
+    assert 'invoke("kali_tool_execute", arguments, confirmed=True)' in orchestrator
+    assert "if browser_voice_enabled" in run
+    assert "rejection_handler=orchestrator._reject_pending_workflow" in run
+    assert 'avatar.publish("scan_results", str(data["summary"]), data=data)' in orchestrator
+    assert 'avatar.publish("scan_results", str(result_data["summary"]), data=result_data)' in orchestrator
+    assert "only the compact result-window summary to the voice UI." in orchestrator
+    assert 'summary += "\\nReported hosts: "' in orchestrator
+    assert 'payload["structured_scan"] = scan_data' in server
+    assert "openScanResults(payload.structured_scan" in app
+    assert "else if(resultValue?.structured_scan)" in app
+    assert "Do not duplicate its one-line summary" in app
+    assert 'dispatchDashboardCommand("scan ports of host "+host.ip)' in app
+    assert "New instruction closes this window automatically" in (WEB / "index.html").read_text(encoding="utf-8")
+    assert "if owner is scan_owner" in (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    assert "self.orchestrator._latest_scan_result = None" in (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert '"-Pn", "-n", "-sT", "-sV"' in orchestrator
+    assert '"filtered_port_count": filtered_count' in orchestrator
+    assert '"closed_port_count": closed_count' in orchestrator
+    assert '"stdout": stdout' in orchestrator
+    assert '"stderr": str(result.get("stderr") or "")' in orchestrator
+    assert 'appendExactNmapOutput(scanResultsList,data)' in app
+    assert 'scanNode("summary","","EXACT NMAP OUTPUT")' in app
+    assert 'scanNode("pre","scan-raw-pre",stdout)' in app
+    assert '["PORT","STATE","SERVICE","VERSION / DETAIL"]' in app
+    assert "NO SCAN YET" in app
+    assert "Host reachability was not confirmed." in app
+    assert "No open or filtered TCP ports were reported." in app
+    assert 'data?.scan_status==="error"' in app
+    assert 'hostStatus==="ERROR"?"SCAN FAILED"' in app
+    assert 'scanResultsWindow&&!scanResultsWindow.hidden&&["listening","queued","thinking"].includes(currentState)' in app
+    assert "Host discovery did not complete." in app
+    assert "REACHABILITY UNKNOWN · " in app
+    assert "filtered-only output does not" in orchestrator
+
+
+
+def test_network_scope_picker_shows_block_reason_without_false_zero_host_count():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    orchestrator = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    network_info = (ROOT / "jenefar" / "tools" / "network_info.py").read_text(encoding="utf-8")
+
+    assert 'const scanBlocked=data?.scan_status==="blocked";' in app
+    assert 'const scanSelectionRequired=data?.scan_status==="selection_required";' in app
+    assert "renderNetworkScopePanel(scanResultsList,data)" in app
+    assert 'option.authorized===true' in app
+    assert 'dispatchDashboardCommand("scan network "+network)' in app
+    assert "CURRENT AUTHORIZED TARGETS" in app
+    assert "CHANGE NETWORK / INTERFACE" in app
+    assert "showNetworkPicker=!showNetworkPicker" in app
+    assert "No Nmap command was executed" in orchestrator
+    assert '"networks": candidates' in network_info
+    assert ".scan-network-option" in css
+    assert ".scan-scope-badge.denied" in css
+
+
+
+def test_browser_tts_includes_local_piper_before_network_edge_fallback():
+    voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    env = (ROOT / ".env.example").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+
+    assert "def _synthesize_local_piper_audio" in voice
+    assert '"--model", str(model_path)' in voice
+    assert '"--output_file", output_path' in voice
+    assert "JENEFAR_LOCAL_TTS_TIMEOUT_SECONDS" in voice
+    browser_tts = voice[voice.index("    def _synthesize_browser_audio"):]
+    assert browser_tts.index("self._synthesize_local_piper_audio(text)") < browser_tts.index("self._synthesize_edge_audio(text)")
+    assert "JENEFAR_LOCAL_TTS_MODEL=" in env
+    assert "configured Piper" in env
+    assert "configured local Piper -> Edge" in run
+
+
+def test_desktop_health_is_actionable_in_doctor_and_dashboard():
+    desktop = (ROOT / "jenefar" / "automation" / "desktop.py").read_text(encoding="utf-8")
+    headless = (ROOT / "jenefar" / "automation" / "headless.py").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+
+    assert '"input_control": False' in desktop
+    assert '"desktop_ready": False' in headless
+    assert 'if path == "/desktop/status":' in server
+    assert 'fetch("/desktop/status?ts="+Date.now()' in app
+    assert 'id="service-desktop"' in html
+    assert 'id="desktop-status-detail"' in html
+    assert 'status["diagnosis"] = diagnosis' in desktop
+    assert '"  desktop diagnosis             {desktop_status.get' in run
+    assert '.desktop-diagnostic[data-state="unavailable"]' in css

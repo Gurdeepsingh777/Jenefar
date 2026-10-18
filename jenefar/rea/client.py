@@ -21,6 +21,7 @@ class ReaMCPClient:
             "1", "true", "yes", "on"
         }
         self.command = os.getenv("JENEFAR_REA_COMMAND", "npx").strip() or "npx"
+        # Follow REA's documented stdio MCP command exactly.
         raw_args = os.getenv("JENEFAR_REA_ARGS", "-y,rea-agents@6.5.0,mcp")
         self.args = [item.strip() for item in raw_args.split(",") if item.strip()]
         self.timeout = max(
@@ -37,6 +38,9 @@ class ReaMCPClient:
         self._pending_output = bytearray()
         self._tools: dict[str, dict[str, Any]] = {}
         self._last_error = ""
+        self._stderr_tail = bytearray()
+        self._stderr_lock = threading.Lock()
+        self._stderr_thread: threading.Thread | None = None
 
     @staticmethod
     def _resolve_executable(command: str) -> str | None:
@@ -79,6 +83,25 @@ class ReaMCPClient:
                 "Set JENEFAR_REA_COMMAND to the absolute path to npx."
             )
         return self._node_diagnostic()
+
+    def _drain_stderr(self, stream) -> None:
+        """Continuously drain child stderr so a noisy npm wrapper cannot block MCP."""
+        try:
+            while True:
+                chunk = stream.read(1024)
+                if not chunk:
+                    return
+                with self._stderr_lock:
+                    self._stderr_tail.extend(chunk)
+                    if len(self._stderr_tail) > 12000:
+                        del self._stderr_tail[:-12000]
+        except (OSError, ValueError):
+            return
+
+    def _stderr_diagnostic(self) -> str:
+        with self._stderr_lock:
+            raw = bytes(self._stderr_tail[-4000:])
+        return raw.decode("utf-8", errors="replace").strip()
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -215,6 +238,12 @@ class ReaMCPClient:
             raise RuntimeError(f"Could not resolve REA command: {self.command}")
         env = dict(os.environ)
         env["NO_COLOR"] = "1"
+        env["CI"] = "1"
+        env["npm_config_yes"] = "true"
+        # npm/npx diagnostic chatter belongs on stderr, which is drained on a
+        # background thread; stdout is reserved for MCP JSON-RPC messages.
+        with self._stderr_lock:
+            self._stderr_tail.clear()
         try:
             self._process = subprocess.Popen(
                 [command_path, *self.args],
@@ -224,6 +253,14 @@ class ReaMCPClient:
                 bufsize=0,
                 env=env,
             )
+            if self._process.stderr is not None:
+                self._stderr_thread = threading.Thread(
+                    target=self._drain_stderr,
+                    args=(self._process.stderr,),
+                    name="jenefar-rea-stderr",
+                    daemon=True,
+                )
+                self._stderr_thread.start()
             init = self._request(
                 "initialize",
                 {
@@ -240,22 +277,10 @@ class ReaMCPClient:
                 raise RuntimeError("REA connected but advertised no MCP tools.")
         except Exception as exc:
             self._last_error = f"{type(exc).__name__}: {exc}"
-            process = self._process
-            if process is not None and process.stderr is not None:
-                # Never perform a blocking read from the long-lived stderr pipe
-                # while the REA process may still be alive.
-                try:
-                    import select
-                    ready, _, _ = select.select([process.stderr.fileno()], [], [], 0.1)
-                    if ready:
-                        diagnostic = os.read(process.stderr.fileno(), 1600).decode(
-                            "utf-8", errors="replace"
-                        ).strip()
-                        if diagnostic:
-                            self._last_error += f" | REA stderr: {diagnostic}"
-                except Exception:
-                    pass
             self._stop_process()
+            diagnostic = self._stderr_diagnostic()
+            if diagnostic:
+                self._last_error += f" | REA stderr: {diagnostic}"
             raise RuntimeError(f"Could not connect to REA MCP server: {self._last_error}") from exc
 
     def _read_message(self, deadline: float) -> dict[str, Any]:
@@ -295,7 +320,9 @@ class ReaMCPClient:
             chunk = os.read(fd, 4096)
             if not chunk:
                 if process.poll() is not None:
-                    raise RuntimeError("REA MCP closed stdout unexpectedly.")
+                    raise RuntimeError(
+                        f"REA MCP closed stdout unexpectedly (process exit code {process.poll()})."
+                    )
                 continue
             data.extend(chunk)
             if len(data) > 32 * 1024 * 1024 and b"\n" not in data:
@@ -314,7 +341,7 @@ class ReaMCPClient:
             separators=(",", ":"),
         ).encode("utf-8")
         try:
-            os.write(process.stdin.fileno(), payload + b"\\n")
+            os.write(process.stdin.fileno(), payload + b"\n")
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("Could not write an MCP request to REA.") from exc
         deadline = time.monotonic() + self.timeout
@@ -341,7 +368,7 @@ class ReaMCPClient:
             separators=(",", ":"),
         ).encode("utf-8")
         try:
-            os.write(process.stdin.fileno(), payload + b"\\n")
+            os.write(process.stdin.fileno(), payload + b"\n")
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("Could not write an MCP notification to REA.") from exc
 
@@ -363,19 +390,30 @@ class ReaMCPClient:
     def _stop_process(self) -> None:
         process, self._process = self._process, None
         self._tools = {}
-        if process is None:
-            return
-        try:
-            if process.stdin:
-                process.stdin.close()
-            process.terminate()
-            process.wait(timeout=3)
-        except Exception:
+        if process is not None:
             try:
-                process.kill()
-                process.wait(timeout=2)
+                if process.stdin:
+                    process.stdin.close()
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=3)
             except Exception:
-                pass
+                try:
+                    process.kill()
+                    process.wait(timeout=2)
+                except Exception:
+                    pass
+
+            thread = self._stderr_thread
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=0.4)
+            for stream in (process.stdout, process.stderr):
+                try:
+                    if stream:
+                        stream.close()
+                except Exception:
+                    pass
+        self._stderr_thread = None
 
     def close(self) -> None:
         with self._lock:

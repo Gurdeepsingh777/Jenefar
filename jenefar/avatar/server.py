@@ -5,7 +5,7 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from jenefar.avatar.controller import AvatarController
 from jenefar.avatar.settings import UISettings
@@ -31,14 +31,22 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     tool_broker = None
     voice_handler = None
     voice_audio_handler = None
+    approval_handler = None
+    rejection_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # Browser tabs can close or cancel an in-flight fetch. The client
+            # is already gone, so attempting to send a second error response
+            # only creates another BrokenPipeError and noisy server traceback.
+            return
 
     def _json(self, status: int, payload: dict) -> None:
         self._send(
@@ -86,7 +94,8 @@ class _AvatarHandler(BaseHTTPRequestHandler):
         self._send(200, content_type, target.read_bytes())
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path or "/"
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path or "/"
         try:
             if path == "/":
                 self._serve_file("index.html")
@@ -150,6 +159,33 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/security/scope":
+                broker = self.tool_broker
+                scope = getattr(broker, "scope", None) if broker is not None else None
+                if scope is None:
+                    self._json(503, {
+                        "configured": False,
+                        "authorized_targets": [],
+                        "last_error": "Security scope is not wired into this runtime.",
+                    })
+                    return
+                targets = list(getattr(scope, "allowed_targets", []) or [])
+                payload = {
+                    "configured": bool(targets),
+                    "target_count": len(targets),
+                    "authorized_targets": targets,
+                    "deny_by_default": not bool(targets),
+                }
+                query_targets = parse_qs(parsed_url.query).get("target", [])
+                if query_targets:
+                    target = query_targets[0]
+                    payload["check"] = {
+                        "target": target,
+                        "allowed": bool(scope.allows(target)),
+                        "message": scope.explain(target),
+                    }
+                self._json(200, payload)
+                return
             if path == "/rea/status":
                 broker = self.tool_broker
                 if broker is None or not hasattr(broker, "rea_connector"):
@@ -188,6 +224,23 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     self._send(404, "text/plain; charset=utf-8", b"VRM unavailable")
                     return
                 self._send(200, "model/gltf-binary", self.vrm_path.read_bytes())
+                return
+            if path == "/desktop/status":
+                broker = self.tool_broker
+                desktop = getattr(broker, "desktop", None) if broker is not None else None
+                status_handler = getattr(desktop, "backend_status", None)
+                if not callable(status_handler):
+                    self._json(503, {
+                        "status": "unavailable",
+                        "desktop_ready": False,
+                        "input_control": False,
+                        "screenshot_capture": False,
+                        "diagnosis": "Desktop backend health reporting is not available in this runtime.",
+                        "recommendations": [],
+                    })
+                    return
+                status = status_handler()
+                self._json(200, {"status": "ok", **status})
                 return
             if path == "/desktop/mirror/status":
                 mirror = self.tool_broker
@@ -337,7 +390,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 if not self.tool_broker or not pending_id:
                     self._json(400, {"error": "approval id required"})
                     return
-                self._json(200, {"result": self.tool_broker.reject(pending_id)})
+                handler = getattr(self, "rejection_handler", None)
+                result = handler(pending_id) if handler is not None else self.tool_broker.reject(pending_id)
+                self._json(200, {"result": result})
                 return
 
             if path == "/realtime/session":
@@ -347,7 +402,24 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             if path == "/realtime/tool":
                 pending_id = str(body.get("approve_id", "")).strip()
                 if pending_id and self.tool_broker:
-                    self._json(200, {"result": self.tool_broker.approve(pending_id)})
+                    handler = getattr(self, "approval_handler", None)
+                    owner = getattr(handler, "__self__", None) if handler is not None else None
+                    # The browser voice handler wraps the orchestrator; resolve both
+                    # shapes and clear stale scan state before this specific approval.
+                    scan_owner = getattr(owner, "orchestrator", owner)
+                    if owner is scan_owner and scan_owner is not None and hasattr(scan_owner, "_latest_scan_result"):
+                        scan_owner._latest_scan_result = None
+                    result = handler(pending_id) if handler is not None else self.tool_broker.approve(pending_id)
+                    payload = {"result": result}
+                    # Direct host discovery/port-scan approvals return the structured
+                    # scan as a response fallback as well as through the live SSE path.
+                    scan_data = getattr(scan_owner, "_latest_scan_result", None)
+                    if isinstance(scan_data, dict) and scan_data.get("kind") in {"host_discovery", "port_scan"}:
+                        if not isinstance(result, dict) or result.get("structured_scan"):
+                            payload["structured_scan"] = scan_data
+                        elif isinstance(result, str):
+                            payload["structured_scan"] = scan_data
+                    self._json(200, payload)
                     return
                 tool_name = str(body.get("name", "")).strip()
                 args = body.get("arguments", {})
@@ -383,6 +455,8 @@ class AvatarServer:
         tool_broker=None,
         voice_handler=None,
         voice_audio_handler=None,
+        approval_handler=None,
+        rejection_handler=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -391,6 +465,8 @@ class AvatarServer:
         self.tool_broker = tool_broker
         self.voice_handler = voice_handler
         self.voice_audio_handler = voice_audio_handler
+        self.approval_handler = approval_handler
+        self.rejection_handler = rejection_handler
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -405,6 +481,8 @@ class AvatarServer:
         tool_broker = self.tool_broker
         voice_handler = self.voice_handler
         voice_audio_handler = self.voice_audio_handler
+        approval_handler = self.approval_handler
+        rejection_handler = self.rejection_handler
 
         class Handler(_AvatarHandler):
             pass
@@ -416,6 +494,8 @@ class AvatarServer:
         # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
         Handler.voice_audio_handler = staticmethod(voice_audio_handler) if voice_audio_handler is not None else None
+        Handler.approval_handler = staticmethod(approval_handler) if approval_handler is not None else None
+        Handler.rejection_handler = staticmethod(rejection_handler) if rejection_handler is not None else None
         return Handler
 
     def _create_server(self) -> None:

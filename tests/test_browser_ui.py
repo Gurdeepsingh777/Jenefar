@@ -578,3 +578,149 @@ def test_browser_tts_prefers_expressive_gemini_before_edge_fallback():
     assert "JENEFAR_GEMINI_TTS_MODEL" in bridge
     assert "self._synthesize_gemini_audio(text)" in bridge
     assert "trying expressive Gemini TTS" in bridge
+
+
+
+def test_browser_mic_stays_locked_until_assistant_finishes_responding():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    voice_start = js.index("async function sendBrowserTranscript(text){")
+    voice_end = js.index("function setupBrowserVoice(){", voice_start)
+    voice_handler = js[voice_start:voice_end]
+    accepted = voice_handler.index("if(result?.accepted){")
+    accepted_end = voice_handler.index("\n    }", accepted)
+    accepted_block = voice_handler[accepted:accepted_end]
+
+    assert "Keep the microphone locked while the server thinks and synthesizes TTS" in accepted_block
+    assert "return;" in accepted_block
+    assert "voiceLocked=false" not in accepted_block
+
+    dashboard_start = js.index("async function dispatchDashboardCommand(command){")
+    dashboard_end = js.index('document.querySelectorAll("[data-command]")', dashboard_start)
+    dashboard_handler = js[dashboard_start:dashboard_end]
+    assert dashboard_handler.index("pauseBrowserVoice();") < dashboard_handler.index('fetch("/voice/text"')
+    assert "Keep capture locked until the corresponding speaking/completed event." in dashboard_handler
+
+def test_browser_mic_stays_locked_when_server_reports_busy():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function transcribeCapturedAudio(blob,durationMs){")
+    end = js.index("function startFallbackMonitor(){", start)
+    handler = js[start:end]
+    busy = handler.index("if(result?.busy){")
+    busy_end = handler.index("\n    }", busy)
+    busy_block = handler[busy:busy_end]
+    assert "voiceLocked=false" not in busy_block
+    assert "resumeBrowserVoice()" not in busy_block
+    assert "setMicButton(true,true)" in busy_block
+    assert "Do not unlock during a still-running task" in busy_block
+    assert "resumeVoiceIfAssistantIdle();" in busy_block
+    assert "function resumeVoiceIfAssistantIdle()" in js
+
+
+def test_avatar_server_silently_handles_closed_browser_socket():
+    from jenefar.avatar.server import _AvatarHandler
+
+    handler = object.__new__(_AvatarHandler)
+    handler.send_response = lambda _status: None
+    handler.send_header = lambda *_args: None
+    handler.end_headers = lambda: None
+
+    class DisconnectedWriter:
+        def write(self, _body):
+            raise BrokenPipeError("browser closed the connection")
+
+    handler.wfile = DisconnectedWriter()
+    handler._send(200, "application/json; charset=utf-8", b"{}")
+
+def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert 'handler = getattr(self, "approval_handler", None)' in server
+    assert 'handler = getattr(self, "rejection_handler", None)' in server
+    assert "approval_handler=(" in run
+    assert "browser_voice.approve_pending" in run
+    assert "else orchestrator._approve_pending" in run
+    assert "rejection_handler=orchestrator._reject_pending_workflow" in run
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'const payload=await response.json();' in app
+    approval_start = app.index("approveButton.onclick=async()=>{")
+    approval_end = app.index("\n}\n", approval_start)
+    approval_handler = app[approval_start:approval_end]
+    assert 'const resultValue=payload?.result;' in approval_handler
+    assert 'browserSpeakFallback(reply);' not in approval_handler
+    assert 'playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");' in app
+    assert 'function stopBrowserAudio(){' in app
+    assert 'browserAudioGeneration' in app
+    assert 'browserSpeechGeneration' in app
+    assert 'const failPlayback=()=>{' in app
+
+
+
+def test_browser_playback_keeps_one_owner_and_mic_waits_for_audio():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "function stopBrowserAudio(){" in js
+    assert "browserSpeechGeneration" in js
+    assert "if(browserSpeechActive||Boolean(browserAudio&&!browserAudio.ended)||" in js
+
+
+def test_approval_speech_queue_uses_browser_fallback_and_does_not_unlock_early():
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    start = bridge.index("    def _speech_loop(self) -> None:")
+    end = bridge.index("    def shutdown(self) -> None:", start)
+    speech_loop = bridge[start:end]
+    assert 'self._publish("speaking_fallback", display_text, task_id)' in speech_loop
+    assert 'self._publish("idle", "", "")' not in speech_loop
+    assert "Queue completion means synthesis ended, not that browser" in speech_loop
+
+
+
+def test_browser_voice_events_ignore_sse_replay_of_same_speech():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "const playedSpeechEventKeys=new Set();" in js
+    assert "function speechEventWasAlreadyHandled(event)" in js
+    assert 'const key=state+"|"+taskId+"|"+payloadKey;' in js
+    assert "if(!speechEventWasAlreadyHandled(event)){" in js
+    assert 'if(event.text&&!speechEventWasAlreadyHandled(event)){' in js
+    assert "while(playedSpeechEventOrder.length>128)" in js
+
+
+
+def test_scan_results_window_is_transparent_transient_and_selectable():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+
+    assert 'id="scan-results-window"' in html
+    assert 'data-scan-view="hosts"' in html
+    assert 'data-scan-view="ports"' in html
+    assert "backdrop-filter:blur(30px) saturate(1.72)" in css
+    assert "#scan-results-window[hidden]{display:none!important}" in css
+    assert "function openScanResults(data,taskId" in js
+    assert 'currentState==="scan_results"' in js
+    assert "closeScanResults();" in js
+    assert 'dispatchDashboardCommand("scan ports of host "+host.ip)' in js
+    assert 'self._publish(' in bridge
+    assert '"scan_results"' in bridge
+    assert "data=structured_scan" in bridge
+    assert "Do not synthesize or enqueue spoken IP/port lists" in bridge
+
+
+def test_scan_result_events_carry_structured_data_without_speech():
+    from jenefar.avatar.controller import AvatarController
+
+    controller = AvatarController()
+    subscriber = controller.subscribe()
+    subscriber.get_nowait()
+    result = {
+        "kind": "host_discovery",
+        "summary": "2 live hosts found",
+        "hosts": [{"index": 1, "ip": "192.168.29.1", "state": "UP"}],
+    }
+
+    controller.publish("scan_results", result["summary"], task_id="scan-task", data=result)
+    event = subscriber.get_nowait()
+
+    assert event["state"] == "scan_results"
+    assert event["data"]["kind"] == "host_discovery"
+    assert event["data"]["hosts"][0]["ip"] == "192.168.29.1"
+    assert event["audio_b64"] == ""

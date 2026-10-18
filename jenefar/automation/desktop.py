@@ -23,31 +23,115 @@ class DesktopAutomation:
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     def backend_status(self) -> dict[str, object]:
+        """Diagnose actual display/input availability without saving a screenshot."""
+        session_type = os.getenv("XDG_SESSION_TYPE", "").strip().lower()
+        display = os.getenv("DISPLAY", "").strip()
+        wayland_display = os.getenv("WAYLAND_DISPLAY", "").strip()
         status: dict[str, object] = {
             "python": os.sys.version.split()[0],
+            "backend": "native",
+            "session_type": session_type or "unknown",
+            "display": display,
+            "wayland_display": wayland_display,
+            "pyautogui_imported": False,
             "pyautogui": False,
-            "display": os.getenv("DISPLAY", ""),
-            "wayland_display": os.getenv("WAYLAND_DISPLAY", ""),
-            "session_type": os.getenv("XDG_SESSION_TYPE", ""),
+            "input_control": False,
+            "screenshot_capture": False,
+            "desktop_ready": False,
+            "diagnosis": "",
+            "recommendations": [],
         }
+        recommendations: list[str] = []
+
         try:
             import pyautogui
-            status["pyautogui"] = True
+
+            status["pyautogui_imported"] = True
             try:
                 size = pyautogui.size()
-                status["screen"] = {"width": int(size.width), "height": int(size.height)}
+                width, height = int(size.width), int(size.height)
+                if width > 0 and height > 0:
+                    status["screen"] = {"width": width, "height": height}
+                    status["pyautogui"] = True
+                    status["input_control"] = True
+                else:
+                    status["screen_error"] = f"Display returned invalid dimensions: {width}x{height}"
             except Exception as exc:
                 status["screen_error"] = f"{type(exc).__name__}: {exc}"
         except Exception as exc:
             status["import_error"] = f"{type(exc).__name__}: {exc}"
+            recommendations.append(
+                "Install desktop dependencies in the active venv: "
+                "python -m pip install -r requirements-desktop.txt"
+            )
+
+        # Probe that an actual screen-capture session can be opened and has a
+        # valid monitor geometry. This does not capture, save, or inspect pixels.
         try:
-            import mss  # noqa: F401
-            from PIL import Image  # noqa: F401
-            status["screenshot_capture"] = True
+            import mss
+
+            with mss.mss() as capture:
+                monitors = list(capture.monitors or [])
+                visible_monitors = [
+                    monitor for monitor in monitors[1:]
+                    if int(monitor.get("width", 0)) > 0 and int(monitor.get("height", 0)) > 0
+                ]
+                status["monitor_count"] = len(visible_monitors)
+                if visible_monitors:
+                    primary = visible_monitors[0]
+                    status["capture_screen"] = {
+                        "width": int(primary["width"]),
+                        "height": int(primary["height"]),
+                    }
+                    status["screenshot_capture"] = True
+                else:
+                    status["screenshot_capture"] = False
+                    status["screenshot_error"] = "No accessible monitor geometry was reported by MSS."
         except Exception as exc:
             status["screenshot_capture"] = False
             status["screenshot_error"] = f"{type(exc).__name__}: {exc}"
-        if not status["pyautogui"] or not status["screenshot_capture"]:
+            recommendations.append(
+                "Check screenshot dependencies and desktop/session permissions. "
+                "Install with: python -m pip install -r requirements-desktop.txt"
+            )
+
+        if not status["input_control"]:
+            if session_type == "wayland" and not display:
+                diagnosis = (
+                    "Wayland session detected, but DISPLAY is unset and PyAutoGUI cannot access an X11/XWayland display. "
+                    "Native mouse/keyboard control is unavailable; screenshot capture is reported separately."
+                )
+                recommendations.append(
+                    "For PyAutoGUI input control, log into an X11 session or verify that XWayland is enabled and DISPLAY is set. "
+                    "Do not manually invent DISPLAY values; use the value supplied by your desktop session."
+                )
+            elif session_type == "wayland":
+                diagnosis = (
+                    "Wayland session detected, but PyAutoGUI could not verify usable screen geometry. "
+                    "The XWayland/display connection or desktop permissions may be unavailable."
+                )
+                recommendations.append(
+                    "Check that the current desktop session owns the DISPLAY socket and that XWayland is running; "
+                    "re-run python run.py --doctor from that same desktop session."
+                )
+            elif not status["pyautogui_imported"]:
+                diagnosis = "PyAutoGUI could not be imported, so native input control is unavailable."
+            else:
+                diagnosis = "PyAutoGUI imported, but it could not verify a usable display for input control."
+                recommendations.append(
+                    "Run Jenefar from a logged-in graphical desktop session; headless terminals and SSH sessions may not expose a display."
+                )
+        elif status["screenshot_capture"]:
+            diagnosis = "Native input control and screen-capture display access are available."
+        else:
+            diagnosis = (
+                "Mouse/keyboard control appears available, but MSS could not open a usable monitor for screen capture."
+            )
+
+        status["diagnosis"] = diagnosis
+        status["recommendations"] = recommendations
+        status["desktop_ready"] = bool(status["input_control"] and status["screenshot_capture"])
+        if not status["pyautogui_imported"] or not status["screenshot_capture"]:
             status["install_command"] = "python -m pip install -r requirements-desktop.txt"
         return status
 

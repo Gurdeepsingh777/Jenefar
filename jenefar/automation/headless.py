@@ -65,6 +65,30 @@ class HeadlessDesktopAutomation:
             ),
         }
 
+    def backend_status(self) -> dict[str, Any]:
+        """Report that this backend is a simulator, not the host desktop."""
+        return {
+            "python": __import__("sys").version.split()[0],
+            "backend": "headless_simulation",
+            "session_type": "headless",
+            "display": "",
+            "wayland_display": "",
+            "pyautogui_imported": False,
+            "pyautogui": False,
+            "input_control": False,
+            "screenshot_capture": False,
+            "desktop_ready": False,
+            "simulated_screen": {"width": self._width, "height": self._height},
+            "diagnosis": (
+                "Safe headless simulator is active. GUI tests use virtual elements; "
+                "this mode does not control or capture the host desktop."
+            ),
+            "recommendations": [
+                "For real mouse/keyboard and screen capture, set JENEFAR_DESKTOP_BACKEND=native "
+                "and run inside a supported graphical desktop session."
+            ],
+        }
+
     def screen_size(self) -> dict[str, int]:
         return {"width": self._width, "height": self._height}
 

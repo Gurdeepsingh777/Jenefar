@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import ipaddress
 import json
 import re
+import threading
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
@@ -80,6 +82,12 @@ class JenefarOrchestrator:
         self.verifier = Verifier()
         self.wakeword = WakeWord(self.config.wake_phrases)
         self.pending_approval_workflows: dict[str, dict] = {}
+        # Approval callbacks can arrive through both voice and the dashboard.
+        # Serialize them and reuse the first result so an action never executes twice.
+        self._approval_lock = threading.RLock()
+        self._approval_result_cache: dict[str, str] = {}
+        self._latest_scan_result: dict | None = None
+        self._latest_host_discovery: dict = {"target": "", "hosts": [], "own_ip": ""}
         self.offline_notice_open = False
 
     def run(self):
@@ -153,20 +161,60 @@ class JenefarOrchestrator:
         # Jenefar's user-facing runtime is intentionally Roman Hinglish-first.
         # Keep the language stable even when a caller omits the preference.
         response_language = response_language or "Hinglish"
-
-        pending_reply = self._handle_conversational_confirmation(
-            text,
-            response_language=response_language,
-        )
-        if pending_reply is not None:
-            self._avatar_state("speaking", pending_reply)
-            return pending_reply
+        # Structured scan results belong to the current user request only.
+        # Keep the previous host-discovery list separately for explicit follow-ups.
+        self._latest_scan_result = None
         trace = ExecutionTrace(
             session_id=self.session.session_id,
             task=text,
             source=source,
             event_id=event_id,
         )
+
+        def record_shortcut_trace(
+            output: str,
+            *,
+            intent: str,
+            provider: str = "local_runtime",
+            status: str | None = None,
+        ) -> None:
+            trace.intent = intent
+            trace.planned_agent = trace.planned_agent or "local_runtime"
+            trace.actual_agent = trace.actual_agent or "local_runtime"
+            trace.metadata["route"] = "direct_runtime"
+            is_error = str(output).startswith("Jenefar runtime error:")
+            final_status = status or ("error" if is_error else "success")
+            trace.finish(
+                status=final_status,
+                provider=provider,
+                verification={
+                    "passed": bool(str(output).strip()) and not is_error,
+                    "kind": "direct_runtime_response",
+                },
+            )
+            self._persist_runtime_trace(
+                trace,
+                task=text,
+                result=str(output),
+                provider=provider,
+            )
+
+        pending_reply = self._handle_conversational_confirmation(
+            text,
+            response_language=response_language,
+        )
+        if pending_reply is not None:
+            # A scan-result window owns this response; don't also publish a
+            # speaking transcript that would duplicate the host list in the HUD.
+            if not getattr(self, "_latest_scan_result", None):
+                self._avatar_state("speaking", pending_reply)
+            record_shortcut_trace(
+                pending_reply,
+                intent="approval_confirmation",
+                provider="local_confirmation",
+                status="awaiting_approval" if self.state == JenefarState.WAITING_APPROVAL else None,
+            )
+            return pending_reply
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "")
         self.session.add("user", text)
@@ -178,6 +226,61 @@ class JenefarOrchestrator:
         )
         self.graph.learn_text(text)
         try:
+            if self._is_local_host_port_scan_request(text):
+                output = self._request_discovered_host_port_scan(text)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.6,
+                )
+                if self.state != JenefarState.WAITING_APPROVAL:
+                    self.state = (
+                        JenefarState.SLEEPING
+                        if self.config.single_turn_sleep
+                        else JenefarState.AWAKE
+                    )
+                if not self._latest_scan_result:
+                    self._avatar_state("speaking", output)
+                record_shortcut_trace(
+                    output,
+                    intent="network_port_scan",
+                    provider="local_network",
+                    status="awaiting_approval" if self.state == JenefarState.WAITING_APPROVAL else None,
+                )
+                return output
+
+            if self._is_local_host_discovery_request(text):
+                output = self._request_local_host_discovery(text)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.55,
+                )
+                awaiting = self.state == JenefarState.WAITING_APPROVAL
+                if not awaiting:
+                    self.state = (
+                        JenefarState.SLEEPING
+                        if self.config.single_turn_sleep
+                        else JenefarState.AWAKE
+                    )
+                if self._latest_scan_result:
+                    # BrowserVoiceBridge publishes the structured result event.
+                    # Don't broadcast the same host list as a speech/chat event.
+                    pass
+                else:
+                    self._avatar_state("waiting_approval" if awaiting else "speaking", output)
+                record_shortcut_trace(
+                    output,
+                    intent="network_host_discovery",
+                    provider="local_network",
+                    status="awaiting_approval" if awaiting else None,
+                )
+                return output
+
             direct_window = self._direct_window_transfer(text)
             if direct_window:
                 from jenefar.voice.speech import devanagari_to_roman
@@ -191,6 +294,7 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="window_transfer", provider="desktop")
                 return output
 
             direct_screen = self._direct_screen_read(text)
@@ -206,6 +310,21 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="screen_read", provider="desktop")
+                return output
+
+            if self._is_ip_info_query(text):
+                output = self._local_ip_info_response()
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.45,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="local_ip_info", provider="local_network")
                 return output
 
             if self._is_local_time_query(text):
@@ -219,6 +338,7 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="local_time", provider="local_runtime")
                 return output
 
             recall = self.memory_engine.recall(text, limit=8)
@@ -273,6 +393,7 @@ class JenefarOrchestrator:
                 ],
             }
             self._avatar_activity("thinking", "")
+            retry_count_before = self.self_healing.health.retries
             task_actions: list[dict[str, str]] = []
             if hasattr(self.tool_broker, "set_task_context"):
                 self.tool_broker.set_task_context(
@@ -286,6 +407,10 @@ class JenefarOrchestrator:
                     metadata={
                         "approval_required": False,
                         "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
+                        # Only the read-oriented research specialist is eligible for
+                        # an automatic agent-dispatch retry. Other agents may perform
+                        # writes, desktop actions, or other state-changing operations.
+                        "retry_safe": plan.agent == "research",
                     },
                 )
             finally:
@@ -294,10 +419,16 @@ class JenefarOrchestrator:
                 if hasattr(self.tool_broker, "clear_task_context"):
                     self.tool_broker.clear_task_context()
             trace.metadata["self_healing"] = {
-                "retries": self.self_healing.health.retries,
+                "retries": self.self_healing.health.retries - retry_count_before,
+                "total_retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
             trace.actual_agent = result.agent
+            for action in task_actions:
+                trace.add_tool_call(
+                    name=str(action.get("tool") or "unknown"),
+                    status="success",
+                )
             self._avatar_activity("thinking", "")
             trace.provider = str(result.metadata.get("provider", ""))
             for pending in result.metadata.get("pending_tools", []) or []:
@@ -331,13 +462,12 @@ class JenefarOrchestrator:
                     self.session.recent(12),
                     importance=0.72,
                 )
-            self.evaluator.evaluate(
-                text,
-                output,
+            self._persist_runtime_trace(
+                trace,
+                task=text,
+                result=output,
                 provider=trace.provider,
-                trace=trace.as_dict(),
             )
-            self.trace_store.append(trace)
             if awaiting:
                 self._register_pending_workflow(text, result, response_language=response_language)
                 self.state = JenefarState.WAITING_APPROVAL
@@ -348,12 +478,54 @@ class JenefarOrchestrator:
             return output
         except Exception as exc:
             trace.add_error(f"{type(exc).__name__}: {exc}")
+            healing = getattr(self, "self_healing", None)
+            if healing is not None:
+                trace.metadata["self_healing"] = {
+                    "retries": max(0, healing.health.retries - locals().get("retry_count_before", healing.health.retries)),
+                    "total_retries": healing.health.retries,
+                    "consecutive_failures": healing.health.consecutive_failures,
+                    "circuit_open": healing.health.circuit_open,
+                }
             trace.finish(status="error", provider="error", verification={"passed": False})
-            self.trace_store.append(trace)
-            self.evaluator.evaluate(text, str(exc), provider="error", trace=trace.as_dict())
+            self._persist_runtime_trace(
+                trace,
+                task=text,
+                result=str(exc),
+                provider="error",
+            )
             self.state = JenefarState.SLEEPING
             self._avatar_state("error", str(exc))
             return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
+
+    def _persist_runtime_trace(
+        self,
+        trace: ExecutionTrace,
+        *,
+        task: str,
+        result: str,
+        provider: str,
+    ) -> None:
+        """Persist diagnostics best-effort so logging failures never fail user work."""
+        try:
+            self.evaluator.evaluate(
+                task,
+                result,
+                provider=provider,
+                trace=trace.as_dict(),
+            )
+        except Exception as exc:
+            trace.metadata.setdefault("diagnostic_errors", []).append(
+                f"evaluation persistence failed: {type(exc).__name__}"
+            )
+        try:
+            self.trace_store.append(trace)
+        except Exception as exc:
+            # Do not let an unavailable local disk or a malformed diagnostics path
+            # turn an otherwise completed task into a user-visible runtime failure.
+            trace.metadata.setdefault("diagnostic_errors", []).append(
+                f"trace persistence failed: {type(exc).__name__}"
+            )
+            print(f"[JENEFAR] Runtime trace persistence warning: {type(exc).__name__}")
 
     @staticmethod
     def _confirmation_choice(text: str) -> str | None:
@@ -501,6 +673,880 @@ class JenefarOrchestrator:
             f"{target} ka live mirror blue screen par chala diya hai. "
             "Native window ko hide karna current desktop backend me available nahi tha."
         )
+
+    @staticmethod
+    def _is_local_host_discovery_request(text: str) -> bool:
+        """Recognize explicit requests to count live hosts in a selected network."""
+        lowered = " ".join(str(text or "").casefold().split())
+        if not lowered:
+            return False
+
+        cidr = bool(re.search(
+            r"(?<![0-9.])(?:[0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}(?![0-9.])",
+            lowered,
+        ))
+        has_range = any(marker in lowered for marker in (
+            "ip range", "ip ki range", "range", "subnet", "cidr",
+            "network range", "local network", "my subnet", "meri subnet",
+            "meri range", "my range", "mere network", "mera network",
+            "meri network", "apne network", "apna network", "apni network",
+            "current network", "my lan", "meri lan", "apna lan",
+        ))
+        has_host_goal = any(marker in lowered for marker in (
+            "host", "hosts", "device", "devices", "online", "live",
+            "ping sweep", "host discovery", "kitne", "count", "discover",
+            "scan",
+        ))
+        explicit_goal = any(marker in lowered for marker in (
+            "host discovery", "live hosts", "online hosts", "hosts online",
+            "kitne host", "kitne hosts", "kitne device", "kitne devices",
+            "ping sweep", "check online host", "check live host",
+            "scan my network", "scan the network", "scan local network",
+            "scan network", "network scan", "check the network",
+            "scan my lan", "scan local lan", "mere network ko scan",
+            "mera network scan", "meri network scan", "apne network ko scan",
+            "network ko scan", "network scan karke", "scan karke live host",
+            "live host detect", "live hosts detect", "host ko detect",
+            "hosts ko detect", "network ke live host", "network par live host",
+        ))
+        # Hinglish word order varies ("mere network ko scan karo", "network
+        # scan karke live hosts dikhao"). Catch explicit current-network requests
+        # before they can fall through to an LLM, without treating unrelated
+        # mentions of networking as a request to execute a scan.
+        has_network_reference = bool(re.search(
+            r"\b(?:network|networks|lan|subnet|ip range|cidr)\b", lowered
+        ))
+        has_scan_verb = bool(re.search(
+            r"\b(?:scan|scanning|check|detect|discover|find|show|list|identify)\b", lowered
+        )) or any(phrase in lowered for phrase in ("pata karo", "pata lagao", "dikhao", "nikalo", "check karo", "scan karo"))
+        has_live_host_goal = any(marker in lowered for marker in (
+            "live host", "live hosts", "online host", "online hosts",
+            "host online", "hosts online", "device online", "devices online",
+            "host detect", "hosts detect", "host discovery", "kitne host",
+            "kitne device", "live device", "live devices",
+        ))
+        current_network_reference = any(marker in lowered for marker in (
+            "my network", "mere network", "mera network", "meri network",
+            "apne network", "apna network", "apni network", "current network",
+            "local network", "my lan", "meri lan", "apna lan",
+        ))
+        return (
+            explicit_goal
+            or (has_host_goal and (has_range or cidr))
+            or (has_network_reference and has_scan_verb and has_live_host_goal)
+            or (current_network_reference and has_scan_verb)
+        )
+
+    @staticmethod
+    def _is_local_host_port_scan_request(text: str) -> bool:
+        lowered = " ".join(str(text or "").casefold().split())
+        if not lowered:
+            return False
+        markers = (
+            "port scan", "scan ports", "scan port", "ports of", "port of",
+            "ke ports", "ke port", "port ko scan", "open ports", "check ports",
+            "ports scan", "port check", "porton ko scan",
+        )
+        return any(marker in lowered for marker in markers)
+
+    @staticmethod
+    def _host_ordinal(text: str) -> int | None:
+        lowered = " ".join(str(text or "").casefold().split())
+        ordinal_patterns = (
+            (r"\b(?:first|1st|pehla|pahla|pehli|pahli)\b", 1),
+            (r"\b(?:second|2nd|doosra|dusra|doosri|dusri)\b", 2),
+            (r"\b(?:third|3rd|teesra|tisra|teesri|tisri)\b", 3),
+            (r"\b(?:fourth|4th|chautha|chauthi)\b", 4),
+            (r"\b(?:fifth|5th|paanchva|panchva|panchvi)\b", 5),
+        )
+        for pattern, index in ordinal_patterns:
+            if re.search(pattern, lowered):
+                return index
+        numbered_target = re.search(
+            r"\b(?:target|host|device|machine)\s*(?:number|no\.?|#)?\s*(\d{1,2})\b",
+            lowered,
+        )
+        if numbered_target:
+            return int(numbered_target.group(1))
+        number_before_target = re.search(
+            r"\b(?:number|no\.?|#)\s*(\d{1,2})\s+(?:target|host|device|machine)\b",
+            lowered,
+        )
+        if number_before_target:
+            return int(number_before_target.group(1))
+        numbered = re.search(
+            r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:host|device|machine|target)\b",
+            lowered,
+        )
+        return int(numbered.group(1)) if numbered else None
+
+    def _request_discovered_host_port_scan(self, text: str) -> str:
+        """Run a bounded Nmap TCP service scan only against a recently discovered live host."""
+        from datetime import datetime, timezone
+
+        latest = getattr(self, "_latest_host_discovery", {}) or {}
+        hosts = latest.get("hosts") if isinstance(latest, dict) else None
+        if not isinstance(hosts, list) or not hosts:
+            return "Pehle authorized local network par live-host discovery karo. Abhi koi saved live-host list nahi hai."
+
+        ip_match = re.search(
+            r"(?<![0-9.])((?:[0-9]{1,3}\.){3}[0-9]{1,3})(?![0-9.])",
+            str(text or ""),
+        )
+        selected_ip = ""
+        selected_index = 0
+        if ip_match:
+            try:
+                selected_ip = str(ipaddress.IPv4Address(ip_match.group(1)))
+            except ipaddress.AddressValueError:
+                return "Diya gaya IPv4 address valid nahi hai; port scan execute nahi hua."
+            for index, host in enumerate(hosts, 1):
+                if isinstance(host, dict) and str(host.get("ip") or "") == selected_ip:
+                    selected_index = index
+                    break
+            if not selected_index:
+                return "Ye IP latest live-host results mein nahi hai. Pehle host discovery dobara chalao ya displayed live host select karo."
+        else:
+            selected_index = self._host_ordinal(text) or 0
+            if not selected_index:
+                return "Kis live host ke ports scan karne hain? Latest Scan Results window se host select karo ya bolo: 'second host ke ports scan karo'."
+            if selected_index < 1 or selected_index > len(hosts):
+                return f"Latest scan mein sirf {len(hosts)} live hosts mile the. Host number {selected_index} available nahi hai."
+            chosen = hosts[selected_index - 1]
+            selected_ip = str(chosen.get("ip") or "") if isinstance(chosen, dict) else ""
+            try:
+                selected_ip = str(ipaddress.IPv4Address(selected_ip))
+            except ipaddress.AddressValueError:
+                return "Selected host ke paas valid IPv4 address nahi hai; koi port scan execute nahi hua."
+
+        plan = (
+            "User explicitly requested a port scan of one host from Jenefar's most recent authorized local host-discovery results. "
+            f"Selected live host #{selected_index}: {selected_ip}. Re-check JENEFAR_AUTHORIZED_TARGETS scope, then run only "
+            "Nmap TCP connect scan with service identification over the top 1000 TCP ports, -Pn (skip ping discovery for the recently live host), -n, -T3, one retry, and a 120-second timeout. "
+            "No subnet scan, UDP scan, vulnerability scripts, exploitation, or additional targets."
+        )
+        arguments = {
+            "tool": "nmap",
+            "args": [
+                # This host was just reported live; skip Nmap's separate ping
+                # discovery so ICMP-filtering devices still receive a port probe.
+                "-Pn", "-n", "-sT", "-sV", "-T3", "--max-retries", "1",
+                "--top-ports", "1000", selected_ip,
+            ],
+            "target": selected_ip,
+            "timeout": 120,
+            "plan": plan,
+        }
+        try:
+            # This user's direct, explicit port-scan request is the confirmation.
+            # ToolBroker still runs its normal executable, argument, and target-scope preflight.
+            raw = self.tool_broker.invoke("kali_tool_execute", arguments, confirmed=True)
+            payload = json.loads(raw)
+        except Exception as exc:
+            return f"{selected_ip} ka port scan start nahi ho paaya: {type(exc).__name__}: {exc}"
+
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            error = str(payload.get("error") or "authorization/preflight failed") if isinstance(payload, dict) else "invalid tool response"
+            return f"{selected_ip} ka port scan block hua: {error}. Authorization scope aur Nmap availability check karo."
+
+        summary = f"{selected_ip} ka port scan complete."
+        data = self._build_port_scan_result(
+            raw,
+            selected_ip,
+            host_index=selected_index,
+            previous_hosts=hosts,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            host_discovery_target=str(latest.get("target") or ""),
+            own_ip=str(latest.get("own_ip") or ""),
+        )
+        if data is None:
+            return summary + " Lekin verified port output parse nahi ho paaya."
+        self._latest_scan_result = data
+        avatar = getattr(self, "avatar", None)
+        if avatar is not None:
+            avatar.publish("scan_results", str(data["summary"]), data=data)
+        return str(data["summary"])
+
+    def _publish_network_scan_guidance(
+        self,
+        *,
+        target: str,
+        status: str,
+        summary: str,
+        reason: str = "",
+        interface: str = "",
+        local_address: str = "",
+        networks: list[dict] | None = None,
+    ) -> str:
+        """Publish an actionable network-selection/scope result without implying a scan ran."""
+        scope = getattr(self, "scope", None) or getattr(
+            getattr(self, "tool_broker", None), "scope", None
+        )
+        allowed_targets = list(getattr(scope, "allowed_targets", []) or [])
+        options: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for item in networks or []:
+            if not isinstance(item, dict):
+                continue
+            network = str(item.get("network") or item.get("cidr") or "").strip()
+            if not network:
+                continue
+            iface = str(item.get("interface") or "selected CIDR").strip()
+            identity = (iface, network)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            try:
+                authorized = bool(scope and scope.allows(network))
+            except Exception:
+                authorized = False
+            options.append({
+                "interface": iface,
+                "address": str(item.get("address") or ""),
+                "network": network,
+                "prefixlen": item.get("prefixlen"),
+                "num_addresses": item.get("num_addresses"),
+                "authorized": authorized,
+            })
+
+        if target and not any(item["network"] == target for item in options):
+            try:
+                authorized = bool(scope and scope.allows(target))
+            except Exception:
+                authorized = False
+            options.insert(0, {
+                "interface": interface or "selected CIDR",
+                "address": str(local_address or ""),
+                "network": str(target),
+                "prefixlen": None,
+                "num_addresses": None,
+                "authorized": authorized,
+            })
+
+        # Never allow a stale successful discovery list to survive a blocked or
+        # ambiguous scan request: later ordinal commands must not use old hosts.
+        self._latest_host_discovery = {
+            "target": str(target or ""),
+            "hosts": [],
+            "own_ip": str(local_address or ""),
+        }
+        data = {
+            "kind": "host_discovery",
+            "title": (
+                "AUTHORIZATION REQUIRED" if status == "blocked"
+                else "SELECT NETWORK" if status == "selection_required"
+                else "SCAN FAILED"
+            ),
+            "scan_status": status,
+            "target": str(target or ""),
+            "interface": str(interface or ""),
+            "own_ip": str(local_address or ""),
+            "summary": str(summary),
+            "scope_message": str(reason or ""),
+            "authorized_targets": allowed_targets,
+            "available_networks": options,
+            "host_count": None,
+            "address_count": None,
+            "hosts": [],
+            "command": "",
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
+            "completed_at": __import__("datetime").datetime.now().astimezone().isoformat(),
+            "scan_type": "Nmap host discovery (-sn), not executed",
+        }
+        self._latest_scan_result = data
+        avatar = getattr(self, "avatar", None)
+        if avatar is not None and hasattr(avatar, "publish"):
+            avatar.publish("scan_results", str(data["summary"]), data=data)
+        return str(summary) + ((" " + str(reason)) if reason else "")
+
+    def _request_local_host_discovery(self, text: str) -> str:
+        """Plan a bounded host-only scan of a clearly selected, authorized IPv4 range."""
+        import ipaddress
+
+        explicit = re.search(
+            r"(?<![0-9.])((?:[0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2})(?![0-9.])",
+            str(text or ""),
+        )
+        interface = "user-specified CIDR"
+        local_address = ""
+        candidate_networks: list[dict] = []
+        if explicit:
+            try:
+                network = ipaddress.ip_network(explicit.group(1), strict=False)
+            except ValueError:
+                return "Diya gaya CIDR valid nahi hai. Example: 192.168.29.0/24. Koi scan execute nahi hua."
+            candidate_networks = [{
+                "interface": interface,
+                "address": "",
+                "network": str(network),
+                "prefixlen": network.prefixlen,
+                "num_addresses": network.num_addresses,
+            }]
+        else:
+            local_range_reference = any(marker in str(text or "").casefold() for marker in (
+                "meri ip", "mera ip", "mere ip", "my ip",
+                "my network", "mere network", "mera network", "meri network",
+                "apne network", "apna network", "apni network", "current network",
+                "local network", "my lan", "meri lan", "apna lan",
+                "my subnet", "meri subnet", "meri range", "my range",
+            ))
+            if not local_range_reference:
+                return (
+                    "Host discovery ke liye exact IPv4 CIDR batao (example: 192.168.29.0/24), "
+                    "ya clearly bolo ki current local IP range use karni hai. Abhi koi scan execute nahi hua."
+                )
+            from jenefar.tools.network_info import get_primary_private_ipv4_network
+
+            selected = get_primary_private_ipv4_network()
+            candidate_networks = list(selected.get("networks") or [])
+            if selected.get("status") != "ok":
+                candidates = candidate_networks or []
+                if selected.get("status") == "ambiguous" and candidates:
+                    return self._publish_network_scan_guidance(
+                        target="",
+                        status="selection_required",
+                        summary="Multiple local IPv4 networks detected. Select an interface/network in the results window.",
+                        reason=str(selected.get("error") or "Choose the intended active local interface. No scan has run."),
+                        interface=str(selected.get("default_interface") or ""),
+                        networks=candidates,
+                    )
+                detail = str(selected.get("error") or selected.get("status") or "unknown error")
+                return self._publish_network_scan_guidance(
+                    target="",
+                    status="error",
+                    summary="Local network selection failed. No Nmap command was executed.",
+                    reason=detail,
+                    networks=candidates,
+                )
+            if not candidate_networks:
+                candidate_networks = [selected]
+            try:
+                network = ipaddress.ip_network(str(selected["network"]), strict=False)
+            except (KeyError, ValueError):
+                return "Local interface se valid CIDR nahi mila. Exact CIDR specify karo. Koi scan execute nahi hua."
+            interface = str(selected.get("interface") or "active interface")
+            local_address = str(selected.get("address") or "")
+
+        if network.version != 4:
+            return "Ye workflow filhaal IPv4 host discovery support karta hai. Koi scan execute nahi hua."
+        if network.num_addresses > 4096:
+            return (
+                f"Selected range {network} mein {network.num_addresses} addresses hain, jo automatic discovery limit "
+                "4096 se zyada hai. Isse chhote authorized CIDR mein divide karke do. Koi scan execute nahi hua."
+            )
+        target = str(network)
+        if not any(str(item.get("network") or "") == target for item in candidate_networks if isinstance(item, dict)):
+            candidate_networks.insert(0, {
+                "interface": interface,
+                "address": local_address,
+                "network": target,
+                "prefixlen": network.prefixlen,
+                "num_addresses": network.num_addresses,
+            })
+
+        active_scope = getattr(self, "scope", None) or getattr(
+            getattr(self, "tool_broker", None), "scope", None
+        )
+        if active_scope is not None and not active_scope.allows(target):
+            explanation = active_scope.explain(target)
+            return self._publish_network_scan_guidance(
+                target=target,
+                status="blocked",
+                summary=f"Scan blocked before execution: {target} is outside the configured authorization scope. No Nmap command was executed.",
+                reason=explanation,
+                interface=interface,
+                local_address=local_address,
+                networks=candidate_networks,
+            )
+
+        plan_text = (
+            "Goal: count hosts responding on the selected IPv4 network. "
+            f"Selected target: {target} (interface: {interface}"
+            + (f", local address: {local_address}" if local_address else "")
+            + "). Plan: verify configured authorization scope; run Nmap host discovery only with "
+            "-sn, numeric targets (-n), conservative timing (-T3), and one retry; report hosts up. "
+            "This direct request authorizes only host discovery; do not enumerate ports or services. "
+            "Configured target scope must still pass."
+        )
+        arguments = {
+            "tool": "nmap",
+            "args": [
+                "-sn", "-n", "-T3", "--max-retries", "1", target,
+            ],
+            "target": target,
+            "timeout": 90,
+            "plan": plan_text,
+        }
+        try:
+            # This direct, explicit request for the user's current LAN is confirmation
+            # for bounded host discovery. The broker still enforces authorized target
+            # scope, executable validation, and command preflight.
+            raw = self.tool_broker.invoke("kali_tool_execute", arguments, confirmed=True)
+            payload = json.loads(raw)
+        except Exception as exc:
+            return (
+                f"Host-discovery plan target {target} ke liye ready tha, lekin preflight result read nahi hua: "
+                f"{type(exc).__name__}: {exc}. Koi scan execute nahi hua."
+            )
+
+        if not isinstance(payload, dict):
+            return f"Host discovery preflight ne invalid response diya for {target}. Koi scan execute nahi hua."
+        if payload.get("status") == "approval_required":
+            pending_id = str(payload.get("pending_id") or "").strip()
+            user_prompt = str(payload.get("user_prompt") or "").strip()
+            if not pending_id or not user_prompt:
+                return f"Target {target} validate hua, lekin approval request incomplete thi. Koi scan execute nahi hua."
+            workflow = {
+                "task": text,
+                "agent": "network_host_discovery",
+                "response_language": "Hinglish",
+                "task_plan_text": plan_text,
+                "remaining": {pending_id},
+                "results": [],
+                "direct_workflow": "local_host_discovery",
+                "target": target,
+                "interface": interface,
+                "local_address": local_address,
+            }
+            self.pending_approval_workflows[pending_id] = workflow
+            self.state = JenefarState.WAITING_APPROVAL
+            return (
+                f"Task analysis complete. Selected range: {target} via {interface}. "
+                "Execution se pehle approval zaroori hai.\n\n" + user_prompt
+            )
+        if payload.get("status") == "ok":
+            summary = self._summarize_local_host_discovery(raw, target)
+            result_data = self._record_host_discovery_result(
+                raw, target, summary, local_address=local_address
+            )
+            if result_data is not None:
+                active_scope = getattr(self, "scope", None) or getattr(
+                    getattr(self, "tool_broker", None), "scope", None
+                )
+                result_data["interface"] = interface
+                result_data["available_networks"] = [
+                    {
+                        "interface": str(item.get("interface") or "selected CIDR"),
+                        "address": str(item.get("address") or ""),
+                        "network": str(item.get("network") or ""),
+                        "prefixlen": item.get("prefixlen"),
+                        "num_addresses": item.get("num_addresses"),
+                        "authorized": bool(active_scope and active_scope.allows(str(item.get("network") or ""))),
+                    }
+                    for item in candidate_networks
+                    if isinstance(item, dict) and item.get("network")
+                ]
+                result_data["authorized_targets"] = list(getattr(active_scope, "allowed_targets", []) or [])
+            avatar = getattr(self, "avatar", None)
+            if result_data and avatar is not None:
+                avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
+            return summary
+        error = str(payload.get("error") or "authorization/tool preflight blocked execution")
+        scope_blocked = "scope" in error.casefold() or "outside the configured authorization" in error.casefold()
+        return self._publish_network_scan_guidance(
+            target=target,
+            status="blocked" if scope_blocked else "error",
+            summary=(
+                f"Scan blocked before execution for {target}; no Nmap command ran."
+                if scope_blocked
+                else f"Host discovery failed during preflight for {target}; no verified host count is available."
+            ),
+            reason=error,
+            interface=interface,
+            local_address=local_address,
+            networks=candidate_networks,
+        )
+
+    @staticmethod
+    def _summarize_local_host_discovery(raw_result: str, target: str) -> str:
+        """Summarize actual Nmap host-discovery output, never inventing a host count."""
+        try:
+            payload = json.loads(raw_result)
+        except (TypeError, json.JSONDecodeError):
+            return f"{target} ke liye scan result parse nahi ho paaya. Raw execution output unavailable hai."
+
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            error = (
+                str(payload.get("error") or payload.get("message") or "tool execution failed")
+                if isinstance(payload, dict) else "invalid tool response"
+            )
+            return f"{target} ka host discovery execute nahi ho paaya: {error}. Koi verified host count available nahi hai."
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return f"{target} ka tool result invalid tha. Koi verified host count available nahi hai."
+        return_code = result.get("returncode")
+        stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        if return_code != 0:
+            detail = (stderr or stdout or "no diagnostic output").strip()[-700:]
+            return f"{target} par Nmap host discovery fail hua (exit code {return_code}): {detail}"
+
+        done = re.search(
+            r"Nmap done: *([0-9,]+) +IP address(?:es)? +[(]([0-9,]+) +hosts? up[)]",
+            stdout,
+            re.IGNORECASE,
+        )
+        reports = [
+            line.split(" for ", 1)[1].strip()
+            for line in stdout.splitlines()
+            if line.strip().startswith("Nmap scan report for ")
+        ]
+        if done:
+            address_count = int(done.group(1).replace(",", ""))
+            host_count = int(done.group(2).replace(",", ""))
+        elif reports:
+            address_count = None
+            host_count = len(reports)
+        else:
+            return (
+                f"Nmap ne {target} ke liye successful exit diya, lekin standard host-count summary nahi mili. "
+                "Main host count guess nahi karungi. Output: " + (stdout[-700:].strip() or "empty")
+            )
+
+        summary = (
+            f"Host discovery complete: {host_count} host(s) online/response dete mile, "
+            f"{address_count if address_count is not None else 'unknown'} addresses checked in {target}. "
+            "Command Nmap -sn tha; ports aur services scan nahi kiye gaye."
+        )
+        # Keep the full diagnostic summary available to CLI/tests and logs.
+        # BrowserVoiceBridge detects structured scan data separately and sends
+        # only the compact result-window summary to the voice UI.
+        if reports:
+            summary += "\nReported hosts: " + ", ".join(reports[:30])
+            if len(reports) > 30:
+                summary += f" (aur {len(reports) - 30} hosts)"
+        return summary
+
+    @staticmethod
+    def _nmap_payload(raw_result: str) -> dict | None:
+        try:
+            payload = json.loads(raw_result)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            return None
+        result = payload.get("result")
+        return result if isinstance(result, dict) else None
+
+    def _record_host_discovery_result(
+        self,
+        raw_result: str,
+        target: str,
+        summary: str,
+        *,
+        local_address: str = "",
+    ) -> dict | None:
+        result = self._nmap_payload(raw_result)
+        if not result:
+            return None
+
+        stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        returncode = result.get("returncode")
+        completed_at = __import__("datetime").datetime.now().astimezone().isoformat()
+        if returncode != 0:
+            failed = {
+                "kind": "host_discovery",
+                "title": "SCAN FAILED",
+                "scan_status": "error",
+                "target": str(target),
+                "summary": f"Nmap host discovery failed (exit code {returncode})",
+                "host_count": 0,
+                "address_count": None,
+                "hosts": [],
+                "own_ip": str(local_address or ""),
+                "command": str(result.get("command") or ""),
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "completed_at": completed_at,
+                "scan_type": "Nmap host discovery (-sn)",
+            }
+            # Clear a previous live-host list after a failed fresh scan so a
+            # subsequent ordinal request cannot silently reuse stale hosts.
+            self._latest_host_discovery = {
+                "target": str(target), "hosts": [], "own_ip": str(local_address or ""),
+                "completed_at": completed_at,
+            }
+            self._latest_scan_result = failed
+            return failed
+
+        hosts: list[dict] = []
+        current = None
+        for line in stdout.splitlines():
+            report = re.match(r"^Nmap scan report for (.+?)\s*$", line.strip(), re.IGNORECASE)
+            if report:
+                raw_ip = report.group(1).strip()
+                try:
+                    ip = str(ipaddress.IPv4Address(raw_ip))
+                except ipaddress.AddressValueError:
+                    current = None
+                    continue
+                current = {
+                    "index": len(hosts) + 1,
+                    "ip": ip,
+                    "state": "UP",
+                    "latency": "",
+                    "mac": "",
+                    "vendor": "",
+                    "is_local": bool(local_address and ip == local_address),
+                }
+                hosts.append(current)
+                continue
+            if current is None:
+                continue
+            latency = re.search(r"Host is up \(([^)]+)\)", line.strip(), re.IGNORECASE)
+            if latency:
+                current["latency"] = latency.group(1).strip()
+            mac = re.search(r"MAC Address:\s*([0-9a-f:.-]{17})(?:\s+\((.*?)\))?", line.strip(), re.IGNORECASE)
+            if mac:
+                current["mac"] = mac.group(1).upper()
+                current["vendor"] = str(mac.group(2) or "").strip()
+
+        count_match = re.search(
+            r"Nmap done:\s*([0-9,]+)\s+IP addresses?\s+\(([0-9,]+)\s+hosts? up\)",
+            stdout,
+            re.IGNORECASE,
+        )
+        reported_count = int(count_match.group(1).replace(",", "")) if count_match else None
+        host_count = len(hosts)
+        parse_complete = bool(count_match or hosts)
+        completed_at = __import__("datetime").datetime.now().astimezone().isoformat()
+        result_data = {
+            "kind": "host_discovery",
+            "title": "LIVE HOSTS" if parse_complete else "SCAN INCOMPLETE",
+            "scan_status": "ok" if parse_complete else "error",
+            "target": str(target),
+            "summary": (
+                f"{host_count} live host(s) found in {target}"
+                if parse_complete
+                else "Nmap returned no parseable host-count summary; inspect exact output"
+            ),
+            "host_count": host_count if parse_complete else None,
+            "address_count": reported_count,
+            "hosts": hosts if parse_complete else [],
+            "own_ip": str(local_address or ""),
+            "command": str(result.get("command") or ""),
+            "returncode": result.get("returncode"),
+            "stdout": stdout,
+            "stderr": str(result.get("stderr") or ""),
+            "completed_at": completed_at,
+            "scan_type": "Nmap host discovery (-sn)",
+        }
+        self._latest_host_discovery = {
+            "target": str(target),
+            "hosts": result_data["hosts"],
+            "own_ip": str(local_address or ""),
+            "completed_at": result_data["completed_at"],
+        }
+        self._latest_scan_result = result_data
+        return result_data
+
+    @staticmethod
+    def _build_port_scan_result(
+        raw_result: str,
+        target: str,
+        *,
+        host_index: int,
+        previous_hosts: list[dict],
+        completed_at: str = "",
+        host_discovery_target: str = "",
+        own_ip: str = "",
+    ) -> dict | None:
+        result = JenefarOrchestrator._nmap_payload(raw_result)
+        if not result:
+            return None
+
+        stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        returncode = result.get("returncode")
+        if returncode != 0:
+            completed = completed_at or __import__("datetime").datetime.now().astimezone().isoformat()
+            return {
+                "kind": "port_scan",
+                "title": "SCAN FAILED",
+                "scan_status": "error",
+                "target": str(target),
+                "host_index": int(host_index),
+                "summary": f"{target} • Nmap failed (exit code {returncode}); see exact output",
+                "command": str(result.get("command") or ""),
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "host_status": "ERROR",
+                "open_port_count": 0,
+                "filtered_port_count": 0,
+                "closed_port_count": None,
+                "port_scope": "Top 1000 TCP ports",
+                "ports": [],
+                "hosts": previous_hosts,
+                "host_discovery_target": str(host_discovery_target or ""),
+                "own_ip": str(own_ip or ""),
+                "completed_at": completed,
+                "scan_type": "Nmap TCP connect + service detection (-Pn)",
+            }
+        ports: list[dict] = []
+        port_pattern = re.compile(
+            r"^\s*(\d{1,5})/(tcp|udp)\s+(open|closed|filtered|open\|filtered)\s+"
+            r"([A-Za-z0-9._:+-]+)(?:\s+(.*?))?\s*$",
+            re.IGNORECASE,
+        )
+        for line in stdout.splitlines():
+            match = port_pattern.match(line)
+            if not match:
+                continue
+            state = match.group(3).upper()
+            # Keep open and filtered states. Closed ports are counted from
+            # Nmap's aggregate line instead of listing hundreds of closed rows.
+            if state == "CLOSED":
+                continue
+            ports.append({
+                "port": int(match.group(1)),
+                "protocol": match.group(2).lower(),
+                "state": state,
+                "service": match.group(4),
+                "version": str(match.group(5) or "").strip(),
+            })
+        ports.sort(key=lambda item: (item["protocol"], item["port"]))
+
+        open_count = sum(1 for item in ports if item["state"] == "OPEN")
+        filtered_count = sum(
+            1 for item in ports if item["state"] in {"FILTERED", "OPEN|FILTERED"}
+        )
+        closed_match = re.search(
+            r"Not shown:\s*([0-9,]+)\s+closed\s+tcp\s+ports?",
+            stdout,
+            re.IGNORECASE,
+        )
+        closed_count = (
+            int(closed_match.group(1).replace(",", "")) if closed_match else None
+        )
+        filtered_summary_match = re.search(
+            r"Not shown:\s*([0-9,]+)\s+filtered\s+tcp\s+ports?",
+            stdout,
+            re.IGNORECASE,
+        )
+        if filtered_count == 0 and filtered_summary_match:
+            filtered_count = int(filtered_summary_match.group(1).replace(",", ""))
+
+        host_down = bool(re.search(
+            r"Host seems down|\b0 hosts up\b",
+            stdout,
+            re.IGNORECASE,
+        ))
+        # -Pn deliberately skips ping discovery, so a report header alone does
+        # not prove that the host responded. An open port or reported closed
+        # TCP ports provide response evidence; filtered-only output does not.
+        confirmed_response = open_count > 0 or (closed_count is not None and closed_count > 0)
+        host_status = "UNREACHABLE" if host_down else (
+            "UP" if confirmed_response else "UNKNOWN"
+        )
+
+        if host_status == "UNREACHABLE":
+            ports = []
+            open_count = 0
+            filtered_count = 0
+            summary = f"{target} • host reachability not confirmed; port results unavailable"
+        else:
+            summary = f"{target} • {open_count} open TCP port(s)"
+            if filtered_count:
+                summary += f", {filtered_count} filtered"
+            if host_status == "UNKNOWN":
+                summary += "; host reachability not confirmed"
+
+        return {
+            "kind": "port_scan",
+            "title": "PORT SCAN",
+            "target": str(target),
+            "host_index": int(host_index),
+            "summary": summary,
+            "command": str(result.get("command") or ""),
+            "returncode": result.get("returncode"),
+            "stdout": stdout,
+            "stderr": str(result.get("stderr") or ""),
+            "host_status": host_status,
+            "open_port_count": open_count,
+            "filtered_port_count": filtered_count,
+            "closed_port_count": closed_count,
+            "port_scope": "Top 1000 TCP ports",
+            "ports": ports,
+            "hosts": previous_hosts,
+            "host_discovery_target": str(host_discovery_target or ""),
+            "own_ip": str(own_ip or ""),
+            "completed_at": completed_at,
+            "scan_type": "Nmap TCP connect + service detection (-Pn)",
+        }
+
+    @staticmethod
+    def _is_ip_info_query(text: str) -> bool:
+        """Recognize a direct request for this computer's IP info, not a scan."""
+        lowered = " ".join(str(text or "").casefold().split())
+        if not lowered or JenefarOrchestrator._is_local_host_discovery_request(lowered):
+            return False
+        # If the user explicitly asks for scanning, preserve the separate security
+        # workflow. A plain "check my IP" request must never be promoted into one.
+        scan_markers = (
+            "nmap", "masscan", "port scan", "network scan", "subnet scan",
+            "scan my network", "scan this network", "open ports", "sweep",
+        )
+        if any(marker in lowered for marker in scan_markers):
+            return False
+
+        import re
+
+        patterns = (
+            r"\b(check|show|find|get|display|tell me)\b.{0,40}\b(my|current|public|local)\b.{0,16}\bip(?:v[46])?(?:\s+address)?\b",
+            r"\bwhat(?:'s| is)\s+(?:my|the)\s+(?:(?:current|public|local)\s+)?ip(?:v[46])?(?:\s+address)?\b",
+            r"\bmy\s+(?:(?:current|public|local)\s+)?ip(?:v[46])?(?:\s+address)?\b",
+            r"\b(?:mera|meri)\s+(?:(?:public|local)\s+)?ip(?:\s+address)?\b",
+            r"\bip\s+(?:batao|check karo|address kya hai)\b",
+        )
+        return any(re.search(pattern, lowered) for pattern in patterns)
+
+    def _local_ip_info_response(self) -> str:
+        """Return actual local/public IP observations without invoking the LLM or scanner."""
+        try:
+            raw = self.tool_broker.invoke("network_ip_info", {})
+            payload = json.loads(raw)
+        except Exception as exc:
+            return (
+                "IP information check nahi ho paaya. "
+                f"Read-only network info tool error: {type(exc).__name__}: {exc}. "
+                "Koi network scan execute nahi kiya gaya."
+            )
+
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            error = str(payload.get("error") or "tool returned an invalid result") if isinstance(payload, dict) else "invalid tool result"
+            return f"IP information check nahi ho paaya: {error}. Koi network scan execute nahi kiya gaya."
+
+        data = payload.get("result") or {}
+        if not isinstance(data, dict):
+            return "IP information tool ne invalid data return kiya. Koi network scan execute nahi kiya gaya."
+
+        local_v4 = [
+            f"{item.get('address')} ({item.get('interface')})"
+            for item in data.get("local_ipv4", [])
+            if isinstance(item, dict) and item.get("address")
+        ]
+        local_v6 = [
+            f"{item.get('address')} ({item.get('interface')})"
+            for item in data.get("local_ipv6", [])
+            if isinstance(item, dict) and item.get("address")
+        ]
+        public_v4 = str(data.get("public_ipv4") or "").strip()
+        lines = ["Aapke computer ki IP information:"]
+        lines.append("Local IPv4: " + (", ".join(local_v4) if local_v4 else "active interface address detect nahi hua"))
+        if local_v6:
+            lines.append("Local IPv6: " + ", ".join(local_v6))
+        if public_v4:
+            lines.append("Public IPv4: " + public_v4 + " (ipify HTTPS lookup)")
+        else:
+            lines.append("Public IPv4: abhi fetch nahi ho saka; internet/service unavailable ho sakti hai.")
+        lines.append("Bas, IP details yahi hain.")
+        return "\n".join(lines)
 
     @staticmethod
     def _is_local_time_query(text: str) -> bool:
@@ -674,6 +1720,34 @@ class JenefarOrchestrator:
             self.pending_approval_workflows[str(item["pending_id"])] = workflow
 
     def _approve_pending(self, pending_id: str) -> str:
+        approval_id = str(pending_id or "").strip()
+        if not approval_id:
+            return json.dumps({"status": "error", "error": "approval id required"})
+
+        # A few compatibility tests and embedders construct this object without
+        # running __init__; initialize the approval state lazily for those cases.
+        approval_lock = getattr(self, "_approval_lock", None)
+        if approval_lock is None:
+            approval_lock = threading.RLock()
+            self._approval_lock = approval_lock
+        if not hasattr(self, "_approval_result_cache"):
+            self._approval_result_cache = {}
+
+        with approval_lock:
+            if approval_id in self._approval_result_cache:
+                return self._approval_result_cache[approval_id]
+
+            result = self._approve_pending_once(approval_id)
+            # Do not cache a transient invalid/expired-ID response. Successful
+            # approvals and the associated workflow summary are idempotent.
+            if "Unknown or expired pending tool call." not in result:
+                self._approval_result_cache[approval_id] = result
+                while len(self._approval_result_cache) > 128:
+                    oldest_id = next(iter(self._approval_result_cache))
+                    self._approval_result_cache.pop(oldest_id, None)
+            return result
+
+    def _approve_pending_once(self, pending_id: str) -> str:
         workflow = self.pending_approval_workflows.get(pending_id)
         raw_result = self.tool_broker.approve(pending_id)
 
@@ -686,6 +1760,39 @@ class JenefarOrchestrator:
             parsed = json.loads(raw_result)
         except json.JSONDecodeError:
             parsed = {"result": raw_result}
+
+        if workflow.get("direct_workflow") == "local_host_discovery":
+            workflow["remaining"].discard(pending_id)
+            self.pending_approval_workflows.pop(pending_id, None)
+            summary = self._summarize_local_host_discovery(
+                raw_result,
+                str(workflow.get("target") or "selected network"),
+            )
+            result_data = self._record_host_discovery_result(
+                raw_result,
+                str(workflow.get("target") or "selected network"),
+                summary,
+                local_address=str(workflow.get("local_address") or ""),
+            )
+            avatar = getattr(self, "avatar", None)
+            if result_data and avatar is not None:
+                avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
+            self.session.add("assistant", summary)
+            self.memory_engine.record_message(
+                self.session.session_id,
+                "assistant",
+                summary,
+                importance=0.65,
+            )
+            self.graph.learn_text(summary)
+            self.state = (
+                JenefarState.SLEEPING
+                if self.config.single_turn_sleep
+                else JenefarState.AWAKE
+            )
+            # The caller owns speech playback (browser audio/TTS or CLI output).
+            # Publishing another speech event here caused duplicate voice playback.
+            return summary
 
         tool_name = parsed.get("tool", "unknown")
         workflow["results"].append({

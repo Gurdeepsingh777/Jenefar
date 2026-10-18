@@ -55,7 +55,7 @@ python run.py
 - browser microphone permission ke baad Web SpeechRecognition input enable karta hai
 - specialist multi-agent orchestrator use karta hai
 - memory, knowledge graph, scheduler, approval-gated tools, vision/desktop/robotics connectors aur runtime diagnostics ko wahi orchestrator instance se expose karta hai
-- server-generated browser-playable TTS ko prefer karta hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser SpeechSynthesis fallback hota hai; Python speaker playback browser runtime me start nahi hota
+- server-generated browser-playable TTS ko prefer karta hai: OpenAI TTS → expressive Gemini TTS → Edge TTS; generated audio unavailable ya unplayable ho tabhi browser SpeechSynthesis fallback hota hai. Browser runtime me Python/native speaker playback start nahi hota.
 - avatar ko listening/thinking/speaking/waiting-approval states ke saath update karta hai
 
 Manual modes available hain:
@@ -72,11 +72,25 @@ Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime
 
 Voice provider behavior:
 
-- Default browser runtime me microphone input browser Web SpeechRecognition se aata hai.
-- Default browser runtime me speech output server-generated audio se hota hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser Web SpeechSynthesis fallback hota hai. Python/native speaker playback start nahi hota.
+- Browser microphone permission sirf MIC button click karne ke baad maangi jaati hai. Supported browsers par Jenefar pehle MediaRecorder se utterance capture karke server STT use karta hai, jo Hinglish ke liye preferred path hai.
+- Server STT configured OpenAI, Groq aur Gemini providers ko failover order me try karta hai. Quota/credits exhaust hone ya providers fail hone par cached local Whisper STT fallback try hota hai.
+- Local STT ke liye optional `faster-whisper` package aur ek Whisper model ki one-time download zaroori hai. Runtime model ko local cache se hi load karta hai, isliye mic use karte waqt model download nahi karta.
+- Browser server STT fail hone par Web SpeechRecognition fallback bhi use kar sakta hai, agar browser us API ko expose karta hai.
+- Default browser runtime me speech output server-generated audio se hota hai: OpenAI TTS → expressive Gemini TTS → Edge TTS. Generated audio unavailable ya playback fail ho to browser Web SpeechSynthesis fallback hota hai. Ek waqt me sirf ek playback path active rehta hai; approval ka HTTP response audio ko dobara nahi bolta. Python/native speaker playback start nahi hota.
 - `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
 - Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
-- OpenAI/Groq provider failover diagnostics legacy voice runtime ke liye retained hain.
+
+### REA MCP bridge troubleshooting
+
+Jenefar REA ko official documented command `npx -y rea-agents@6.5.0 mcp` se start karta hai. MCP requests newline-delimited JSON-RPC ke roop me bheje jaate hain; connection fail ho to ab REA subprocess ka stderr aur exit code diagnostic me include hota hai. REA connect fail ho to pehle prerequisites aur package diagnostic check karein:
+
+```bash
+node --version
+npm --version
+npx -y rea-agents@6.5.0 doctor --json
+```
+
+Uske baad Jenefar restart karke dashboard ke **CONNECT** button ko retry karein. REA startup errors ab child process ke stderr aur exit code ko include karte hain. REA ki official release ko supported Node.js version chahiye; agar diagnostic host ko unsupported report karta hai to us check ko bypass na karein—supported environment ya package version use karein.
 
 ## Language behavior
 
@@ -131,6 +145,18 @@ python run.py --voice-continuous
 Continuous mode microphone ko open rakhta hai, local energy-based VAD se utterances detect karta hai, detected utterances ko STT ke liye bhejta hai, wake-word gate apply karta hai, phir same orchestrator routing use karta hai aur TTS response speakers par play karta hai.
 
 Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai. Groq voice ke liye `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, aur `GROQ_TTS_VOICE` configure kiye ja sakte hain.
+
+### Offline browser-microphone STT fallback
+
+Agar OpenAI/Gemini credits ya quota khatam ho jaaye aur Groq key configured na ho, local Whisper use karne ke liye:
+
+```bash
+source .venv/bin/activate
+python -m pip install faster-whisper
+python -c 'from faster_whisper import WhisperModel; WhisperModel("small", device="cpu", compute_type="int8")'
+```
+
+Second command `small` Whisper model ko ek baar download karke local cache me rakhega; iske liye initial setup waqt internet chahiye. Uske baad Jenefar cloud STT fail hone par cached model ko offline use kar sakta hai. Default setting `JENEFAR_LOCAL_STT_MODEL=small` aur automatic language detection hai. Optional settings `.env.example` me listed hain. Agar package installation Python 3.14 par native dependency ki wajah se fail ho, to Python 3.12/3.13 ke separate virtual environment me try karo.
 
 ## Avatar aur realtime voice
 
@@ -389,7 +415,7 @@ tests/              automated tests
 
 ## Authorized security scope
 
-Security testing deny-by-default hai jab tak tum `config.yaml` me authorized targets configure nahi karte:
+Security testing deny-by-default hai jab tak tum authorized targets configure nahi karte. YAML aur `.env` targets combine hote hain; environment targets non-empty YAML list ko silently replace nahi karte:
 
 ```yaml
 security:
@@ -398,7 +424,20 @@ security:
     - "192.168.1.0/24"
 ```
 
-Scope checks exact host/IP values aur IPv4/IPv6 CIDRs accept karte hain.
+Ya `.env` me comma-separated list rakho:
+
+```env
+JENEFAR_AUTHORIZED_TARGETS=192.168.29.0/24,10.20.30.40
+```
+
+Har authorized-target setting change ke baad Jenefar restart karo. Active runtime ne kaunsi scope list load ki hai, localhost par verify karo:
+
+```bash
+curl -s http://127.0.0.1:8787/security/scope | python -m json.tool
+curl -sG --data-urlencode 'target=192.168.29.0/24' http://127.0.0.1:8787/security/scope | python -m json.tool
+```
+
+Scope checks exact host/IP values aur IPv4/IPv6 CIDRs accept karte hain. CIDR target ka poora range authorized network ke andar hona chahiye. Nmap profile subnet CIDRs preserve karta hai; WhatWeb/Nikto ko ek host ya URL diya jana chahiye.
 
 Har tool approval, execution, error aur scope check configured JSONL audit log me write hota hai.
 
@@ -407,6 +446,31 @@ Har tool approval, execution, error aur scope check configured JSONL audit log m
 Jenefar ki security tooling un systems aur targets ke liye intended hai jinke liye tum authorized ho.
 
 Privileged, network-impacting ya otherwise high-impact actions explicit confirmation aur policy controls ke peeche rehte hain.
+
+## Automatic Kali/Linux tool discovery
+
+Jenefar's Kali tool path ab curated list ke saath current `PATH` par available executables ko dynamically search karta hai. Agar kisi unfamiliar command ko use karna ho, assistant ko ye flow follow karna chahiye:
+
+1. `kali_catalog` se natural-language/category ya exact command search kare. Full PATH inventory ke liye pages use kare; remote Kali repository ke every package ko installed tool na samjhe.
+2. `kali_tool_help` se local `man` page ya bounded `--help/-h` output inspect kare. Tool installed na ho to local `apt-cache` package suggestions mil sakte hain; Jenefar automatically install nahi karega.
+3. Actual help text se inputs, flags, outputs, prerequisites aur potential side effects ka plan banaye. Unknown help output ko trusted instructions na maane.
+4. Naya discovered command inspected/help-read hue bina execute nahi hoga. Execution shell ke through nahi, alag argv list se hota hai.
+5. Network-impacting command mein detected targets ko `authorized_targets` se validate kiya jata hai. Target-list/random-target flags generic execution path se blocked hain. Approval prompt mein command, target(s), plan aur timeout dikhte hain; user ki explicit confirmation ke bina execute nahi hota.
+6. Command result ke exit code/stdout/stderr ko inspect karke hi findings report ki jati hain. Missing tools ke liye package candidates suggest kiye ja sakte hain, lekin installation separate approval maangti hai.
+
+Tool inventory CLI se dekhne ke liye:
+
+```bash
+python run.py --discover-tools
+```
+
+Installed command inventory ko broad roop se inspect karne ke liye:
+
+```bash
+python run.py --discover-tools-all
+```
+
+`--discover-tools-all` current `PATH` par executables list karta hai; ye remote package repository ke har available Kali tool ki list nahi hai. Exact command-name search aur help lookup assistant ke andar `kali_catalog`/`kali_tool_help` se hota hai.
 
 Tool discovery kisi discovered tool ko automatically execute nahi karti.
 
@@ -514,10 +578,15 @@ Environment:
 JENEFAR_LOCAL_LLM_API=auto
 JENEFAR_LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
 JENEFAR_LOCAL_LLM_MODEL=
-JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=240
+JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=600
+JENEFAR_LOCAL_LLM_THINK=false
+JENEFAR_LOCAL_LLM_KEEP_ALIVE=10m
+JENEFAR_LOCAL_LLM_NUM_CTX=4096
+JENEFAR_LOCAL_LLM_NUM_PREDICT=384
+JENEFAR_LOCAL_LLM_TOOL_MODE=auto
 ```
 
-Model name blank hone par Jenefar installed local model ko discover karta hai. Agar configured model tag server par installed nahi milta, to installed list se available model choose karke terminal me warning deta hai. Local server aur downloaded model running/available hona zaroori hai; online-only kaam jaise live web search, remote downloads aur live GitHub retrieval internet ke bina unavailable hi rahenge. Local tools bhi existing confirmation aur security-scope policy ko follow karte hain.
+Ollama native API par Jenefar default se direct-answer mode (think=false) use karta hai aur response/tool calls ko empty hone se bachane ke liye generation limits set karta hai. `JENEFAR_LOCAL_LLM_TOOL_MODE=auto` normal explanatory questions ke liye poora tool catalog prompt me include nahi karta; REA, files, desktop, web aur doosre action requests par sirf relevant tool group advertise hota hai. `JENEFAR_LOCAL_LLM_TOOL_MODE=all` purana behavior force karta hai. `JENEFAR_LOCAL_LLM_THINK=true` se thinking opt-in kar sakte ho, lekin thinking models par response slow ya empty hone ka risk badh sakta hai. Model name blank hone par Jenefar installed local model ko discover karta hai. Agar configured model tag server par installed nahi milta, to installed list se available model choose karke terminal me warning deta hai. Local server aur downloaded model running/available hona zaroori hai; online-only kaam jaise live web search, remote downloads aur live GitHub retrieval internet ke bina unavailable hi rahenge. Local tools bhi existing confirmation aur security-scope policy ko follow karte hain.
 
 Offline condition me online-only capabilities ki list explicitly show ki ja sakti hai, jaise:
 
@@ -785,9 +854,9 @@ Phase 4 data local data/jenefar_memory.db aur data/events.db me persist hota hai
 
 ## Phase 5 — Runtime Intelligence, Traceability & Diagnostics
 
-Phase 5 adds a structured execution trace around every orchestrator request. Each task gets a trace ID correlated with the session and optional scheduler event, and records planner intent, selected/actual specialist, model role, connectivity, approval-gated tool calls, verification outcome, latency, errors and final status.
+Phase 5 records structured execution traces for ordinary agent dispatches and direct/local runtime routes, including network-discovery/port-scan flow, local IP/time answers, direct screen/window responses and approval confirmations. Each trace carries a unique trace ID, session and optional scheduler event IDs, planner intent and confidence, selected/actual specialist, model role, connectivity, approval-gated and successfully executed tool names, verification outcome, per-request retry count, latency, errors and final status.
 
-Runtime quality evaluation now consumes these structured signals instead of looking only at final text. This produces richer quality records while keeping evaluation observational: it does not rewrite code, weaken approval policy, or auto-execute stored procedures.
+Tool activity records retain tool names/status only; they do not store tool arguments or raw tool results. Runtime quality evaluation consumes the structured signals instead of looking only at final text. Diagnostic persistence is best-effort: a local evaluation/log write problem emits a warning and must not turn completed user work into a runtime failure. Evaluation remains observational: it does not rewrite code, weaken approval policy, or auto-execute stored procedures.
 
 Runtime diagnostics are available from the CLI:
 
@@ -805,7 +874,7 @@ Trace data is local append-only JSONL under `data/execution_traces.jsonl`. It is
 
 ## Phase 6 — Self-Healing Runtime & Reliability
 
-Phase 6 adds bounded runtime recovery for transient failures. Jenefar can retry safe, read-oriented agent dispatches when a timeout, temporary connection failure, rate limit, or transient service error occurs.
+Phase 6 adds bounded runtime recovery for transient failures. Generic agent dispatch is non-retryable by default; the orchestrator explicitly marks only the read-oriented research specialist as eligible for automatic retry. Safe explicit read operations may also use the retry helper. Timeouts, temporary connection failures, rate limits, and transient service errors use capped exponential backoff.
 
 Recovery is deliberately conservative:
 
@@ -814,8 +883,9 @@ Recovery is deliberately conservative:
 - Security specialists (kali, cybersecurity, bugbounty) are never automatically retried.
 - Approval-gated or state-changing operations are never automatically retried.
 - Terminal, file-edit/write/delete, robotics, MQTT/ROS2, desktop-action and connector actions are excluded from automatic retries.
-- Repeated transient failures open a short runtime circuit breaker to prevent retry storms.
-- Runtime traces record the self-healing retry counters.
+- The circuit breaker opens only after repeated failures on retry-eligible transient paths; validation errors and security/non-retryable actions do not trip the global circuit.
+- Runtime traces record per-request and cumulative self-healing retry counters, including failed dispatches.
+- Security specialists, state-changing tools, terminal/desktop/robotics actions, and connector execution are excluded from automatic retry.
 
 Diagnostics:
 
@@ -856,58 +926,103 @@ python run.py
 Local/offline mode ke liye Ollama ya kisi OpenAI-compatible local LLM server ko start karke `python run.py` chala sakte ho.
 
 Agar sirf CLI/dependency verification karni ho, `python run.py --doctor` sufficient hai.
+
+## REA-derived skills
+
+Jenefar bundles a small, declarative set of adapted REA workflow skills under `skills/rea/`. They are loaded by the existing `SkillManager`; their text is guidance only and does not execute arbitrary code.
+
+- `rea_reverse_engineering`: investigate authorized binaries, app packages, Electron/JavaScript, firmware and captured runtime behavior using REA's actual advertised MCP tools.
+- `rea_analysis_optimization`: measure and reduce unnecessary analysis work while preserving evidence and correctness.
+- `rea_ci_tests_audit`: inspect regression tests, fixture drift, false-green tests and CI costs.
+- `rea_tool_design`: shape tool/API/MCP contracts and evidence/error semantics.
+- `rea_changelog_update`: prepare release notes from pinned history with evidence-based contributor attribution.
+
+The reverse-engineering skill was already part of Jenefar's REA integration; this update strengthens its target-routing, evidence and failure-handling guidance and adds the four development workflow skills. They are adapted, not byte-for-byte copies of upstream instructions. See [morluto/rea](https://github.com/morluto/rea) and its [skill directory](https://github.com/morluto/rea/tree/main/.agents/skills).
+
+All skills remain subject to Jenefar's authorization and approval boundaries. The skill text does not install analysis engines, register MCP servers, or bypass missing provider prerequisites. REA/MCP tools need to actually be available for execution.
+
+
+## Local Ollama recovery
+
+A successful `/api/tags` check only proves that Ollama lists a model; it does not prove that the model can finish a chat request quickly enough. Jenefar now logs each online provider/model failure, attempts one bounded compact local retry (smaller context/output), and if that also times out, switches to a smaller **already installed** non-vision Ollama model. It never pulls a model automatically.
+
+Suggested settings in `.env`:
+
+```env
+JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=600
+JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS=120
+JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=180
+JENEFAR_LOCAL_LLM_FALLBACK_MODEL=
+```
+
+If a large local model such as a 27B model is installed and requests time out, install a smaller local fallback once while online:
+
+```bash
+ollama pull qwen3:8b
+```
+
+This downloads a local model and does not use hosted API credits. Once installed, Jenefar can switch to it automatically when the larger model times out.
+
+Before opening the browser UI, run the actual inference smoke test:
+
+```bash
+python run.py --provider-status
+python run.py --llm-smoke-test
+```
+
+The smoke test tries Groq -> Gemini -> OpenRouter -> local Ollama. It deliberately excludes OpenAI so debugging does not consume a paid OpenAI balance. `python run.py --doctor` only verifies that a local model is detected; it does not prove that chat inference completes. The smoke test prints the provider/model that responded, or the actual provider and local timeout errors if all attempts fail. Native Wayland desktop automation is a separate compositor/backend capability and is not the same as LLM/text chat availability.
+
 ## Multi-provider LLM failover
 
-Jenefar can use multiple online LLM providers and automatically move to the next configured provider when a request fails because of authentication, rate limiting, timeout, connection, or service-availability errors.
+Jenefar's default cloud route is **Groq -> Gemini -> OpenRouter -> optional OpenAI**. Providers are tried left-to-right. When an online provider returns a quota/credit, daily-cap, authentication, rate-limit, timeout, connection, or service-availability error, Jenefar moves on to the next configured provider. Quota/daily-cap failures receive a longer cooldown; temporary rate limits use a shorter cooldown. If no online provider returns a usable answer, Jenefar automatically tries the installed local Ollama model (for example Qwen), unless local fallback is explicitly disabled.
 
 Recommended configuration:
 
 ```env
-JENEFAR_PROVIDER_ORDER=openai,openrouter,gemini,groq,cerebras
+JENEFAR_PROVIDER_ORDER=groq,gemini,openrouter,openai
 JENEFAR_PROVIDER_COOLDOWN_SECONDS=60
+JENEFAR_PROVIDER_QUOTA_COOLDOWN_SECONDS=3600
 
-OPENAI_API_KEY=
-OPENAI_MODEL=
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-120b
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
 
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash-lite
-
-GROQ_API_KEY=
-GROQ_MODEL=llama-3.3-70b-versatile
-
-CEREBRAS_API_KEY=
-CEREBRAS_MODEL=gpt-oss-120b
+# Optional final paid-provider attempt:
+OPENAI_API_KEY=
+OPENAI_MODEL=
 ```
 
 Provider-specific model variables may also be set per role, for example:
 
 ```env
-JENEFAR_OPENROUTER_MODEL_CODING=
 JENEFAR_GROQ_MODEL_FAST=
+JENEFAR_OPENROUTER_MODEL_CODING=
 JENEFAR_GEMINI_MODEL_RESEARCH=
 ```
 
-The provider order is evaluated left-to-right. A provider that repeatedly fails with a retryable error enters a short cooldown so Jenefar does not repeatedly hammer a rate-limited or unavailable endpoint. If every online provider fails, the existing Ollama/OpenAI-compatible local model remains the final fallback unless `JENEFAR_DISABLE_LOCAL_FALLBACK=1` or `python run.py --online-only` is used.
+Existing `.env` files containing either of the older shipped sample orders are migrated to the free-tier-first order automatically; a custom `JENEFAR_PROVIDER_ORDER` is preserved. The provider registry also supports Cerebras as an optional provider if you explicitly add `cerebras` to the order.
 
-Check configuration without sending an LLM request:
+Check the current configuration without sending an LLM request:
 
 ```bash
 python run.py --provider-status
 ```
 
-API keys are read from environment variables and are never printed by provider status.
+API keys are read from environment variables and are never printed by provider status. Keep them in your local `.env` file; never commit secrets or paste them into GitHub issues.
+
+Free API access is not unlimited or guaranteed: request/token limits and model availability vary by provider and account and may change. When cloud free-tier limits are reached, Jenefar switches to another configured route and then to local Ollama/Qwen; it does not bypass provider authentication, usage limits, or private consumer-chat endpoints.
 
 Official provider pages:
-
 - OpenRouter: https://openrouter.ai/
 - Google Gemini API: https://ai.google.dev/gemini-api
 - Groq: https://console.groq.com/
 - Cerebras: https://inference-docs.cerebras.ai/
 
-Free-tier availability, quotas, and model availability can change by provider and account; choose models from the provider's current documentation rather than assuming a model remains free.
 
 ## Model/provider configuration
 
@@ -1020,3 +1135,12 @@ Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asy
 - Free API provider limits can change; rate-limit and quota errors are surfaced without terminating polling. The bot does not bypass provider authentication or quota requirements.
 - Privacy note: the example uses Gemini's free tier, which Google's pricing page says may use submitted content to improve its products. Avoid sending passwords, API keys, private personal data, or sensitive private-repository code to a free-tier endpoint; choose a provider/plan with suitable data terms for sensitive work. See [Gemini API pricing and data-use terms](https://ai.google.dev/gemini-api/docs/pricing).
 - Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.
+
+
+## Phase 15 — Visual Network Scan Results & Host Follow-ups
+
+Browser host-discovery results open an in-app liquid-glass **Scan Results** window. Each responsive host is displayed as a numbered row with its IPv4 address, UP state, and available latency/vendor information; the IP list is not read aloud or repeated in the general chat/task feed. The window has separate **LIVE HOSTS** and **OPEN PORTS** views and closes automatically when a new instruction starts.
+
+After an authorized host-discovery scan, a direct request such as `scan ports of the second host` or selecting **SCAN PORTS** on a result row resolves the target from the latest live-host list. Jenefar then runs a bounded Nmap TCP connect/service scan of the top 1000 TCP ports for that single host. The request itself explicitly authorizes this follow-up; the tool broker still revalidates the host against `JENEFAR_AUTHORIZED_TARGETS` / `authorized_targets` and blocks out-of-scope targets. The follow-up does not run vulnerability scripts, exploit code, or scan additional hosts. Port findings appear in the same results window and are not spoken aloud.
+
+The initial subnet host-discovery action still requires approval. Port follow-ups are restricted to hosts actually reported by the most recent discovery result; an arbitrary IP not present in that list is rejected.

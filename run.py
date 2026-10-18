@@ -15,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--desktop", action="store_true", help="launch Jenefar inside the optional native desktop shell")
     parser.add_argument("--avatar-port", type=int, default=8787, help="local avatar UI port")
     parser.add_argument("--discover-tools", action="store_true", help="list detected Kali/Linux tools without executing them")
+    parser.add_argument("--discover-tools-all", action="store_true", help="list all executable commands currently discoverable on PATH, not just security-related Kali tools")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--setup-vision", action="store_true", help="install the default local Ollama vision model (no hosted API required)")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-health", action="store_true", help="show compact runtime health summary")
     parser.add_argument("--self-healing-policy", action="store_true", help="show bounded self-healing policy and safeguards")
     parser.add_argument("--provider-status", action="store_true", help="show configured online/local model provider routing without making an LLM request")
+    parser.add_argument("--llm-smoke-test", action="store_true", help="test one short chat response using free-tier cloud providers then local Ollama; skips OpenAI to avoid paid calls")
     parser.add_argument("--online-only", action="store_true", help="disable local LLM fallback for this process")
     parser.add_argument("--voice-auto", action="store_true", help="run voice mode using the configured online provider stack; falls back to OpenAI STT/TTS only when configured")
     parser.add_argument("--evaluation-dashboard", action="store_true", help="open the local evaluation dashboard")
@@ -177,7 +179,51 @@ def doctor() -> int:
         local_model = LocalLLMClient().detect()
         print(
             "  local model                  "
-            + (f"OK ({local_model.model})" if local_model else "NOT DETECTED")
+            + (
+                f"DETECTED ({local_model.model}; inference not tested)"
+                if local_model else "NOT DETECTED"
+            )
+        )
+        if local_model:
+            print("  local inference               not tested by --doctor (run --llm-smoke-test)")
+        local_fallback_disabled = os.getenv("JENEFAR_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        print(
+            "  cloud-failure local fallback "
+            + ("DISABLED by JENEFAR_DISABLE_LOCAL_FALLBACK" if local_fallback_disabled else "ENABLED")
+        )
+
+        # Report the optional offline voice fallbacks without downloading models
+        # or loading heavy inference weights during a diagnostic run.
+        import shutil
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        audio_status = ProviderVoiceRuntime.audio_status()
+        print(
+            "  cloud STT providers           "
+            + (", ".join(
+                [audio_status["stt"]["provider"]]
+                + list(audio_status["stt"].get("fallback") or [])
+            ) if audio_status.get("stt") else "NONE CONFIGURED")
+        )
+        whisper_installed = importlib.util.find_spec("faster_whisper") is not None
+        local_stt_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
+        local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip() or "small"
+        local_stt_path_ok = not local_stt_path or Path(local_stt_path).expanduser().is_dir()
+        print(
+            "  local Whisper STT             "
+            + (
+                f"PACKAGE READY ({local_stt_model}; cache checked only during use)"
+                if whisper_installed and local_stt_path_ok
+                else "NOT READY (install faster-whisper and cache the model before going offline)"
+            )
+        )
+        piper_path = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        piper_ready = bool(shutil.which("piper") and piper_path and Path(piper_path).expanduser().is_file())
+        print(
+            "  local Piper browser TTS       "
+            + (f"READY ({Path(piper_path).expanduser().name})" if piper_ready
+               else "NOT CONFIGURED (optional; cloud TTS -> local Piper -> Edge/browser speech)")
         )
         try:
             from jenefar.vision.screen import ScreenVision
@@ -209,8 +255,28 @@ def doctor() -> int:
         from jenefar.core.orchestrator import JenefarOrchestrator
         print("  orchestrator import           OK")
         # Construct it only after syntax/import checks; this validates core wiring.
-        JenefarOrchestrator()
+        orchestrator = JenefarOrchestrator()
         print("  orchestrator init             OK")
+
+        # Desktop access is an optional capability, so report it accurately but
+        # do not fail the core doctor when the process is in a headless session.
+        desktop_status = orchestrator.tool_broker.desktop.backend_status()
+        input_ready = bool(desktop_status.get("input_control", desktop_status.get("pyautogui", False)))
+        capture_ready = bool(desktop_status.get("screenshot_capture", False))
+        print(
+            "  desktop input                 "
+            + ("READY" if input_ready else "UNAVAILABLE")
+            + f" ({desktop_status.get('session_type') or 'unknown'})"
+        )
+        screen = desktop_status.get("screen") or desktop_status.get("capture_screen") or desktop_status.get("simulated_screen") or {}
+        print(
+            "  desktop capture               "
+            + ("READY" if capture_ready else "UNAVAILABLE")
+            + f" ({screen.get('width', '?')}x{screen.get('height', '?')})"
+        )
+        print(f"  desktop diagnosis             {desktop_status.get('diagnosis') or 'No diagnostic message available.'}")
+        for recommendation in desktop_status.get("recommendations") or []:
+            print(f"    -> {recommendation}")
     except Exception as exc:
         print(f"  runtime wiring               ERROR ({type(exc).__name__}: {exc})")
         failed = True
@@ -365,6 +431,46 @@ def main() -> int:
     if args.doctor:
         return doctor()
 
+    if args.llm_smoke_test:
+        import os
+        from jenefar.core.config import load_config
+        from jenefar.core.llm import LLMClient
+
+        # Load the local .env, but intentionally do not test OPENAI_API_KEY.
+        # This command is designed for users debugging free-tier + local fallback
+        # and must not accidentally consume paid OpenAI balance.
+        load_config()
+        previous_order = os.environ.get("JENEFAR_PROVIDER_ORDER")
+        previous_disable_local = os.environ.pop("JENEFAR_DISABLE_LOCAL_FALLBACK", None)
+        os.environ["JENEFAR_PROVIDER_ORDER"] = "groq,gemini,openrouter"
+        print("[JENEFAR] LLM smoke test: Groq -> Gemini -> OpenRouter -> local Ollama.")
+        print("[JENEFAR] OpenAI is intentionally excluded from this smoke test.")
+        try:
+            response = LLMClient(model_role="fast").complete(
+                "Reply exactly with JENEFAR_LLM_OK.",
+                instructions="You are a concise diagnostics assistant. Reply exactly with JENEFAR_LLM_OK.",
+                max_tool_rounds=1,
+                model_role="fast",
+            )
+            print(f"[JENEFAR] Smoke-test provider: {response.provider}")
+            print(f"[JENEFAR] Smoke-test model: {response.model or 'unknown'}")
+            print(f"[JENEFAR] Smoke-test response: {response.text[:1200]}")
+            if response.provider in {"offline_unavailable", "online_unavailable"}:
+                print("[JENEFAR] LLM smoke test FAILED; review the provider errors above.")
+                return 1
+            print("[JENEFAR] LLM smoke test PASSED.")
+            return 0
+        except Exception as exc:
+            print(f"[JENEFAR] LLM smoke test FAILED: {type(exc).__name__}: {exc}")
+            return 1
+        finally:
+            if previous_order is None:
+                os.environ.pop("JENEFAR_PROVIDER_ORDER", None)
+            else:
+                os.environ["JENEFAR_PROVIDER_ORDER"] = previous_order
+            if previous_disable_local is not None:
+                os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = previous_disable_local
+
     if args.setup_vision:
         return setup_vision()
 
@@ -397,7 +503,7 @@ def main() -> int:
         getattr(args, name)
         for name in (
             "doctor", "setup_vision", "provider_status", "online_only", "voice", "voice_continuous",
-            "voice_auto", "avatar", "realtime", "desktop", "discover_tools",
+            "voice_auto", "avatar", "realtime", "desktop", "discover_tools", "discover_tools_all",
             "index_file", "index_dir", "index_document", "index_url", "index_github",
             "memory_search", "graph_search", "gui_smoke_test", "events_list", "events_run",
             "evaluation_report", "trace_report", "runtime_health", "self_healing_policy",
@@ -435,6 +541,14 @@ def main() -> int:
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
             voice_audio_handler=browser_voice.handle_audio if browser_voice_enabled else None,
+            # Use the browser voice bridge as the approval owner in the default
+            # UI path so duplicate clicks are serialized and scan results are visual-only.
+            approval_handler=(
+                browser_voice.approve_pending
+                if browser_voice_enabled
+                else orchestrator._approve_pending
+            ),
+            rejection_handler=orchestrator._reject_pending_workflow,
         )
         avatar_server.start()
 
@@ -454,20 +568,40 @@ def main() -> int:
             "[JENEFAR] Browser voice runtime: avatar UI + browser microphone + "
             "multi-agent orchestrator + memory + tools."
         )
+        desktop_input_ready = bool(
+            desktop_status.get("input_control", desktop_status.get("pyautogui", False))
+        )
+        desktop_capture_ready = bool(desktop_status.get("screenshot_capture", False))
+        desktop_label = (
+            "READY" if desktop_input_ready and desktop_capture_ready
+            else "PARTIAL" if desktop_input_ready or desktop_capture_ready
+            else "UNAVAILABLE"
+        )
+        desktop_screen = (
+            desktop_status.get("screen")
+            or desktop_status.get("capture_screen")
+            or desktop_status.get("simulated_screen")
+            or {}
+        )
         print(
             "[JENEFAR] Desktop backend: "
-            + ("READY" if desktop_status.get("pyautogui") else "UNAVAILABLE")
+            + desktop_label
             + f" ({desktop_status.get('session_type') or 'unknown'}"
-            + f", {desktop_status.get('screen', {}).get('width', '?')}x"
-            + f"{desktop_status.get('screen', {}).get('height', '?')})"
+            + f", input={'ready' if desktop_input_ready else 'unavailable'}"
+            + f", capture={'ready' if desktop_capture_ready else 'unavailable'}"
+            + f", {desktop_screen.get('width', '?')}x{desktop_screen.get('height', '?')})"
         )
+        if not desktop_input_ready or not desktop_capture_ready:
+            print("[JENEFAR] Desktop diagnosis: " + str(desktop_status.get("diagnosis") or "No diagnosis available."))
+            for recommendation in desktop_status.get("recommendations") or []:
+                print("[JENEFAR] Desktop next step: " + str(recommendation))
         if audio_status["stt"]:
             stt = audio_status["stt"]
             tts = audio_status["tts"]
             print(
                 f"[JENEFAR] Browser STT: {stt['provider']}/{stt['model']} "
                 f"fallback={','.join(stt.get('fallback', [])) or 'none'}; "
-                "Browser TTS=OpenAI -> expressive Gemini TTS -> Edge -> Web SpeechSynthesis fallback"
+                "Browser TTS=OpenAI -> Gemini -> configured local Piper -> Edge -> Web SpeechSynthesis fallback"
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
@@ -660,11 +794,33 @@ def main() -> int:
             print(f"[JENEFAR] Research/memory error: {type(exc).__name__}: {exc}")
             return 1
 
-    if args.discover_tools:
-        from jenefar.tools.discovery import discover_tools
-        for tool in discover_tools():
-            status = "installed" if tool.installed else "missing"
-            print(f"{tool.name:16} {status:9} [{tool.category}]")
+    if args.discover_tools or args.discover_tools_all:
+        from jenefar.tools.kali import KaliToolManager
+
+        manager = KaliToolManager()
+        offset = 0
+        page_size = 300 if args.discover_tools_all else 150
+        total = 0
+        while True:
+            items = manager.catalog_list(
+                include_all=bool(args.discover_tools_all),
+                installed_only=bool(args.discover_tools_all),
+                limit=page_size,
+                offset=offset,
+            )
+            for tool in items:
+                status = "installed" if tool["installed"] else "missing"
+                source = tool.get("source", "catalog")
+                path = f" :: {tool['path']}" if tool.get("path") else ""
+                print(
+                    f"{tool['name']:24} {status:9} "
+                    f"[{tool['category']} / {tool['tactic']}] [{source}]{path}"
+                )
+            total += len(items)
+            if not args.discover_tools_all or len(items) < page_size:
+                break
+            offset += len(items)
+        print(f"[JENEFAR] Tool discovery complete: {total} command record(s).")
         return 0
 
     from jenefar.core.orchestrator import JenefarOrchestrator
@@ -701,6 +857,12 @@ def main() -> int:
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice else None,
             voice_audio_handler=browser_voice.handle_audio if browser_voice else None,
+            approval_handler=(
+                browser_voice.approve_pending
+                if browser_voice is not None
+                else orchestrator._approve_pending
+            ),
+            rejection_handler=orchestrator._reject_pending_workflow,
         )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")

@@ -22,6 +22,78 @@ def test_pending_terminal_can_be_approved():
     assert "test" in result["result"]
 
 
+def test_kali_catalog_help_and_confirmed_executor_are_registered():
+    broker = ToolBroker(require_confirmation=True)
+    names = {tool["name"] for tool in broker.schemas(allow_action_tools=True)}
+    assert "kali_catalog" in names
+    assert "kali_tool_help" in names
+    assert "kali_tool_execute" in names
+
+
+def test_kali_execution_requires_plan_before_it_can_request_approval(monkeypatch):
+    import json
+
+    broker = ToolBroker(require_confirmation=True)
+    called = []
+    monkeypatch.setattr(
+        broker.kali,
+        "preview",
+        lambda **_kwargs: called.append(True),
+    )
+
+    result = json.loads(broker.invoke("kali_tool_execute", {
+        "tool": "nmap",
+        "args": ["-sV", "192.168.29.10"],
+        "target": "192.168.29.10",
+        "timeout": 30,
+    }))
+
+    assert result["status"] == "error"
+    assert result["stage"] == "preflight"
+    assert result["executed"] is False
+    assert not called
+
+
+def test_kali_execution_approval_displays_exact_command_and_target(monkeypatch):
+    import json
+
+    activity = []
+    broker = ToolBroker(
+        require_confirmation=True,
+        activity_handler=lambda state, text: activity.append((state, text)),
+    )
+    monkeypatch.setattr(
+        broker.kali,
+        "preview",
+        lambda **_kwargs: {
+            "tool": "nmap",
+            "command": "/usr/bin/nmap -sV 192.168.29.10",
+            "target": "192.168.29.10",
+            "targets": ["192.168.29.10"],
+            "timeout_seconds": 30,
+            "scope_checked": True,
+            "inspection_required": False,
+            "requires_user_approval": True,
+        },
+    )
+    result = json.loads(broker.invoke("kali_tool_execute", {
+        "tool": "nmap",
+        "args": ["-sV", "192.168.29.10"],
+        "target": "192.168.29.10",
+        "timeout": 30,
+        "plan": "Run a bounded service check against the explicitly authorized lab host and report observed services.",
+    }))
+    assert result["status"] == "approval_required"
+    pending = broker.pending[result["pending_id"]]
+    assert pending.arguments["tool"] == "nmap"
+    # The exact preview is surfaced through the activity/approval prompt.
+    prompts = [text for state, text in activity if state == "waiting_approval"]
+    assert prompts
+    assert "/usr/bin/nmap -sV 192.168.29.10" in prompts[-1]
+    assert "192.168.29.10" in prompts[-1]
+    assert "Authorization scope: PASS" in prompts[-1]
+
+
 def test_rea_tools_are_registered_and_mutating_bridge_call_is_gated(monkeypatch):
     import json
 

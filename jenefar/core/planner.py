@@ -75,6 +75,83 @@ class Planner:
     def plan(self, text: str) -> Plan:
         t = text.lower()
 
+        # Host-discovery intent must take precedence over the shorter "my IP"
+        # phrase contained inside requests about an IP range or online hosts.
+        import re
+        has_cidr = bool(re.search(r"(?<![0-9.])(?:[0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}(?![0-9.])", t))
+        range_terms = (
+            "ip range", "ip ki range", "subnet", "cidr", "network range",
+            "meri range", "my range", "local network",
+        )
+        host_terms = (
+            "host", "hosts", "device", "devices", "online", "live host",
+            "ping sweep", "host discovery", "kitne", "count", "discover",
+            "scan", "check",
+        )
+        explicit_discovery = any(marker in t for marker in (
+            "host discovery", "live hosts", "online hosts", "hosts online",
+            "kitne host", "kitne hosts", "kitne device", "kitne devices",
+            "ping sweep", "check online host", "check live host",
+            "scan my network", "scan the network", "scan local network",
+            "scan network", "network scan", "check the network",
+            "mere network ko scan", "mera network scan", "meri network scan",
+            "apne network ko scan", "network ko scan", "network scan karke",
+            "scan karke live host", "live host detect", "live hosts detect",
+            "network ke live host", "network par live host",
+        ))
+        local_network_phrases = (
+            "my network", "mere network", "mera network", "meri network",
+            "apne network", "apna network", "apni network", "current network",
+            "local network", "my lan", "meri lan", "apna lan",
+        )
+        scan_action_phrases = (
+            "scan", "scanning", "detect", "discover", "check", "find", "show",
+            "list", "identify", "pata karo", "pata lagao", "dikhao", "nikalo",
+        )
+        implicit_lan_discovery = (
+            any(phrase in t for phrase in local_network_phrases)
+            and any(phrase in t for phrase in scan_action_phrases)
+        )
+        if explicit_discovery or implicit_lan_discovery or (has_cidr and any(term in t for term in host_terms)) or (
+            any(term in t for term in range_terms) and any(term in t for term in host_terms)
+        ):
+            return self._make_plan(
+                text,
+                "network_host_discovery",
+                "kali",
+                needs_tool=True,
+                confidence=0.99,
+                reason=(
+                    "explicit live-host discovery intent; resolve the selected local range or use the supplied CIDR, "
+                    "check authorization scope, present a bounded Nmap -sn plan, then require approval"
+                ),
+            )
+
+        # Simple IP-information queries are local diagnostics, not security scans.
+        # The orchestrator handles them directly; this plan also prevents fallback
+        # routing from assigning plain "check my IP" requests to a security agent.
+        ip_info_markers = (
+            "check my ip", "check my ip address", "what is my ip", "what's my ip",
+            "what is my public ip", "what's my public ip", "my public ip", "my local ip",
+            "show my ip", "find my ip", "get my ip", "ip address kya", "mera ip", "meri ip",
+            "ip batao",
+        )
+        explicit_scan_markers = (
+            "nmap", "masscan", "port scan", "network scan", "subnet scan",
+            "scan my network", "scan this network", "open ports", "sweep",
+        )
+        if any(marker in t for marker in ip_info_markers) and not any(
+            marker in t for marker in explicit_scan_markers
+        ):
+            return self._make_plan(
+                text,
+                "network_ip_info",
+                "utility",
+                needs_tool=True,
+                confidence=0.99,
+                reason="explicit local/public IP-information request; no scan intent",
+            )
+
         repository_terms = (
             "github",
             "repository",
@@ -84,8 +161,25 @@ class Planner:
             "codebase",
             "architecture review",
         )
-        if "kali" in t or any(x in t for x in ("nmap", "hashcat", "metasploit", "burpsuite", "sqlmap")):
-            return self._make_plan(text, "kali", "kali", confidence=0.96, reason="Kali/security-tool keyword match", needs_tool=True)
+        kali_terms = (
+            "kali", "nmap", "masscan", "rustscan", "amass", "subfinder",
+            "gobuster", "ffuf", "feroxbuster", "whatweb", "nikto", "wpscan",
+            "sqlmap", "hashcat", "john the ripper", "hydra", "aircrack",
+            "metasploit", "msfconsole", "burpsuite", "zaproxy", "impacket",
+            "responder", "bloodhound", "mimikatz", "linpeas", "winpeas",
+            "wireshark", "tcpdump", "volatility", "binwalk", "searchsploit",
+            "penetration test", "pentest", "security tool", "kali tool",
+            "tool catalog", "tool --help", "new kali tool", "installed tools",
+        )
+        if any(x in t for x in kali_terms):
+            return self._make_plan(
+                text,
+                "kali",
+                "kali",
+                confidence=0.96,
+                reason="Kali/security-tool or tool-discovery keyword match",
+                needs_tool=True,
+            )
 
         if any(x in t for x in (
             "find on screen", "locate on screen", "click the", "click on",

@@ -28,6 +28,7 @@ from jenefar.offline.capabilities import unavailable_online_items, local_items
 from jenefar.automation.browser import play_youtube, first_mp3_in_folder
 from jenefar.media.song import record_and_recognize
 from jenefar.tools.kali import KaliToolManager
+from jenefar.tools.network_info import get_network_ip_info
 from jenefar.vision.screen import ScreenVision
 from jenefar.vision.mirror import DesktopMirror
 from jenefar.automation.headless import HeadlessDesktopAutomation
@@ -325,17 +326,12 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="discover_kali_tools",
-            description="List common Kali/Linux security tools and whether each executable is installed. This never executes a security tool.",
-            handler=lambda _args: [
-                {
-                    "name": t.name,
-                    "category": t.category,
-                    "command": t.command,
-                    "installed": t.installed,
-                    "description": t.description,
-                }
-                for t in discover_tools()
-            ],
+            description=(
+                "List the curated Kali catalog plus installed security-related executables discovered on PATH. "
+                "For fuzzy search or complete PATH inventory use kali_catalog; to inspect an unfamiliar command use kali_tool_help. "
+                "Read-only: never executes or installs a tool."
+            ),
+            handler=lambda _args: self.kali.catalog_list(limit=100),
         ))
         self.registry.register(ToolSpec(
             name="dismiss_offline_notice",
@@ -383,6 +379,22 @@ class ToolBroker:
         ))
 
         self.registry.register(ToolSpec(
+            name="network_ip_info",
+            description=(
+                "Read the local computer's active interface IP addresses and make one optional HTTPS request "
+                "to api.ipify.org to learn the public IPv4 address. Read-only; does not scan hosts, ports, "
+                "or subnets, and never runs Nmap."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            handler=lambda _args: get_network_ip_info(),
+        ))
+
+        self.registry.register(ToolSpec(
             name="offline_status",
             description="Report online/offline connectivity and which capabilities are unavailable when internet is not reachable.",
             handler=lambda _args: {
@@ -393,8 +405,11 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="skill_catalog",
-            description="List available declarative Jenefar skills and whether each skill is enabled.",
-            handler=lambda _args: self.skills.list(),
+            description=(
+                "List available declarative Jenefar skills and whether each skill is enabled. "
+                "Return bounded metadata only; do not include full skill prompt bodies."
+            ),
+            handler=lambda _args: self._skill_catalog_summary(self.skills.list()),
         ))
         self.registry.register(ToolSpec(
             name="skill_learn",
@@ -649,33 +664,78 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="kali_catalog",
-            description="List the curated Kali Linux tool catalog with tactic/category and installed status. Read-only.",
+            description=(
+                "Search Jenefar's curated Kali tool metadata plus executables discovered dynamically on PATH. "
+                "Filters are natural-language/fuzzy, so queries such as 'network scanning tools' do not require "
+                "an exact category name. Use query to find a named/new tool, installed_only to show only available "
+                "commands, include_all only when the user requests a full command inventory, and limit to bound results. "
+                "Read-only; never executes tools or installs packages."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "tactic": {"type": "string"},
-                    "category": {"type": "string"},
+                    "tactic": {"type": "string", "maxLength": 120},
+                    "category": {"type": "string", "maxLength": 160},
+                    "query": {"type": "string", "maxLength": 160},
+                    "installed_only": {"type": "boolean"},
+                    "include_all": {"type": "boolean"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 300},
+                    "offset": {"type": "integer", "minimum": 0, "maximum": 100000},
                 },
                 "required": [],
                 "additionalProperties": False,
             },
             handler=lambda args: self.kali.catalog_list(
-                str(args.get("category") or "") or None,
-                str(args.get("tactic") or "") or None,
+                category=str(args.get("category") or "") or None,
+                tactic=str(args.get("tactic") or "") or None,
+                query=str(args.get("query") or "") or None,
+                installed_only=bool(args.get("installed_only", False)),
+                include_all=bool(args.get("include_all", False)),
+                limit=int(args.get("limit", 80)),
+                offset=int(args.get("offset", 0)),
+            ),
+        ))
+        self.registry.register(ToolSpec(
+            name="kali_tool_help",
+            description=(
+                "Inspect a named local Kali/Linux command before using an unfamiliar tool. "
+                "Reads its local man page or bounded --help/-h output; if it is not installed, searches the local "
+                "apt-cache for package suggestions. No software is installed. Must be called before using any newly "
+                "discovered tool with kali_tool_execute."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 8},
+                },
+                "required": ["tool"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: self.kali.inspect_tool(
+                tool=str(args["tool"]),
+                timeout=int(args.get("timeout", 5)),
             ),
         ))
         self.registry.register(ToolSpec(
             name="kali_tool_execute",
-            description="Execute one installed tool from the curated Kali catalog with explicit confirmation. Network targets must be inside authorized_targets.",
+            description=(
+                "Execute one installed command from Kali/Linux using a direct argv list (never a shell). "
+                "Curated tools are available immediately; every unfamiliar PATH-discovered tool must first be inspected "
+                "with kali_tool_help. Network-impacting commands require every detected target to be in authorized_targets. "
+                "The exact command, target(s), timeout, and scope result are shown in the approval prompt before execution. "
+                "Always prepare a plan from the tool help, then request execution only when the user's task and authorization are clear."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "tool": {"type": "string"},
-                    "args": {"type": "array", "items": {"type": "string"}, "maxItems": 80},
-                    "target": {"type": "string"},
+                    "tool": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "args": {"type": "array", "items": {"type": "string", "maxLength": 8000}, "maxItems": 80},
+                    "target": {"type": "string", "maxLength": 500},
                     "timeout": {"type": "integer", "minimum": 1, "maximum": 300},
+                    "plan": {"type": "string", "maxLength": 2000},
                 },
-                "required": ["tool", "args", "target", "timeout"],
+                "required": ["tool", "args", "target", "timeout", "plan"],
                 "additionalProperties": False,
             },
             handler=lambda args: self.kali.execute(
@@ -1303,6 +1363,24 @@ class ToolBroker:
             action=True,
         ))
 
+    @staticmethod
+    def _skill_catalog_summary(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return the documented skill catalog fields without bulky instruction text."""
+        public_fields = (
+            "name", "version", "description", "keywords", "connectors",
+            "permissions", "enabled", "available",
+        )
+        summary: list[dict[str, Any]] = []
+        for item in skills:
+            if not isinstance(item, dict):
+                continue
+            summary.append({
+                key: item[key]
+                for key in public_fields
+                if key in item
+            })
+        return summary
+
     def _skill_learn(self, args: dict[str, Any]) -> dict[str, Any]:
         """Save a prompt-only learned skill inside configured local skill roots."""
         return self.skills.save_learned_skill(
@@ -1655,6 +1733,39 @@ class ToolBroker:
             self.audit.record("tool_unknown", tool=name)
             return json.dumps({"status": "error", "error": f"Unknown tool: {name}"})
 
+        tool_preview = None
+        if name == "kali_tool_execute":
+            plan_text = str(arguments.get("plan") or "").strip()
+            if not plan_text:
+                self._activity("error", "Kali execution blocked: a tool-help-based plan is required before approval.")
+                return json.dumps({
+                    "status": "error",
+                    "error": "Provide a brief plan based on kali_tool_help before requesting execution.",
+                    "stage": "preflight",
+                    "executed": False,
+                }, ensure_ascii=False)
+            try:
+                tool_preview = self.kali.preview(
+                    tool=str(arguments.get("tool") or ""),
+                    args=[str(value) for value in (arguments.get("args") or [])],
+                    target=str(arguments.get("target") or ""),
+                    timeout=int(arguments.get("timeout", 120)),
+                )
+            except Exception as exc:
+                self.audit.record(
+                    "tool_error",
+                    tool=name,
+                    arguments=arguments,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                self._activity("error", f"Kali command blocked before approval: {exc}")
+                return json.dumps({
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "stage": "preflight",
+                    "executed": False,
+                }, ensure_ascii=False)
+
         # Critical tools always pause. Routine tools only use the legacy strict
         # confirmation mode when it is explicitly enabled.
         is_critical = bool(spec.critical)
@@ -1666,12 +1777,25 @@ class ToolBroker:
         if needs_confirmation and not confirmed:
             pending_id = uuid.uuid4().hex
             self.pending[pending_id] = PendingToolCall(pending_id, name, arguments)
-            user_prompt = (
-                f"Kya main {name.replace('_', ' ')} kar doon? "
-                "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
-                if is_critical
-                else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
-            )
+            if name == "kali_tool_execute" and tool_preview:
+                targets_text = ", ".join(tool_preview.get("targets") or []) or "local-only / no remote target detected"
+                plan_text = str(arguments.get("plan") or "").strip()[:1600]
+                user_prompt = (
+                    "Kali tool execution plan (nothing has run yet):\n"
+                    f"Purpose/plan: {plan_text or 'Inspect the selected tool result and complete the requested task.'}\n"
+                    f"Command: {tool_preview['command']}\n"
+                    f"Target(s): {targets_text}\n"
+                    f"Authorization scope: {'PASS' if tool_preview.get('scope_checked') else 'not applicable (local command)'}\n"
+                    f"Timeout: {tool_preview['timeout_seconds']} seconds\n"
+                    "Review this exact command and its scope. Execute it? Reply yes or no."
+                )
+            else:
+                user_prompt = (
+                    f"Kya main {name.replace('_', ' ')} kar doon? "
+                    "Ye external ya high-impact action hai. Bas haan ya nahi bolo."
+                    if is_critical
+                    else f"Kya main {name.replace('_', ' ')} kar doon? Bas haan ya nahi bolo."
+                )
             self.audit.record(
                 "tool_approval_requested",
                 pending_id=pending_id,

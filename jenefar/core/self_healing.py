@@ -73,29 +73,51 @@ class SelfHealingRuntime:
     @staticmethod
     def is_retry_safe(operation_name: str, metadata: dict | None = None) -> bool:
         meta = metadata or {}
-        if meta.get("approval_required") or meta.get("security_action"):
+        if (
+            meta.get("approval_required")
+            or meta.get("security_action")
+            or meta.get("retry_safe") is False
+        ):
             return False
         name = str(operation_name).lower()
+        # Generic dispatch can hide actions behind an agent. It must be explicitly
+        # classified as read-only before an automatic retry is permitted.
+        if name == "agent_dispatch" and meta.get("retry_safe") is not True:
+            return False
         unsafe_markers = (
             "terminal", "edit", "write", "delete", "move", "rename",
-            "kali_tool_execute", "connector_execute", "robot", "mqtt",
-            "ros2", "desktop_click", "desktop_type", "schedule_create",
+            "kali", "cybersecurity", "bugbounty", "security_tool",
+            "connector", "rea_call", "robot", "mqtt", "ros2",
+            "desktop", "screenshot", "workspace_create", "workspace_copy",
+            "schedule_create",
         )
         return not any(marker in name for marker in unsafe_markers)
 
-    def _record_failure(self, operation_name: str, exc: BaseException) -> None:
+    def _record_failure(
+        self,
+        operation_name: str,
+        exc: BaseException,
+        *,
+        count_for_circuit: bool,
+    ) -> None:
         message = f"{type(exc).__name__}: {exc}"
         self.health.failures += 1
-        self.health.consecutive_failures += 1
         self.health.last_error = message
         self.health.last_failure_at = time.time()
         state = self.health.failure_state.setdefault(operation_name, FailureState())
         state.failures += 1
         state.last_error = message
         state.last_failure_at = self.health.last_failure_at
-        if self.health.consecutive_failures >= self.circuit_threshold:
-            self.health.circuit_open_until = time.time() + self.circuit_cooldown_seconds
-            state.cooldown_until = self.health.circuit_open_until
+
+        # The circuit protects retryable, transient read paths. A validation error
+        # or deliberately non-retryable action must not open it for unrelated work.
+        if count_for_circuit:
+            self.health.consecutive_failures += 1
+            if self.health.consecutive_failures >= self.circuit_threshold:
+                self.health.circuit_open_until = time.time() + self.circuit_cooldown_seconds
+                state.cooldown_until = self.health.circuit_open_until
+        else:
+            self.health.consecutive_failures = 0
 
     def _record_success(self) -> None:
         self.health.successes += 1
@@ -126,7 +148,11 @@ class SelfHealingRuntime:
                         self.health.non_retryable_failures += 1
                     else:
                         self.health.transient_failures += 1
-                    self._record_failure(operation_name, exc)
+                    self._record_failure(
+                        operation_name,
+                        exc,
+                        count_for_circuit=bool(transient and safe_retry),
+                    )
                     raise
                 self.health.transient_failures += 1
                 self.health.retries += 1

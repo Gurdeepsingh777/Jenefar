@@ -35,9 +35,23 @@ class BrowserVoiceBridge:
             thread_name_prefix="jenefar-task",
         )
         self._active_task = None
+        self._task_generation = 0
+        self._last_assistant_text = ""
+        self._last_assistant_spoken_at = 0.0
+        try:
+            self._ip_echo_window = max(
+                0.0,
+                float(os.getenv("JENEFAR_BROWSER_IP_ECHO_WINDOW", "24")),
+            )
+        except (TypeError, ValueError):
+            self._ip_echo_window = 24.0
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
+        self._approval_voice_lock = threading.Lock()
+        self._approval_voice_results: dict[str, str] = {}
         self._tts_lock = threading.Lock()
         self._openai_tts_disabled = False
+        self._gemini_tts_disabled = False
+        self._piper_tts_disabled = False
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -53,6 +67,7 @@ class BrowserVoiceBridge:
         *,
         audio_b64: str = "",
         audio_mime: str = "",
+        data: dict[str, Any] | None = None,
     ) -> None:
         if self.avatar is not None:
             self.avatar.publish(
@@ -61,6 +76,7 @@ class BrowserVoiceBridge:
                 task_id=task_id,
                 audio_b64=audio_b64,
                 audio_mime=audio_mime,
+                data=data,
             )
 
     @staticmethod
@@ -136,7 +152,7 @@ class BrowserVoiceBridge:
     def _synthesize_gemini_audio(self, text: str) -> tuple[str, str]:
         """Expressive Google Gemini TTS fallback, independent of chat-model quota."""
         key = self._direct_gemini_tts_key()
-        if not key:
+        if not key or getattr(self, "_gemini_tts_disabled", False):
             return "", ""
         import httpx
 
@@ -189,11 +205,114 @@ class BrowserVoiceBridge:
             print(f"[JENEFAR] Browser TTS: expressive Gemini {model} / {voice}.")
             return str(audio_data), str(mime)
         except Exception as exc:
+            error_text = str(exc).casefold()
+            if any(marker in error_text for marker in (
+                "429", "resource_exhausted", "rate limit", "too many requests",
+                "quota", "no credits remaining", "insufficient_quota",
+            )):
+                self._gemini_tts_disabled = True
+                print(
+                    "[JENEFAR] Gemini TTS quota/rate limit reached; "
+                    "skipping further Gemini TTS attempts this run."
+                )
             print(
                 "[JENEFAR] Expressive Gemini TTS unavailable; "
                 f"trying the next voice fallback: {type(exc).__name__}: {exc}"
             )
             return "", ""
+
+    def _synthesize_local_piper_audio(self, text: str) -> tuple[str, str]:
+        """Generate browser-playable WAV audio with an explicitly configured local Piper model."""
+        if getattr(self, "_piper_tts_disabled", False):
+            return "", ""
+
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        executable = shutil.which("piper")
+        model_value = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        # Piper is optional. Do not log a warning on every answer when it has
+        # not been configured; Edge/browser speech remain valid fallbacks.
+        if not executable or not model_value:
+            return "", ""
+
+        model_path = Path(model_value).expanduser()
+        if not model_path.is_file():
+            self._piper_tts_disabled = True
+            print(
+                "[JENEFAR] Local Piper TTS skipped: JENEFAR_LOCAL_TTS_MODEL "
+                f"does not point to an ONNX model file: {model_path}"
+            )
+            return "", ""
+
+        clean = str(text or "").strip()
+        if not clean:
+            return "", ""
+        try:
+            timeout = max(5.0, min(90.0, float(
+                os.getenv("JENEFAR_LOCAL_TTS_TIMEOUT_SECONDS", "35")
+            )))
+        except (TypeError, ValueError):
+            timeout = 35.0
+
+        output_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", prefix="jenefar_piper_", delete=False
+            ) as tmp:
+                output_path = tmp.name
+            result = subprocess.run(
+                [
+                    executable,
+                    "--model", str(model_path),
+                    "--output_file", output_path,
+                ],
+                input=clean[:4096].encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or b"").decode(
+                    "utf-8", errors="replace"
+                ).strip()[-500:]
+                self._piper_tts_disabled = True
+                print(
+                    "[JENEFAR] Local Piper TTS failed; skipping further Piper attempts this run: "
+                    + (detail or f"exit code {result.returncode}")
+                )
+                return "", ""
+
+            with open(output_path, "rb") as handle:
+                audio_data = handle.read()
+            if not audio_data:
+                self._piper_tts_disabled = True
+                print("[JENEFAR] Local Piper TTS returned an empty WAV file; disabling it for this run.")
+                return "", ""
+            print(f"[JENEFAR] Browser TTS: local Piper ({model_path.name}).")
+            return base64.b64encode(audio_data).decode("ascii"), "audio/wav"
+        except subprocess.TimeoutExpired:
+            self._piper_tts_disabled = True
+            print(
+                f"[JENEFAR] Local Piper TTS timed out after {timeout:g}s; "
+                "skipping further Piper attempts this run."
+            )
+            return "", ""
+        except Exception as exc:
+            self._piper_tts_disabled = True
+            print(
+                "[JENEFAR] Local Piper TTS unavailable; "
+                f"trying another voice fallback: {type(exc).__name__}: {exc}"
+            )
+            return "", ""
+        finally:
+            if output_path:
+                try:
+                    os.unlink(output_path)
+                except OSError:
+                    pass
 
     def _synthesize_edge_audio(self, text: str) -> tuple[str, str]:
         try:
@@ -207,7 +326,15 @@ class BrowserVoiceBridge:
             try:
                 asyncio.run(communicate.save(output_path))
                 with open(output_path, "rb") as handle:
-                    encoded = base64.b64encode(handle.read()).decode("ascii")
+                    audio_data = handle.read()
+                if not audio_data:
+                    raise RuntimeError("Edge TTS returned an empty audio file.")
+                encoded = base64.b64encode(audio_data).decode("ascii")
+                print(
+                    "[JENEFAR] Browser TTS: Edge "
+                    + str(voice)
+                    + "."
+                )
                 return encoded, "audio/mpeg"
             finally:
                 try:
@@ -224,9 +351,12 @@ class BrowserVoiceBridge:
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
         if not key or self._openai_tts_disabled:
-            # The Gemini TTS model has explicit emotional/style controls; prefer
-            # it over the plain Edge voice when a Google API key is available.
+            # Prefer expressive cloud TTS when configured, then a genuinely local
+            # Piper voice before Edge (which needs internet) or browser synthesis.
             audio = self._synthesize_gemini_audio(text)
+            if audio[0]:
+                return audio
+            audio = self._synthesize_local_piper_audio(text)
             return audio if audio[0] else self._synthesize_edge_audio(text)
 
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
@@ -267,6 +397,9 @@ class BrowserVoiceBridge:
                 f"trying expressive Gemini TTS: {type(exc).__name__}: {exc}"
             )
             audio = self._synthesize_gemini_audio(text)
+            if audio[0]:
+                return audio
+            audio = self._synthesize_local_piper_audio(text)
             return audio if audio[0] else self._synthesize_edge_audio(text)
 
     def submit_text(self, text: str) -> dict[str, Any]:
@@ -318,6 +451,7 @@ class BrowserVoiceBridge:
                 "status": "busy",
             }
 
+        self._task_generation += 1
         self._active_task = self._task_executor.submit(
             self._run_task,
             task_id,
@@ -332,6 +466,81 @@ class BrowserVoiceBridge:
             "status": "running",
         }
 
+    def approve_pending(self, pending_id: str) -> dict[str, Any]:
+        """Approve once, with the active voice task as the only speech owner."""
+        approval_id = str(pending_id or "").strip()
+        if not approval_id:
+            return {"status": "error", "error": "approval id required"}
+
+        # A spoken "yes" may already be processing on the single voice worker
+        # while the user also clicks the dashboard approval button. In that case,
+        # let the voice task complete the approval and speak its own result.
+        active_task = self._active_task
+        confirmation_parser = getattr(self.orchestrator, "_confirmation_choice", None)
+        if (
+            active_task is not None
+            and not active_task.done()
+            and callable(confirmation_parser)
+            and confirmation_parser(self._last_text) is not None
+        ):
+            return {
+                "status": "ok",
+                "result": "Approval is already being processed from your voice confirmation.",
+                "speech_owner": "voice_confirmation",
+            }
+
+        # Duplicate HTTP approval requests must neither execute the action nor
+        # enqueue a second audio event after the first approval has completed.
+        with self._approval_voice_lock:
+            if approval_id in self._approval_voice_results:
+                cached = {
+                    "status": "ok",
+                    "result": self._approval_voice_results[approval_id],
+                    "duplicate": True,
+                }
+                cached_scan = getattr(self.orchestrator, "_latest_scan_result", None)
+                if isinstance(cached_scan, dict) and cached_scan.get("kind") in {
+                    "host_discovery", "port_scan"
+                }:
+                    cached["structured_scan"] = True
+                return cached
+
+            # Reset only after the duplicate guard, so a repeated click can still
+            # reuse its cached scan result. A fresh approval must not inherit data
+            # from an unrelated earlier scan.
+            if hasattr(self.orchestrator, "_latest_scan_result"):
+                self.orchestrator._latest_scan_result = None
+            result = self.orchestrator._approve_pending(approval_id)
+            task_id = uuid.uuid4().hex[:10]
+            structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
+            if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
+                "host_discovery", "port_scan"
+            }:
+                display = self._display_text(str(structured_scan.get("summary") or result))
+                # Network results are visual-only by design: display actionable
+                # rows in the glass panel instead of speaking a list of IPs/ports.
+                self._publish("scan_results", display, task_id, data=structured_scan)
+                self._approval_voice_results[approval_id] = display
+                while len(self._approval_voice_results) > 128:
+                    oldest_id = next(iter(self._approval_voice_results))
+                    self._approval_voice_results.pop(oldest_id, None)
+                return {"status": "ok", "result": display, "structured_scan": True}
+
+            display = self._display_text(result)
+            self._publish("result", display, task_id)
+            try:
+                self._speech_queue.put_nowait((task_id, display))
+            except Exception:
+                # If the speech queue is full, preserve visual feedback and let the
+                # browser's speech fallback read the result instead.
+                self._publish("speaking_fallback", display, task_id)
+
+            self._approval_voice_results[approval_id] = display
+            while len(self._approval_voice_results) > 128:
+                oldest_id = next(iter(self._approval_voice_results))
+                self._approval_voice_results.pop(oldest_id, None)
+            return {"status": "ok", "result": display}
+
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
 
@@ -344,6 +553,20 @@ class BrowserVoiceBridge:
         if content_type and not str(content_type).lower().startswith("audio/"):
             return {"ok": False, "error": "Expected an audio recording from the browser microphone."}
 
+        # Do not transcribe stale audio while an assistant reply is being
+        # generated. STT may finish after that reply and otherwise enqueue
+        # microphone echo as a brand-new command.
+        active_task = self._active_task
+        if active_task is not None and not active_task.done():
+            return {
+                "ok": True,
+                "accepted": False,
+                "busy": True,
+                "status": "busy",
+                "reason": "assistant_busy",
+            }
+
+        task_generation_at_start = self._task_generation
         import shutil
         import subprocess
 
@@ -387,10 +610,41 @@ class BrowserVoiceBridge:
         transcript = " ".join(str(transcript or "").split()).strip()
         if not transcript:
             return {"ok": True, "ignored": True, "reason": "empty_transcript"}
+        if self._task_generation != task_generation_at_start:
+            return {
+                "ok": True,
+                "accepted": False,
+                "busy": True,
+                "status": "busy",
+                "reason": "task_started_during_transcription",
+                "transcript": self._display_text(transcript),
+            }
+        if self._is_recent_assistant_ip_echo(transcript):
+            display = self._display_text(transcript)
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "assistant_ip_echo",
+                "text": display,
+                "display_text": display,
+                "transcript": display,
+            }
         result = self.submit_text(transcript)
         result["transcript"] = self._display_text(transcript)
         return result
 
+
+    def _is_recent_assistant_ip_echo(self, transcript: str) -> bool:
+        """Drop a mic transcript that repeats an IP query just after an IP report."""
+        if not self._last_assistant_spoken_at:
+            return False
+        if time.monotonic() - self._last_assistant_spoken_at > self._ip_echo_window:
+            return False
+        previous = self._last_assistant_text.casefold()
+        if not any(marker in previous for marker in ("ip information", "local ipv4", "public ipv4")):
+            return False
+        matcher = getattr(self.orchestrator, "_is_ip_info_query", None)
+        return bool(callable(matcher) and matcher(transcript))
 
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
@@ -427,12 +681,33 @@ class BrowserVoiceBridge:
                     response_language="Hinglish",
                 )
 
+            structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
+            if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
+                "host_discovery", "port_scan"
+            }:
+                display_summary = self._display_text(
+                    str(structured_scan.get("summary") or reply)
+                )
+                # Do not synthesize or enqueue spoken IP/port lists. The browser's
+                # dedicated glass results window is the sole presentation path.
+                self._last_assistant_text = ""
+                self._last_assistant_spoken_at = 0.0
+                self._publish(
+                    "scan_results",
+                    display_summary,
+                    task_id,
+                    data=structured_scan,
+                )
+                return
+
             speech_source = enforce_hinglish(reply)
             display_reply = self._display_text(reply)
             speech_text = roman_hinglish_for_voice(speech_source)
             self._publish("result", display_reply, task_id)
             if speech_text:
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+                self._last_assistant_text = display_reply
+                self._last_assistant_spoken_at = time.monotonic()
                 self._publish(
                     "speaking",
                     display_reply,
@@ -470,17 +745,22 @@ class BrowserVoiceBridge:
                 display_text = self._display_text(text)
                 speech_text = roman_hinglish_for_voice(display_text)
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
-                self._publish(
-                    "speaking",
-                    display_text,
-                    task_id,
-                    audio_b64=audio_b64,
-                    audio_mime=audio_mime,
-                )
+                if audio_b64:
+                    self._publish(
+                        "speaking",
+                        display_text,
+                        task_id,
+                        audio_b64=audio_b64,
+                        audio_mime=audio_mime,
+                    )
+                else:
+                    # Keep all speech on the avatar event path. The browser's
+                    # native voice is used only if generated audio is unavailable.
+                    self._publish("speaking_fallback", display_text, task_id)
             finally:
+                # Queue completion means synthesis ended, not that browser
+                # playback ended. Do not publish idle and unlock the mic early.
                 self._speech_queue.task_done()
-                if self._speech_queue.empty():
-                    self._publish("idle", "", "")
 
     def shutdown(self) -> None:
         self._task_executor.shutdown(wait=False, cancel_futures=True)

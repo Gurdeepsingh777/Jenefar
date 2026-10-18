@@ -42,6 +42,45 @@ async function refreshDesktopMirror(){
 }
 refreshDesktopMirror();
 
+let desktopBackendTimer=null;
+async function refreshDesktopBackendStatus(){
+  const indicator=document.getElementById("service-desktop");
+  const detail=document.getElementById("desktop-status-detail");
+  try{
+    const response=await fetch("/desktop/status?ts="+Date.now(),{cache:"no-store"});
+    const status=await response.json();
+    if(!response.ok) throw new Error(status?.diagnosis||status?.error||"Desktop status unavailable");
+    const inputReady=Boolean(status.input_control??status.pyautogui);
+    const captureReady=Boolean(status.screenshot_capture);
+    const level=inputReady&&captureReady?"ready":inputReady||captureReady?"partial":"unavailable";
+    if(indicator){
+      indicator.textContent=level==="ready"?"READY":level==="partial"?"PARTIAL":"UNAVAILABLE";
+      indicator.dataset.state=level;
+      indicator.title=String(status.diagnosis||"");
+    }
+    const advice=Array.isArray(status.recommendations)?status.recommendations[0]:"";
+    if(detail){
+      detail.textContent=String(status.diagnosis||"Desktop capability status received.")+(advice?" Next: "+advice:"");
+      detail.title=String(status.diagnosis||"");
+      detail.dataset.state=level;
+    }
+  }catch(error){
+    if(indicator){
+      indicator.textContent="UNKNOWN";
+      indicator.dataset.state="unavailable";
+      indicator.title=String(error);
+    }
+    if(detail){
+      detail.textContent="Could not retrieve desktop health. "+String(error);
+      detail.dataset.state="unavailable";
+    }
+  }finally{
+    if(desktopBackendTimer) clearTimeout(desktopBackendTimer);
+    desktopBackendTimer=setTimeout(refreshDesktopBackendStatus,30000);
+  }
+}
+refreshDesktopBackendStatus();
+
 const stage=document.getElementById("stage");
 const canvas=document.getElementById("particles");
 const ctx=canvas?.getContext("2d")||null;
@@ -64,6 +103,7 @@ const labels={
   speaking_fallback:["SPEAKING","Browser voice use ho rahi hai"],
   completed:["DONE","Kaam complete"],
   waiting_approval:["APPROVAL","Confirmation chahiye"],
+  scan_results:["RESULTS","Scan results are displayed in the glass window"],
   error:["ERROR","Ek issue aaya hai"]
 };
 
@@ -368,11 +408,31 @@ function showApproval(event){
   approveButton.onclick=async()=>{
     overlay.querySelectorAll("button").forEach(button=>button.disabled=true);
     try{
-      await fetch("/realtime/tool",{
+      const response=await fetch("/realtime/tool",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({approve_id:pendingId})
       });
+      const payload=await response.json();
+      const resultValue=payload?.result;
+      const reply=typeof resultValue==="string"
+        ? resultValue.trim()
+        : String(resultValue?.result||resultValue?.message||"").trim();
+      if(!response.ok) throw new Error(reply||("HTTP "+response.status));
+      if(payload?.structured_scan && typeof payload.structured_scan==="object"){
+        // Some approval flows complete before the SSE consumer catches up.
+        // Render the structured result directly; openScanResults replaces the
+        // previous view and never adds the host list to chat or speech.
+        openScanResults(payload.structured_scan, "approval-"+pendingId);
+      }else if(resultValue?.structured_scan){
+        // BrowserVoiceBridge already published a scan_results SSE event with
+        // the structured host/port data. Do not duplicate its one-line summary
+        // in the generic activity feed while that result window is opening.
+      }else if(reply){
+        addActivity({state:"result",text:reply});
+      }
+    }catch(error){
+      addActivity({state:"error",text:"Approval execution failed: "+String(error?.message||error)});
     }finally{
       close();
     }
@@ -389,7 +449,7 @@ function pauseBrowserVoice(){
 
 function resumeBrowserVoice(){
   if(!micEnabled||voiceLocked) return;
-  if(browserSpeechActive||("speechSynthesis" in window && window.speechSynthesis.speaking)) return;
+  if(browserSpeechActive||Boolean(browserAudio&&!browserAudio.ended)||("speechSynthesis" in window && window.speechSynthesis.speaking)) return;
   if(fallbackMode){
     startFallbackMonitor();
     return;
@@ -425,53 +485,105 @@ function selectPremiumVoice(){
       || null;
 }
 
+function stopBrowserAudio(){
+  // Invalidate queued play/rejection/ended callbacks before stopping the track.
+  browserAudioGeneration+=1;
+  const activeAudio=browserAudio;
+  browserAudio=null;
+  if(!activeAudio) return;
+  activeAudio.onplay=null;
+  activeAudio.onended=null;
+  activeAudio.onerror=null;
+  try{activeAudio.pause();}catch(_){}
+  try{URL.revokeObjectURL(activeAudio.dataset?.url||"");}catch(_){}
+}
+
 function playBrowserAudio(base64,mime,text){
   if(!base64) return false;
+  let url="";
+  let audio=null;
+  let failureHandled=false;
   try{
+    // A single playback owner is active at any time: invalidate old audio and
+    // cancel any old browser-native utterance before starting generated audio.
+    stopBrowserAudio();
+    browserSpeechGeneration+=1;
+    if(browserSpeechReady) window.speechSynthesis.cancel();
+    browserSpeechActive=false;
+
     const bytes=Uint8Array.from(atob(base64),char=>char.charCodeAt(0));
     const blob=new Blob([bytes],{type:mime||"audio/wav"});
-    const url=URL.createObjectURL(blob);
-    if(browserAudio){
-      try{browserAudio.pause();}catch(_){}
-      try{URL.revokeObjectURL(browserAudio.dataset?.url||"");}catch(_){}
-    }
-    browserAudio=new Audio(url);
-    browserAudio.dataset.url=url;
-    browserAudio.preload="auto";
-    browserAudio.onplay=()=>{browserSpeechActive=true;};
-    browserAudio.onended=()=>{
+    url=URL.createObjectURL(blob);
+    const generation=browserAudioGeneration;
+    audio=new Audio(url);
+    browserAudio=audio;
+    audio.dataset.url=url;
+    audio.preload="auto";
+
+    const failPlayback=()=>{
+      if(failureHandled||generation!==browserAudioGeneration) return;
+      failureHandled=true;
+      browserAudioGeneration+=1;
+      if(browserAudio===audio) browserAudio=null;
+      audio.onplay=null;
+      audio.onended=null;
+      audio.onerror=null;
+      browserSpeechActive=false;
+      try{URL.revokeObjectURL(url);}catch(_){}
+      if(text) browserSpeakFallback(text);
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
+    };
+
+    audio.onplay=()=>{
+      if(generation===browserAudioGeneration) browserSpeechActive=true;
+    };
+    audio.onended=()=>{
+      if(failureHandled||generation!==browserAudioGeneration) return;
+      failureHandled=true;
+      browserAudioGeneration+=1;
+      if(browserAudio===audio) browserAudio=null;
       browserSpeechActive=false;
       voiceLocked=false;
-      URL.revokeObjectURL(url);
+      try{URL.revokeObjectURL(url);}catch(_){}
       resumeBrowserVoice();
     };
-    browserAudio.onerror=()=>{
-      browserSpeechActive=false;
-      URL.revokeObjectURL(url);
-      voiceLocked=false;
-      if(text) browserSpeakFallback(text);
-      else resumeBrowserVoice();
-    };
-    browserAudio.play().catch(()=>{
-      browserSpeechActive=false;
-      URL.revokeObjectURL(url);
-      if(text) browserSpeakFallback(text);
-      else {voiceLocked=false;resumeBrowserVoice();}
-    });
+    audio.onerror=failPlayback;
+    audio.play().catch(failPlayback);
     return true;
   }catch(_){
+    if(url){try{URL.revokeObjectURL(url);}catch(__){}}
+    if(text) browserSpeakFallback(text);
+    else{
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    }
     return false;
   }
 }
 
 function browserSpeakFallback(text){
-  if(!text||!browserSpeechReady) return;
-  const clean=String(text).replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
+  const clean=String(text||"").replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
   if(!clean) return;
+
+  // Native speech is a fallback, never a second simultaneous playback path.
+  stopBrowserAudio();
+  browserSpeechGeneration+=1;
+  const generation=browserSpeechGeneration;
+  if(!browserSpeechReady){
+    browserSpeechActive=false;
+    voiceLocked=false;
+    resumeBrowserVoice();
+    return;
+  }
+
   try{
-    browserSpeechActive=true;
-    pauseBrowserVoice();
     window.speechSynthesis.cancel();
+    pauseBrowserVoice();
+    browserSpeechActive=true;
     const utterance=new SpeechSynthesisUtterance(clean);
     const voice=selectPremiumVoice();
     if(voice) utterance.voice=voice;
@@ -479,15 +591,40 @@ function browserSpeakFallback(text){
     utterance.rate=.94;
     utterance.pitch=1.04;
     utterance.volume=.96;
-    utterance.onend=()=>{browserSpeechActive=false;voiceLocked=false;resumeBrowserVoice();};
-    utterance.onerror=()=>{browserSpeechActive=false;voiceLocked=false;resumeBrowserVoice();};
+    utterance.onend=()=>{
+      if(generation!==browserSpeechGeneration) return;
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    };
+    utterance.onerror=()=>{
+      if(generation!==browserSpeechGeneration) return;
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    };
     window.speechSynthesis.speak(utterance);
-  }catch(_){}
+  }catch(_){
+    if(generation===browserSpeechGeneration){
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    }
+  }
 }
 
 function apply(event){
   currentState=event.state||"idle";
-  updateEmbeddedHud(currentState,event.text||"");
+  const isScanResults=currentState==="scan_results";
+  const isRawScannerActivity=currentState==="thinking"&&/^Tool result: kali_tool_execute\s*->/i.test(String(event.text||""));
+  if(isScanResults){
+    openScanResults(event.data||{},event.task_id||"");
+  }else if(scanResultsWindow&&!scanResultsWindow.hidden&&["listening","queued","thinking"].includes(currentState)){
+    // Any fresh instruction owns the result stage, even if a compatibility
+    // publisher omitted task_id on the first structured-scan event.
+    closeScanResults();
+  }
+  updateEmbeddedHud(currentState,isScanResults?(event.data?.summary||event.text||"Scan results ready"):(isRawScannerActivity?"Network scan completed":event.text||""));
   speechLevel=Number(event.level||0);
   stage.dataset.state=currentState;
   emotion=event.emotion||"neutral";
@@ -496,31 +633,45 @@ function apply(event){
   stage.style.setProperty("--emotion-intensity",emotionIntensity.toFixed(3));
   stage.dataset.emotion=emotion;
   window.dispatchEvent(new CustomEvent("jenefar-avatar-event",{detail:event}));
-  addActivity(event);
-  updateTaskScreen(event);
-  updateChatFromEvent(event);
+  if(!isScanResults&&!isRawScannerActivity){
+    addActivity(event);
+    updateTaskScreen(event);
+    updateChatFromEvent(event);
+  }
 
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"){
-    pauseBrowserVoice();
     if(event.audio_b64){
-      playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+      // Do not re-lock the microphone when EventSource replays a speech event
+      // that this tab has already played or is already playing.
+      if(!speechEventWasAlreadyHandled(event)){
+        pauseBrowserVoice();
+        playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+      }
+    }else{
+      pauseBrowserVoice();
     }
   }else if(currentState==="speaking_fallback"){
-    pauseBrowserVoice();
-    if(event.text) browserSpeakFallback(event.text);
-  }else if(currentState==="idle"||currentState==="completed"){
+    if(event.text&&!speechEventWasAlreadyHandled(event)){
+      pauseBrowserVoice();
+      browserSpeakFallback(event.text);
+    }
+  }else if(currentState==="scan_results"||currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
   }
 
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
   if(stateEl) stateEl.textContent=stateText;
-  if(captionEl) captionEl.textContent=event.text||caption;
+  if(captionEl) captionEl.textContent=isRawScannerActivity
+    ? "Network scan running"
+    : isScanResults
+      ? String(event.data?.summary||event.text||caption)
+      : (event.text||caption);
 
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     document.body.dataset.voiceActive="true";
-  }else if(currentState==="idle"||currentState==="listening"||currentState==="completed"){
+  }else if(currentState==="scan_results"||currentState==="idle"||currentState==="listening"||currentState==="completed"){
     document.body.dataset.voiceActive="false";
   }
 
@@ -567,6 +718,347 @@ function updateChatFromEvent(event){
 }
 
 
+/* Structured, visual-only network scan results */
+const scanResultsWindow=document.getElementById("scan-results-window");
+const scanResultsList=document.getElementById("scan-results-list");
+const scanResultsSummary=document.getElementById("scan-results-summary");
+const scanResultsTitle=document.getElementById("scan-results-title");
+const scanResultsSubtitle=document.getElementById("scan-results-subtitle");
+let latestHostScanData=null;
+let latestPortScanData=null;
+let scanResultsTaskId="";
+let scanResultsView="hosts";
+let portScanRunning=false;
+let showNetworkPicker=false;
+
+function closeScanResults(){
+  if(scanResultsWindow) scanResultsWindow.hidden=true;
+  document.body.dataset.scanResultsOpen="false";
+  scanResultsTaskId="";
+}
+
+function scanNode(tag,className,text){
+  const node=document.createElement(tag);
+  if(className) node.className=className;
+  if(text!==undefined) node.textContent=String(text);
+  return node;
+}
+
+function setScanView(view){
+  scanResultsView=view==="ports"?"ports":"hosts";
+  document.querySelectorAll("[data-scan-view]").forEach(button=>{
+    const active=button.dataset.scanView===scanResultsView;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-selected",String(active));
+  });
+  renderScanResultsList();
+}
+
+function appendExactNmapOutput(container,data){
+  if(!container||!data||typeof data!=="object") return;
+  const command=String(data.command||"");
+  const stdout=String(data.stdout||"");
+  const stderr=String(data.stderr||"");
+  if(!command&&!stdout&&!stderr) return;
+  const details=scanNode("details","scan-raw-output");
+  const summary=scanNode("summary","","EXACT NMAP OUTPUT");
+  const body=scanNode("div","scan-raw-body");
+  if(command){
+    body.appendChild(scanNode("div","scan-raw-label","COMMAND"));
+    body.appendChild(scanNode("pre","scan-raw-pre scan-raw-command",command));
+  }
+  if(data.returncode!==undefined&&data.returncode!==null){
+    body.appendChild(scanNode("div","scan-raw-label","EXIT CODE"));
+    body.appendChild(scanNode("pre","scan-raw-pre",String(data.returncode)));
+  }
+  if(stdout){
+    body.appendChild(scanNode("div","scan-raw-label","STDOUT"));
+    body.appendChild(scanNode("pre","scan-raw-pre",stdout));
+  }
+  if(stderr){
+    body.appendChild(scanNode("div","scan-raw-label","STDERR"));
+    body.appendChild(scanNode("pre","scan-raw-pre scan-raw-stderr",stderr));
+  }
+  details.append(summary,body);
+  container.appendChild(details);
+}
+
+function openScanResults(data,taskId=""){
+  if(!data||typeof data!=="object") return;
+  if(data.kind==="host_discovery"){
+    portScanRunning=false;
+    showNetworkPicker=false;
+    latestHostScanData=data;
+    latestPortScanData=null;
+    scanResultsView="hosts";
+  }else if(data.kind==="port_scan"){
+    latestPortScanData=data;
+    if(Array.isArray(data.hosts)&&data.hosts.length){
+      latestHostScanData={
+        kind:"host_discovery",
+        target:data.host_discovery_target||"Previous live-host discovery",
+        hosts:data.hosts,
+        host_count:data.hosts.length,
+        own_ip:data.own_ip||"",
+        summary:data.hosts.length+" live hosts"
+      };
+    }
+    scanResultsView="ports";
+  }else{
+    return;
+  }
+  scanResultsTaskId=String(taskId||"");
+  if(scanResultsWindow) scanResultsWindow.hidden=false;
+  document.body.dataset.scanResultsOpen="true";
+  setScanView(scanResultsView);
+}
+
+function renderNetworkScopePanel(container,data){
+  const panel=scanNode("section","scan-scope-panel");
+  panel.appendChild(scanNode("div","scan-scope-kicker","NETWORK SELECTION & AUTHORIZATION"));
+  const reason=String(data?.scope_message||"No scan was executed. Review the selected range and configured allow-list.");
+  panel.appendChild(scanNode("p","scan-scope-reason",reason));
+
+  const allowed=Array.isArray(data?.authorized_targets)?data.authorized_targets:[];
+  const allowBox=scanNode("div","scan-scope-allowlist");
+  allowBox.appendChild(scanNode("div","scan-scope-label","CURRENT AUTHORIZED TARGETS"));
+  allowBox.appendChild(scanNode("div","scan-scope-values",allowed.length?allowed.join(", "):"Empty allow-list — security tools deny targets by default."));
+  panel.appendChild(allowBox);
+
+  const options=Array.isArray(data?.available_networks)?data.available_networks:[];
+  panel.appendChild(scanNode("div","scan-scope-label","DETECTED LOCAL NETWORKS"));
+  if(!options.length){
+    panel.appendChild(scanNode("div","scan-scope-empty","No safe interface candidate is available. Enter an exact IPv4 CIDR after checking your active interface."));
+  }else{
+    const list=scanNode("div","scan-network-options");
+    options.forEach(option=>{
+      const network=String(option?.network||"").trim();
+      if(!network) return;
+      const row=scanNode("article","scan-network-option");
+      const identity=scanNode("div","scan-network-identity");
+      identity.appendChild(scanNode("b","",String(option.interface||"Interface unknown")));
+      identity.appendChild(scanNode("span","",String(option.address||"")+(option.address?" · ":"")+network));
+      row.appendChild(identity);
+      const authorized=option.authorized===true;
+      row.appendChild(scanNode("span",authorized?"scan-scope-badge allowed":"scan-scope-badge denied",authorized?"AUTHORIZED":"NOT IN SCOPE"));
+      const action=scanNode("button","scan-network-action",authorized?"SCAN THIS NETWORK":"COPY CIDR");
+      action.type="button";
+      action.title=authorized?"Run bounded host discovery on this authorized network":"Copy this CIDR to review and add it to the allow-list only if you are authorized to test it";
+      action.addEventListener("click",async()=>{
+        if(authorized){
+          action.disabled=true;
+          action.textContent="STARTING…";
+          const result=await dispatchDashboardCommand("scan network "+network);
+          if(!result?.accepted&&!result?.busy){
+            action.disabled=false;
+            action.textContent="SCAN THIS NETWORK";
+          }
+          return;
+        }
+        try{
+          await navigator.clipboard.writeText(network);
+          action.textContent="COPIED";
+          panel.querySelector(".scan-scope-feedback")?.remove();
+          panel.appendChild(scanNode("div","scan-scope-feedback","CIDR copied. Add it to JENEFAR_AUTHORIZED_TARGETS only if this is your authorized network, then restart Jenefar."));
+        }catch(_){
+          action.textContent=network;
+          panel.querySelector(".scan-scope-feedback")?.remove();
+          panel.appendChild(scanNode("div","scan-scope-feedback","Copy unavailable. CIDR: "+network+". Add it to JENEFAR_AUTHORIZED_TARGETS only if authorized, then restart Jenefar."));
+        }
+      });
+      row.appendChild(action);
+      list.appendChild(row);
+    });
+    panel.appendChild(list);
+  }
+
+  const hint=scanNode("p","scan-scope-help","Jenefar will not automatically authorize a discovered range. To change scope, edit JENEFAR_AUTHORIZED_TARGETS in the project .env (or security.authorized_targets in config.yaml), then restart and re-check /security/scope.");
+  panel.appendChild(hint);
+  container.appendChild(panel);
+}
+
+function renderScanResultsList(){
+  if(!scanResultsList||!scanResultsSummary) return;
+  scanResultsList.replaceChildren();
+  if(scanResultsView==="hosts"){
+    const data=latestHostScanData;
+    const scanFailed=data?.scan_status==="error";
+    const scanBlocked=data?.scan_status==="blocked";
+    const scanSelectionRequired=data?.scan_status==="selection_required";
+    const requiresGuidance=scanBlocked||scanSelectionRequired;
+    const heading=scanBlocked?"AUTHORIZATION REQUIRED":scanSelectionRequired?"SELECT NETWORK":scanFailed?"SCAN FAILED":"LIVE HOSTS";
+    if(scanResultsTitle) scanResultsTitle.textContent=heading;
+    if(scanResultsSubtitle) scanResultsSubtitle.textContent=scanBlocked
+      ? "The selected network is not authorized. No Nmap command was executed."
+      : scanSelectionRequired
+        ? "Several local interfaces/ranges were detected. Choose the intended authorized network below."
+        : scanFailed
+          ? "Host discovery did not complete. Inspect the reason and any available execution output below."
+          : data ? "Each row is a host that responded to discovery."
+          : "No saved host-discovery result yet.";
+    const statusBadge=document.querySelector(".scan-results-complete");
+    if(statusBadge){
+      statusBadge.classList.toggle("scope-blocked",requiresGuidance||scanFailed);
+      statusBadge.textContent=scanBlocked?"NO SCAN EXECUTED":scanSelectionRequired?"CHOICE REQUIRED":scanFailed?"SCAN FAILED":"RESULT AVAILABLE";
+    }
+    const hosts=Array.isArray(data?.hosts)?data.hosts:[];
+    const target=String(data?.target||(scanSelectionRequired?"Choose a local interface / CIDR":""));
+    const main=scanNode("div","scan-result-summary-main");
+    const countKnown=data?.host_count!==null&&data?.host_count!==undefined;
+    const countLabel=requiresGuidance||scanFailed||!countKnown?"—":data.host_count;
+    main.append(scanNode("span","scan-result-big-number",countLabel));
+    main.append(scanNode("span","scan-result-summary-label",heading));
+    scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",target));
+    const networkChoices=Array.isArray(data?.available_networks)?data.available_networks:[];
+    if(!requiresGuidance&&!scanFailed&&networkChoices.length>1){
+      const pickerToggle=scanNode("button","scan-network-picker-toggle",showNetworkPicker?"HIDE NETWORK OPTIONS":"CHANGE NETWORK / INTERFACE");
+      pickerToggle.type="button";
+      pickerToggle.setAttribute("aria-expanded",String(showNetworkPicker));
+      pickerToggle.addEventListener("click",()=>{
+        showNetworkPicker=!showNetworkPicker;
+        renderScanResultsList();
+      });
+      scanResultsList.appendChild(pickerToggle);
+      if(showNetworkPicker){
+        renderNetworkScopePanel(scanResultsList,{
+          ...data,
+          scope_message:"Choose another detected local interface/range below. Only candidates already inside the configured authorization scope can start a scan."
+        });
+      }
+    }
+    if(!hosts.length){
+      if(requiresGuidance){
+        renderNetworkScopePanel(scanResultsList,data);
+      }else{
+        const empty=scanNode("div","scan-result-empty");
+        if(scanFailed){
+          empty.append(scanNode("b","","Host discovery did not complete."));
+          empty.append(scanNode("span","",String(data?.scope_message||"No verified live-host count is available.")));
+        }else{
+          empty.append(scanNode("div","", "No live hosts were reported by the completed discovery."));
+        }
+        scanResultsList.appendChild(empty);
+      }
+      appendExactNmapOutput(scanResultsList,data);
+      return;
+    }
+    const head=scanNode("div","scan-result-list-head");
+    ["HOST / IP","STATUS","LATENCY","ACTION"].forEach(label=>head.appendChild(scanNode("span","",label)));
+    scanResultsList.appendChild(head);
+    hosts.forEach((host,index)=>{
+      if(!host||!host.ip) return;
+      const row=scanNode("article","scan-host-row");
+      const identity=scanNode("div","scan-host-identity");
+      identity.appendChild(scanNode("span","scan-host-index",String(host.index||index+1).padStart(2,"0")));
+      const identityText=scanNode("div","");
+      identityText.appendChild(scanNode("span","scan-host-ip",host.ip));
+      const detail=[host.vendor,host.mac].filter(Boolean).join(" · ");
+      if(detail) identityText.appendChild(scanNode("span","scan-host-meta",detail));
+      if(host.is_local) identityText.appendChild(scanNode("span","scan-host-local","THIS DEVICE"));
+      identity.appendChild(identityText);
+      row.appendChild(identity);
+
+      const status=scanNode("span","scan-host-up");
+      status.appendChild(scanNode("i",""));
+      status.appendChild(scanNode("span","",host.state||"UP"));
+      row.appendChild(status);
+      row.appendChild(scanNode("span","scan-host-latency scan-host-latency-cell",host.latency||"—"));
+
+      const action=scanNode("button","scan-host-action","SCAN PORTS");
+      action.type="button";
+      action.title="Analyze and scan the top 1000 TCP ports of "+host.ip;
+      action.addEventListener("click",async()=>{
+        if(portScanRunning) return;
+        portScanRunning=true;
+        action.disabled=true;
+        action.textContent="QUEUED…";
+        const result=await dispatchDashboardCommand("scan ports of host "+host.ip);
+        if(!result?.accepted){
+          portScanRunning=false;
+          action.disabled=false;
+          action.textContent="SCAN PORTS";
+        }
+      });
+      row.appendChild(action);
+      scanResultsList.appendChild(row);
+    });
+    appendExactNmapOutput(scanResultsList,data);
+    return;
+  }
+
+  const data=latestPortScanData;
+  if(scanResultsTitle) scanResultsTitle.textContent="PORT SCAN";
+  if(scanResultsSubtitle) scanResultsSubtitle.textContent=data
+    ? "Open and filtered ports are listed; closed TCP ports are counted in the summary."
+    : "Select a live host in the LIVE HOSTS tab to run a focused port scan.";
+  const ports=Array.isArray(data?.ports)?data.ports:[];
+  const main=scanNode("div","scan-result-summary-main");
+  const hostStatus=String(data?.host_status||"UP");
+  const openCount=Number(data?.open_port_count??ports.filter(port=>String(port.state||"").toUpperCase()==="OPEN").length);
+  const filteredCount=Number(data?.filtered_port_count??ports.filter(port=>["FILTERED","OPEN|FILTERED"].includes(String(port.state||"").toUpperCase())).length);
+  const closedCount=data?.closed_port_count;
+  main.append(scanNode("span","scan-result-big-number",data?(hostStatus==="UP"?openCount:"—"):"—"));
+  const resultLabel=!data?"NO SCAN YET":hostStatus==="ERROR"?"SCAN FAILED":hostStatus==="UNREACHABLE"?"HOST UNREACHABLE":hostStatus==="UNKNOWN"?(filteredCount?"REACHABILITY UNKNOWN · "+filteredCount+" FILTERED":"HOST NOT CONFIRMED"):filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
+  main.append(scanNode("span","scan-result-summary-label",resultLabel));
+  const summaryDetails=[data?.target||"No target selected"];
+  if(data&&hostStatus!=="UP") summaryDetails.push(hostStatus==="ERROR"?("EXIT "+data.returncode):hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
+  else if(data&&closedCount!==null&&closedCount!==undefined) summaryDetails.push(closedCount+" CLOSED");
+  scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",summaryDetails.join(" · ")));
+  if(!data){
+    const empty=scanNode("div","scan-result-empty");
+    empty.append(scanNode("b","","No port scan has run yet."));
+    empty.append(scanNode("span","","Open LIVE HOSTS and choose SCAN PORTS beside a host."));
+    scanResultsList.appendChild(empty);
+    return;
+  }
+  if(!ports.length){
+    const empty=scanNode("div","scan-result-empty");
+    if(hostStatus==="ERROR"){
+      empty.append(scanNode("b","","Nmap scan failed (exit code "+data.returncode+")."));
+      empty.append(scanNode("span","","The command output is preserved below. No port findings are inferred from a failed run."));
+    }else if(hostStatus==="UNREACHABLE"){
+      empty.append(scanNode("b","","Host reachability was not confirmed."));
+      empty.append(scanNode("span","","This is not the same as a verified result of zero open ports. Try a fresh host discovery before interpreting the port status."));
+    }else if(hostStatus==="UNKNOWN"&&filteredCount>0){
+      empty.append(scanNode("b","","Filtered ports were reported; host reachability remains uncertain."));
+      empty.append(scanNode("span","","Nmap reported "+filteredCount+" filtered TCP ports, but did not confirm an open/closed TCP response. A filtered state is not proof that the port is open."));
+    }else if(hostStatus!=="UP"){
+      empty.append(scanNode("b","","Host reachability was not confirmed."));
+      empty.append(scanNode("span","","This is not the same as a verified result of zero open ports. Try a fresh host discovery before interpreting the port status."));
+    }else if(closedCount!==null&&closedCount!==undefined){
+      empty.append(scanNode("b","","No open or filtered TCP ports were reported."));
+      empty.append(scanNode("span","","Nmap reported "+closedCount+" closed TCP ports among the top 1000 checked on "+data.target+"."));
+    }else{
+      empty.append(scanNode("b","","No open or filtered TCP ports were reported."));
+      empty.append(scanNode("span","","Nmap did not return individual open or filtered port rows for "+data.target+"."));
+    }
+    scanResultsList.appendChild(empty);
+    appendExactNmapOutput(scanResultsList,data);
+    return;
+  }
+  const head=scanNode("div","scan-result-list-head");
+  ["PORT","STATE","SERVICE","VERSION / DETAIL"].forEach(label=>head.appendChild(scanNode("span","",label)));
+  scanResultsList.appendChild(head);
+  ports.forEach(port=>{
+    const row=scanNode("article","scan-port-row");
+    row.appendChild(scanNode("span","scan-port-number",String(port.port)+"/"+String(port.protocol||"tcp")));
+    row.appendChild(scanNode("span","scan-port-protocol",port.state||"OPEN"));
+    row.appendChild(scanNode("span","scan-port-service",port.service||"unknown service"));
+    row.appendChild(scanNode("span","scan-port-version",port.version||"Version not identified"));
+    scanResultsList.appendChild(row);
+  });
+  appendExactNmapOutput(scanResultsList,data);
+}
+
+document.getElementById("scan-results-close")?.addEventListener("click",closeScanResults);
+document.querySelectorAll("[data-scan-view]").forEach(button=>{
+  button.addEventListener("click",()=>setScanView(button.dataset.scanView||"hosts"));
+});
+window.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&scanResultsWindow&&!scanResultsWindow.hidden) closeScanResults();
+});
+
+
 /* Browser voice */
 const micButton=document.getElementById("mic-button");
 const browserSpeechReady = "speechSynthesis" in window;
@@ -585,6 +1077,30 @@ let restartTimer=null;
 let restartDelay=450;
 let browserSpeechActive=false;
 let browserAudio=null;
+let browserAudioGeneration=0;
+let browserSpeechGeneration=0;
+const playedSpeechEventKeys=new Set();
+const playedSpeechEventOrder=[];
+function speechEventWasAlreadyHandled(event){
+  const state=String(event?.state||"");
+  if(state!=="speaking"&&state!=="speaking_fallback") return false;
+  const taskId=String(event?.task_id||"");
+  const text=String(event?.text||"");
+  const audio=String(event?.audio_b64||"");
+  // EventSource reconnects replay the controller's current event. Use a stable
+  // task/content key so that replay doesn't restart an utterance mid-speech.
+  const payloadKey=audio
+    ? "audio:"+String(event?.audio_mime||"")+"|"+audio.length+"|"+audio.slice(0,48)+"|"+audio.slice(-24)
+    : "text:"+text;
+  const key=state+"|"+taskId+"|"+payloadKey;
+  if(playedSpeechEventKeys.has(key)) return true;
+  playedSpeechEventKeys.add(key);
+  playedSpeechEventOrder.push(key);
+  while(playedSpeechEventOrder.length>128){
+    playedSpeechEventKeys.delete(playedSpeechEventOrder.shift());
+  }
+  return false;
+}
 let fallbackMode=false;
 let fallbackStream=null;
 let fallbackContext=null;
@@ -641,6 +1157,17 @@ function stopFallbackMonitor(releaseStream=false){
   }
 }
 
+function resumeVoiceIfAssistantIdle(){
+  const taskInProgress=["listening","queued","thinking","result","waiting_approval","speaking","speaking_fallback","error"].includes(currentState);
+  const audioPlaying=browserSpeechActive
+    || Boolean(browserAudio&&!browserAudio.ended)
+    || ("speechSynthesis" in window&&window.speechSynthesis.speaking);
+  if(taskInProgress||audioPlaying) return;
+  voiceLocked=false;
+  setMicButton(micEnabled,false);
+  resumeBrowserVoice();
+}
+
 async function transcribeCapturedAudio(blob,durationMs){
   if(!micEnabled||voiceLocked||!blob||blob.size<1200||durationMs<550) return;
   fallbackSubmitting=true;
@@ -671,10 +1198,11 @@ async function transcribeCapturedAudio(blob,durationMs){
     }
     if(result?.busy){
       fallbackSubmitting=false;
-      voiceLocked=false;
+      // Do not unlock during a still-running task. If its completion event
+      // already arrived while STT was pending, the helper safely resumes now.
       setVoiceInputStatus("Jenefar is busy — mic will resume after reply",true);
       setMicButton(true,true);
-      resumeBrowserVoice();
+      resumeVoiceIfAssistantIdle();
       return;
     }
     if(result?.accepted){
@@ -831,20 +1359,23 @@ async function sendBrowserTranscript(text){
       setMicButton(false, true);
       return;
     }
-    if(result?.accepted){
-      setVoiceInputStatus("Jawaab aa raha hai",true);
-      setMicButton(true, false);
-    }
     if(result?.exit){
       micEnabled=false;
       voiceLocked=true;
       try{recognition?.stop();}catch(_){}
       setVoiceInputStatus("VOICE OFF",false);
       setMicButton(false, false);
-    }else{
-      voiceLocked=false;
-      resumeBrowserVoice();
+      return;
     }
+    if(result?.accepted){
+      setVoiceInputStatus("Jawaab aa raha hai",true);
+      setMicButton(true, true);
+      // Keep the microphone locked while the server thinks and synthesizes TTS.
+      // apply() releases it only after assistant audio/speech has actually ended.
+      return;
+    }
+    voiceLocked=false;
+    resumeBrowserVoice();
   }catch(error){
     addActivity({state:"error",text:"Voice request failed: "+error});
     setVoiceInputStatus("VOICE CONNECTION ERROR",false);
@@ -1040,8 +1571,11 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
 async function dispatchDashboardCommand(command){
   const clean=String(command||"").trim();
   if(!clean) return;
-  // Typed dashboard commands must not depend on the microphone being enabled.
-  // Send them directly to the same browser voice endpoint.
+  // The previous result window is transient; the new user request owns the stage.
+  closeScanResults();
+  // Typed commands can arrive while the mic is enabled. Stop capture before
+  // sending so Jenefar cannot transcribe its own answer as a fresh user task.
+  pauseBrowserVoice();
   const log=document.getElementById("chat-log");
   try{
     const response=await fetch("/voice/text",{
@@ -1051,6 +1585,14 @@ async function dispatchDashboardCommand(command){
     });
     const result=await response.json();
     if(result?.error) throw new Error(result.error);
+    if(result?.exit){
+      micEnabled=false;
+      voiceLocked=true;
+      try{recognition?.stop();}catch(_){}
+      setVoiceInputStatus("VOICE OFF",false);
+      setMicButton(false,false);
+      return result;
+    }
     if(log && result?.accepted){
       const bot=document.createElement("div");
       bot.className="chat-row bot";
@@ -1060,8 +1602,16 @@ async function dispatchDashboardCommand(command){
       log.appendChild(bot);
       log.scrollTop=log.scrollHeight;
     }
+    if(result?.accepted || result?.busy){
+      // Keep capture locked until the corresponding speaking/completed event.
+      return result;
+    }
+    voiceLocked=false;
+    resumeBrowserVoice();
     return result;
   }catch(error){
+    voiceLocked=false;
+    resumeBrowserVoice();
     addActivity({state:"error",text:"Dashboard command failed: "+error});
     return null;
   }
@@ -1204,17 +1754,12 @@ window.addEventListener("jenefar-realtime-start",()=>{
 
 
 document.getElementById("media-pause")?.addEventListener("click",()=>{
-  if(browserAudio){
-    try{browserAudio.pause();}catch(_){}
-    try{URL.revokeObjectURL(browserAudio.dataset?.url||"");}catch(_){}
-    browserAudio=null;
-  }
-  if("speechSynthesis" in window){
-    window.speechSynthesis.cancel();
-    browserSpeechActive=false;
-    voiceLocked=false;
-    resumeBrowserVoice();
-  }
+  stopBrowserAudio();
+  browserSpeechGeneration+=1;
+  if(browserSpeechReady) window.speechSynthesis.cancel();
+  browserSpeechActive=false;
+  voiceLocked=false;
+  resumeBrowserVoice();
 });
 
 
@@ -1511,3 +2056,53 @@ reaConnectButton?.addEventListener("click",async()=>{
 refreshReaStatus();
 setInterval(refreshReaStatus,10000);
 refreshModelStatus();
+
+
+/* Dynamic right-rail layout: use measured panel heights instead of brittle fixed
+   top coordinates. The CSS variables only affect desktop/tablet-width layouts. */
+(function setupDynamicRightRail() {
+  const stage = document.getElementById("stage");
+  const systemCard = document.querySelector(".system-card");
+  const commandStack = document.querySelector(".command-stack");
+  const workspace = document.getElementById("activity-panel");
+  if (!stage || !systemCard || !commandStack || !workspace) return;
+
+  let framePending = false;
+  const layout = () => {
+    if (window.innerWidth <= 1000) {
+      stage.style.removeProperty("--jenefar-right-commands-top");
+      stage.style.removeProperty("--jenefar-right-workspace-top");
+      return;
+    }
+
+    const stageTop = stage.getBoundingClientRect().top;
+    const systemBottom = systemCard.getBoundingClientRect().bottom - stageTop;
+    const commandTop = Math.ceil(systemBottom + 12);
+    stage.style.setProperty("--jenefar-right-commands-top", commandTop + "px");
+
+    // Element height is independent of its top coordinate, so this measurement
+    // remains stable while the right rail is being repositioned.
+    const commandHeight = commandStack.getBoundingClientRect().height;
+    const workspaceTop = Math.ceil(commandTop + commandHeight + 12);
+    stage.style.setProperty("--jenefar-right-workspace-top", workspaceTop + "px");
+  };
+
+  const scheduleLayout = () => {
+    if (framePending) return;
+    framePending = true;
+    requestAnimationFrame(() => {
+      framePending = false;
+      layout();
+    });
+  };
+
+  window.addEventListener("resize", scheduleLayout, { passive: true });
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(scheduleLayout);
+    observer.observe(systemCard);
+    observer.observe(commandStack);
+  }
+  scheduleLayout();
+  // The initial font/layout pass can change card height after the first frame.
+  window.addEventListener("load", scheduleLayout, { once: true });
+})();

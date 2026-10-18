@@ -40,7 +40,14 @@ class LLMClient:
         self.local = LocalLLMClient(model_role=self.default_role)
 
     def available(self) -> bool:
-        return any(self.providers.configured(name) for name in self.providers.order())
+        if any(self.providers.configured(name) for name in self.providers.order()):
+            return True
+        # Local-only installations must still be able to run the orchestrator.
+        # Detection is intentionally deferred until no cloud provider is configured.
+        try:
+            return self.local.detect(model_role=self.default_role) is not None
+        except Exception:
+            return False
 
     def selected_model(self, model_role: str | None = None) -> tuple[str, str]:
         role = (model_role or self.default_role or "fast").strip().lower()
@@ -90,6 +97,48 @@ class LLMClient:
                 },
             })
         return converted
+
+    @staticmethod
+    def _assistant_chat_message(message: Any) -> dict[str, Any]:
+        """Preserve provider-specific fields on tool calls during chat history replay.
+
+        Gemini's OpenAI-compatible endpoint can return thought signatures on
+        tool-call records. Rebuilding those records from only id/name/arguments
+        drops the signature and makes the follow-up function response fail.
+        """
+        for method_name in ("model_dump", "dict"):
+            dumper = getattr(message, method_name, None)
+            if not callable(dumper):
+                continue
+            try:
+                raw = dumper(exclude_none=True)
+            except TypeError:
+                try:
+                    raw = dumper()
+                except Exception:
+                    continue
+            except Exception:
+                continue
+            if isinstance(raw, dict):
+                preserved = dict(raw)
+                preserved["role"] = "assistant"
+                return preserved
+
+        return {
+            "role": "assistant",
+            "content": getattr(message, "content", None),
+            "tool_calls": [
+                {
+                    "id": getattr(call, "id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": getattr(getattr(call, "function", None), "name", ""),
+                        "arguments": getattr(getattr(call, "function", None), "arguments", "{}"),
+                    },
+                }
+                for call in (getattr(message, "tool_calls", None) or [])
+            ],
+        }
 
     @staticmethod
     def _tool_result(call: Any, output: str) -> dict[str, Any]:
@@ -162,8 +211,14 @@ class LLMClient:
                 if getattr(item, "type", None) == "function_call"
             ]
             if not calls:
+                answer = str(getattr(response, "output_text", "") or "").strip()
+                if not answer:
+                    # An empty Responses API result is a provider failure, not a
+                    # successful answer. Raising allows failover to another cloud
+                    # provider and then the local Ollama model.
+                    raise RuntimeError(f"{provider} returned an empty text response.")
                 return LLMResponse(
-                    text=response.output_text or "The model returned no text.",
+                    text=answer,
                     provider=provider,
                     response_id=getattr(response, "id", None),
                     model=model,
@@ -271,8 +326,11 @@ class LLMClient:
             tool_calls = getattr(message, "tool_calls", None) or []
 
             if not tool_calls:
+                answer = str(getattr(message, "content", None) or "").strip()
+                if not answer:
+                    raise RuntimeError(f"{provider} returned an empty chat response.")
                 return LLMResponse(
-                    text=getattr(message, "content", None) or "The model returned no text.",
+                    text=answer,
                     provider=provider,
                     response_id=getattr(response, "id", None),
                     model=model,
@@ -288,21 +346,7 @@ class LLMClient:
                     model_role=model_role,
                 )
 
-            assistant_message = {
-                "role": "assistant",
-                "content": getattr(message, "content", None),
-                "tool_calls": [
-                    {
-                        "id": getattr(call, "id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": getattr(getattr(call, "function", None), "name", ""),
-                            "arguments": getattr(getattr(call, "function", None), "arguments", "{}"),
-                        },
-                    }
-                    for call in tool_calls
-                ],
-            }
+            assistant_message = self._assistant_chat_message(message)
             messages.append(assistant_message)
             pending_tools: list[dict[str, str]] = []
 
@@ -385,6 +429,105 @@ class LLMClient:
             max_tool_rounds=max_tool_rounds, model=model, model_role=model_role,
         )
 
+    @staticmethod
+    def _select_local_tools(prompt: str, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep local-model context small by advertising tools only for action tasks."""
+        if not tools:
+            return []
+        mode = os.getenv("JENEFAR_LOCAL_LLM_TOOL_MODE", "auto").strip().lower()
+        if mode in {"all", "always"}:
+            return tools
+        if mode in {"none", "never", "off", "false", "0"}:
+            return []
+
+        task = str(prompt or "").casefold()
+        categories = [
+            (
+                ("\\brea\\b", "\\bmcp\\b", "reverse engineer", "reverse-engineer"),
+                ("rea_",),
+            ),
+            (
+                ("repository", "\\brepo\\b", "project", "source code", "codebase", "file", "folder",
+                 "\\bgit\\b", "commit", "pull request", "pytest", "test suite", "debug", "refactor",
+                 "edit code", "modify code", "fix code", "fix this bug", "write code", "update code"),
+                ("repository_", "workspace_", "file_", "python_", "local_development_", "git_", "terminal_execute"),
+            ),
+            (
+                ("search the web", "web search", "search online", "latest news", "website", "url",
+                 "fetch url", "github repository", "look this up online"),
+                ("research_", "github_", "web_", "fetch_", "search_web", "url_"),
+            ),
+            (
+                ("desktop", "screenshot", "screen", "window", "gui", "click", "open app", "focus app",
+                 "move window", "browser tab"),
+                ("desktop_", "window_", "browser_", "screen_", "gui_"),
+            ),
+            (
+                ("nmap", "masscan", "rustscan", "amass", "subfinder", "gobuster",
+                 "ffuf", "feroxbuster", "whatweb", "nikto", "wpscan", "sqlmap",
+                 "hydra", "hashcat", "john the ripper", "aircrack", "metasploit",
+                 "msfconsole", "burpsuite", "zaproxy", "impacket", "responder",
+                 "bloodhound", "mimikatz", "linpeas", "winpeas", "wireshark",
+                 "tcpdump", "volatility", "binwalk", "searchsploit",
+                 "vulnerability", "penetration test", "pentest", "kali",
+                 "security tool", "kali tool", "tool catalog", "tool --help",
+                 "new kali tool", "installed tools", "network scanning",
+                 "exploit", "security scan", "scan this target", "scan my target",
+                 "scan the target", "authorized target", "port scan", "network scan",
+                 "subnet scan", "scan ports", "bug bounty",
+                 "\\bscan\\b.*\\b(ip|host|target|network|subnet|ports?)\\b",
+                 "\\b(scan|nmap)\\b.*(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?"),
+                ("scope_check", "kali_", "security_", "bugbounty_", "cybersecurity_"),
+            ),
+            (
+                ("remember", "memory", "previous conversation", "saved note", "knowledge graph"),
+                ("memory_", "knowledge_", "note_", "session_"),
+            ),
+            (
+                ("robot", "arduino", "mqtt", "ros2", "serial port", "sensor"),
+                ("robot_", "mqtt_", "ros2_"),
+            ),
+            (
+                ("play music", "youtube", "local mp3", "recognize this song", "whatsapp"),
+                ("browser_play_youtube", "play_local_mp3", "recognize_song", "whatsapp_"),
+            ),
+            (
+                ("schedule", "automation", "remind me", "timer", "event trigger"),
+                ("automation_", "schedule_", "event_"),
+            ),
+        ]
+
+        matching_prefixes: list[str] = []
+        for markers, prefixes in categories:
+            import re
+            if any(re.search(marker, task) for marker in markers):
+                matching_prefixes.extend(prefixes)
+        if not matching_prefixes:
+            # Conversational/explanatory prompts should not send the entire tool
+            # catalog to a 27B local model. This materially reduces prompt size
+            # and avoids local inference timeouts for ordinary typed questions.
+            return []
+
+        selected = [
+            tool for tool in tools
+            if any(str(tool.get("name", "")).casefold().startswith(prefix) for prefix in matching_prefixes)
+        ]
+        if len(selected) <= 12:
+            return selected
+
+        # For broad requests, put tools whose names overlap the actual task first,
+        # and cap the catalog size to reduce local prompt processing time.
+        import re
+        words = {
+            word for word in re.findall(r"[a-z][a-z0-9_]{2,}", task)
+            if word not in {"please", "could", "would", "should", "this", "that", "with", "from", "have", "into"}
+        }
+        def score(tool: dict[str, Any]) -> int:
+            name = str(tool.get("name", "")).casefold().replace("_", " ")
+            description = str(tool.get("description", "")).casefold()
+            return sum(3 for word in words if word in name) + sum(1 for word in words if word in description)
+        return sorted(selected, key=score, reverse=True)[:12]
+
     def _complete_local(
         self,
         prompt: str,
@@ -395,13 +538,14 @@ class LLMClient:
         max_tool_rounds: int,
         model_role: str,
     ) -> LLMResponse:
-        tools = (
+        all_tools = (
             tool_broker.schemas(
                 allow_action_tools=allow_action_tools,
                 include_confirmation_tools=True,
             )
             if tool_broker is not None else []
         )
+        tools = self._select_local_tools(prompt, all_tools)
         text, pending = self.local.complete(
             prompt=prompt, instructions=instructions, tools=tools,
             tool_broker=tool_broker, max_tool_rounds=max_tool_rounds,
@@ -461,7 +605,22 @@ class LLMClient:
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
-                    if is_retryable_provider_error(exc):
+                    quota_exhausted = is_quota_exhausted_provider_error(exc)
+                    retryable = is_retryable_provider_error(exc)
+                    # Provider failures used to be hidden when the final local
+                    # fallback also failed, making invalid model IDs, 429s and
+                    # exhausted keys indistinguishable from an Ollama timeout.
+                    classification = (
+                        "quota exhausted" if quota_exhausted
+                        else "transient/retryable" if retryable
+                        else "provider error"
+                    )
+                    print(
+                        f"[JENEFAR] Online LLM provider {provider}/{model} failed "
+                        f"({classification}): {error[:700]}. "
+                        "Trying the next configured provider."
+                    )
+                    if retryable:
                         if is_quota_exhausted_provider_error(exc):
                             try:
                                 quota_cooldown = float(
@@ -482,6 +641,16 @@ class LLMClient:
         online_error = "; ".join(failures) if failures else (
             "internet unavailable" if not online else "no configured online provider"
         )
+        if failures:
+            print(
+                "[JENEFAR] All configured online LLM providers failed; switching to local fallback. "
+                + online_error[:1200]
+            )
+        elif online and not any(self.providers.configured(name) for name in provider_order):
+            print(
+                "[JENEFAR] Internet is available, but no provider in "
+                f"JENEFAR_PROVIDER_ORDER={','.join(provider_order)} has a configured API key."
+            )
 
         if os.getenv("JENEFAR_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {
             "1", "true", "yes", "on"
@@ -509,9 +678,34 @@ class LLMClient:
                 model_role=selected_role,
             )
         except Exception as exc:
+            local_error = f"{type(exc).__name__}: {exc}"
+            # Keep full diagnostics in the terminal/logs, but do not make the
+            # assistant read a giant provider quota traceback aloud to the user.
+            print(
+                "[JENEFAR] Local model fallback failed after cloud-provider "
+                f"failover: {local_error}"
+            )
+            lowered = local_error.casefold()
+            if "timed out" in lowered or "timeout" in lowered:
+                message = (
+                    "Cloud AI providers se response nahi mila aur local model bhi timeout ho gaya. "
+                    "Jenefar ab ek compact retry aur, available ho to, installed smaller Ollama model "
+                    "try karta hai. Agar yeh message phir aaye to ek baar 'ollama pull qwen3:8b' "
+                    "chalayein; yeh local model hai aur API credits use nahi karta. "
+                    "Terminal mein har cloud provider ki asli error bhi ab dikh jayegi."
+                )
+            elif "empty answer" in lowered or "returned an empty" in lowered:
+                message = (
+                    "Local model ne khaali response diya. Jenefar ne direct-answer mode "
+                    "try kiya, lekin is model/API combination se visible answer nahi mila."
+                )
+            else:
+                message = (
+                    "Abhi online providers aur local AI dono se response nahi mil paaya. "
+                    "Technical detail terminal mein [JENEFAR] Local model fallback failed ke neeche hai."
+                )
             return LLMResponse(
-                f"Online providers unavailable ({online_error}); "
-                f"local model unavailable ({type(exc).__name__}: {exc}).",
+                message,
                 "offline_unavailable",
                 model_role=selected_role,
             )

@@ -21,6 +21,48 @@ def test_rea_bridge_defaults_to_enabled_with_official_server(monkeypatch):
     client.close()
 
 
+def test_rea_bridge_uses_documented_npx_arguments_from_existing_env(monkeypatch):
+    monkeypatch.setenv("JENEFAR_REA_ENABLED", "true")
+    monkeypatch.setenv("JENEFAR_REA_COMMAND", "npx")
+    monkeypatch.setenv("JENEFAR_REA_ARGS", "-y,rea-agents@6.5.0,mcp")
+    client = ReaMCPClient()
+    assert client.args == ["-y", "rea-agents@6.5.0", "mcp"]
+    client.close()
+
+
+def test_rea_request_ends_with_real_newline_for_stdio_framing():
+    import os
+    from types import SimpleNamespace
+
+    client = ReaMCPClient()
+    input_read, input_write = os.pipe()
+    output_read, output_write = os.pipe()
+    stdin = os.fdopen(input_write, "wb", buffering=0)
+    stdout = os.fdopen(output_read, "rb", buffering=0)
+    client._process = SimpleNamespace(
+        stdin=stdin,
+        stdout=stdout,
+        poll=lambda: None,
+    )
+    try:
+        os.write(
+            output_write,
+            b'{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{}}}\n',
+        )
+        result = client._request("initialize", {})
+        written = os.read(input_read, 4096)
+        assert result["serverInfo"] == {}
+        assert written.endswith(b"\n")
+        assert json.loads(written.decode("utf-8"))["method"] == "initialize"
+    finally:
+        client._process = None
+        stdin.close()
+        stdout.close()
+        os.close(input_read)
+        os.close(output_write)
+        client.close()
+
+
 def test_rea_bridge_can_be_disabled(monkeypatch):
     monkeypatch.setenv("JENEFAR_REA_ENABLED", "false")
     client = ReaMCPClient()

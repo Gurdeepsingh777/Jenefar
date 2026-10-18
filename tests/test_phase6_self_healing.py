@@ -48,6 +48,57 @@ def test_security_dispatch_is_not_retried():
     assert attempts["count"] == 1
 
 
+def test_agent_dispatch_requires_explicit_read_only_classification():
+    runtime = SelfHealingRuntime(policy=RetryPolicy(max_attempts=2, base_delay_seconds=0, max_delay_seconds=0))
+    attempts = {"count": 0}
+
+    def operation():
+        attempts["count"] += 1
+        if attempts["count"] in {1, 2}:
+            raise TimeoutError("temporary timeout")
+        return "ok"
+
+    with pytest.raises(TimeoutError):
+        runtime.run("agent_dispatch", operation)
+
+    assert attempts["count"] == 1
+    assert runtime.health.retries == 0
+
+    assert runtime.run("agent_dispatch", operation, metadata={"retry_safe": True}) == "ok"
+    assert attempts["count"] == 3
+    assert runtime.health.retries == 1
+
+
+def test_non_transient_failure_does_not_open_circuit():
+    runtime = SelfHealingRuntime(
+        policy=RetryPolicy(max_attempts=1, base_delay_seconds=0, max_delay_seconds=0),
+        circuit_threshold=1,
+    )
+
+    with pytest.raises(ValueError):
+        runtime.run("research_fetch", lambda: (_ for _ in ()).throw(ValueError("invalid response")))
+
+    assert not runtime.health.circuit_open
+    assert runtime.health.non_retryable_failures == 1
+
+
+def test_security_failures_do_not_open_global_transient_circuit():
+    runtime = SelfHealingRuntime(
+        policy=RetryPolicy(max_attempts=3, base_delay_seconds=0, max_delay_seconds=0),
+        circuit_threshold=1,
+    )
+
+    with pytest.raises(ConnectionError):
+        runtime.run(
+            "agent_dispatch",
+            lambda: (_ for _ in ()).throw(ConnectionError("connection reset")),
+            metadata={"security_action": True},
+        )
+
+    assert not runtime.health.circuit_open
+    assert runtime.health.retries == 0
+
+
 def test_circuit_opens_after_repeated_failures():
     runtime = SelfHealingRuntime(
         policy=RetryPolicy(max_attempts=1, base_delay_seconds=0, max_delay_seconds=0),
