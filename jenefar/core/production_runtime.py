@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from jenefar.evaluation.benchmark import BenchmarkRunner
+from jenefar.evaluation.trace import redact_sensitive
 from jenefar.execution.task_graph import TaskGraph
 from jenefar.memory.manager_v2 import MemoryManagerV2
 from jenefar.observability.runtime_metrics import RuntimeMetrics
@@ -39,7 +40,7 @@ class ProductionRuntime:
             "type": "task_started",
             "task_id": task_id,
             "agent": agent,
-            "event": task[:512],
+            "event": redact_sensitive(task[:512]),
         })
 
     def task_finished(
@@ -61,7 +62,7 @@ class ProductionRuntime:
             "agent": agent,
             "provider": provider,
             "state": state,
-            "event": error[:512],
+            "event": redact_sensitive(error[:512]),
         })
 
     def remember(self, content: str, *, kind: str = "semantic", importance: float = 0.5, provenance: str = "runtime", tags: tuple[str, ...] = ()):
