@@ -156,3 +156,19 @@ def test_recent_ip_response_echo_does_not_retrigger_ip_lookup():
     assert bridge._is_recent_assistant_ip_echo("check my ip")
     assert not bridge._is_recent_assistant_ip_echo("scan my network with nmap")
 
+def test_browser_audio_is_rejected_as_busy_before_stt_when_task_is_running():
+    from jenefar.voice.browser import BrowserVoiceBridge
+
+    class RunningTask:
+        def done(self):
+            return False
+
+    bridge = object.__new__(BrowserVoiceBridge)
+    bridge._active_task = RunningTask()
+
+    result = bridge.handle_audio(b"not-needing-decode", "audio/webm")
+
+    assert result["busy"] is True
+    assert result["reason"] == "assistant_busy"
+    assert result["accepted"] is False
+
