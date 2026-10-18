@@ -653,6 +653,10 @@ class BrowserVoiceBridge:
         strict = os.getenv("JENEFAR_REQUIRE_WAKE_WORD", "").strip().lower() in {
             "1", "true", "yes"
         }
+        production = getattr(self.orchestrator, "production", None)
+        voice_session = getattr(production, "voice", None)
+        if voice_session is not None:
+            voice_session.begin(task_id, raw)
 
         try:
             if self.orchestrator.state.name == "SLEEPING":
@@ -735,6 +739,9 @@ class BrowserVoiceBridge:
             )
             if not audio_b64:
                 self._publish("speaking_fallback", error_text, task_id)
+        finally:
+            if voice_session is not None:
+                voice_session.finish()
 
     def _speech_loop(self) -> None:
         # This worker only generates browser-playable audio and publishes it.
