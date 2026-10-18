@@ -370,10 +370,10 @@ def test_approved_host_discovery_returns_summary_and_clears_pending_workflow():
 
     pending_id = "b" * 32
     stdout = (
-        "Starting Nmap 7.95\\n"
-        "Nmap scan report for 192.168.29.1\\n"
-        "Host is up.\\n"
-        "Nmap done: 256 IP addresses (1 host up) scanned in 1.02 seconds\\n"
+        "Starting Nmap 7.95\n"
+        "Nmap scan report for 192.168.29.1\n"
+        "Host is up.\n"
+        "Nmap done: 256 IP addresses (1 host up) scanned in 1.02 seconds\n"
     )
 
     class FakeHostBroker:
