@@ -1642,6 +1642,114 @@ document.getElementById("dock-vision")?.addEventListener("click",()=>document.ge
 document.getElementById("dock-chat")?.addEventListener("click",()=>document.getElementById("chat-input")?.focus());
 
 setupActivityFilters();
+
+/* Production runtime status, persistent task history and cooperative cancellation. */
+const runtimeOpsStatus=document.getElementById("runtime-ops-status");
+const runtimeHistoryList=document.getElementById("runtime-history-list");
+const runtimeHistorySearch=document.getElementById("runtime-history-search");
+const runtimeHistoryState=document.getElementById("runtime-history-state");
+const runtimeRefreshButton=document.getElementById("runtime-ops-refresh");
+const runtimeCancelButton=document.getElementById("runtime-ops-cancel");
+let runtimeHistoryTimer=null;
+let runtimeHistoryRequest=0;
+function runtimeOpsNode(tag,className,text){
+  const node=document.createElement(tag);
+  if(className) node.className=className;
+  if(text!==undefined) node.textContent=String(text);
+  return node;
+}
+function formatRuntimeDuration(value){
+  const seconds=Number(value);
+  if(!Number.isFinite(seconds)||seconds<0) return "—";
+  if(seconds>=60) return Math.floor(seconds/60)+"m "+Math.round(seconds%60)+"s";
+  return seconds.toFixed(1)+"s";
+}
+function renderRuntimeHistory(payload){
+  if(!runtimeHistoryList) return;
+  runtimeHistoryList.replaceChildren();
+  const items=Array.isArray(payload?.items)?payload.items:[];
+  if(!items.length){
+    runtimeHistoryList.appendChild(runtimeOpsNode("div","runtime-history-empty","No matching persisted tasks."));
+    return;
+  }
+  for(const item of items){
+    const row=runtimeOpsNode("article","runtime-history-item");
+    const top=runtimeOpsNode("div","runtime-history-item-top");
+    top.appendChild(runtimeOpsNode("span","runtime-history-state state-"+String(item.state||"unknown").replace(/[^a-z0-9_-]/gi,""),String(item.state||"UNKNOWN").replaceAll("_"," ").toUpperCase()));
+    top.appendChild(runtimeOpsNode("span","runtime-history-duration",formatRuntimeDuration(Number(item.elapsed_ms||0)/1000)));
+    const task=runtimeOpsNode("div","runtime-history-task",item.task||"Untitled task");
+    const meta=runtimeOpsNode("div","runtime-history-meta",[item.agent,item.provider,item.task_id].filter(Boolean).join(" · "));
+    const reason=String(item.reason||"").trim();
+    row.append(top,task,meta);
+    if(reason) row.appendChild(runtimeOpsNode("div","runtime-history-reason",reason));
+    runtimeHistoryList.appendChild(row);
+  }
+}
+async function refreshRuntimeHistory(){
+  const requestId=++runtimeHistoryRequest;
+  if(runtimeOpsStatus) runtimeOpsStatus.textContent="Refreshing runtime…";
+  try{
+    const response=await fetch("/runtime/status?ts="+Date.now(),{cache:"no-store"});
+    const snapshot=await response.json();
+    if(!response.ok) throw new Error(snapshot?.error||("Runtime status HTTP "+response.status));
+    const current=snapshot.current||{};
+    const state=String(current.state||"idle").replaceAll("_"," ").toUpperCase();
+    const task=String(current.task||"").trim();
+    const remaining=current.remaining_seconds==null?"":" · "+formatRuntimeDuration(current.remaining_seconds)+" left";
+    const agent=current.agent?" · "+current.agent:"";
+    const provider=current.provider?" · "+current.provider:"";
+    const taskId=current.task_id?" · #"+current.task_id:"";
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent=state+(taskId||"")+agent+provider+remaining+(task?" — "+task.slice(0,180):"");
+    const activeState=String(current.state||"").toLowerCase();
+    if(runtimeCancelButton) runtimeCancelButton.disabled=!["thinking","running"].includes(activeState);
+  }catch(error){
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent="Runtime status unavailable: "+String(error?.message||error);
+    if(runtimeCancelButton) runtimeCancelButton.disabled=true;
+  }
+  try{
+    const params=new URLSearchParams({limit:"40"});
+    const query=String(runtimeHistorySearch?.value||"").trim();
+    const state=String(runtimeHistoryState?.value||"").trim();
+    if(query) params.set("search",query.slice(0,200));
+    if(state) params.set("state",state);
+    const response=await fetch("/runtime/tasks?"+params.toString()+"&ts="+Date.now(),{cache:"no-store"});
+    const payload=await response.json();
+    if(!response.ok) throw new Error(payload?.error||("Task history HTTP "+response.status));
+    if(requestId===runtimeHistoryRequest) renderRuntimeHistory(payload);
+  }catch(error){
+    if(requestId===runtimeHistoryRequest&&runtimeHistoryList){
+      runtimeHistoryList.replaceChildren(runtimeOpsNode("div","runtime-history-empty","Could not load task history: "+String(error?.message||error)));
+    }
+  }
+}
+runtimeRefreshButton?.addEventListener("click",refreshRuntimeHistory);
+runtimeHistoryState?.addEventListener("change",refreshRuntimeHistory);
+let runtimeSearchDebounce=null;
+runtimeHistorySearch?.addEventListener("input",()=>{
+  if(runtimeSearchDebounce!==null) clearTimeout(runtimeSearchDebounce);
+  runtimeSearchDebounce=setTimeout(refreshRuntimeHistory,250);
+});
+runtimeCancelButton?.addEventListener("click",async()=>{
+  if(!runtimeCancelButton||runtimeCancelButton.disabled) return;
+  runtimeCancelButton.disabled=true;
+  try{
+    const response=await fetch("/runtime/cancel",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({reason:"Cancelled from runtime operations console"})
+    });
+    const payload=await response.json();
+    if(!response.ok) throw new Error(payload?.error||("Cancel HTTP "+response.status));
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent=payload.cancelled?"Cancellation requested for active task.":String(payload.reason||"No active task to cancel.");
+  }catch(error){
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent="Cancellation request failed: "+String(error?.message||error);
+  }finally{
+    refreshRuntimeHistory();
+  }
+});
+refreshRuntimeHistory();
+runtimeHistoryTimer=setInterval(refreshRuntimeHistory,5000);
+
 window.addEventListener("resize",resize);
 resize();
 connect();
