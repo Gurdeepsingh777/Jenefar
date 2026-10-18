@@ -580,7 +580,7 @@ class JenefarOrchestrator:
             lines.append("Public IPv4: " + public_v4 + " (ipify HTTPS lookup)")
         else:
             lines.append("Public IPv4: abhi fetch nahi ho saka; internet/service unavailable ho sakti hai.")
-        lines.append("Ye sirf IP information check tha—koi Nmap, port scan ya subnet scan nahi chalaya.")
+        lines.append("Yeh sirf local/public IP address lookup tha.")
         return "\n".join(lines)
 
     @staticmethod
