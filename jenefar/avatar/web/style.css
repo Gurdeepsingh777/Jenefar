@@ -1403,3 +1403,16 @@ body.vrm-loaded #photo-avatar{display:none}
   .scan-host-row{padding:10px 8px}.scan-host-identity{gap:7px}.scan-host-index{width:25px;height:27px}.scan-host-ip{font-size:10px}.scan-host-action{padding:7px 6px;font-size:7px}
   .scan-results-footer{align-items:flex-start;flex-direction:column;gap:4px}.scan-result-summary-target{max-width:48%;font-size:9px}
 }
+
+
+/* Exact, expandable Nmap output: keep stdout/stderr verbatim and readable. */
+.scan-raw-output{margin:13px 0 4px;border:1px solid rgba(128,201,242,.18);border-radius:12px;background:rgba(1,8,19,.24);overflow:hidden}
+.scan-raw-output>summary{list-style:none;display:flex;align-items:center;gap:9px;padding:11px 13px;color:#98e7ff;font-size:9px;font-weight:850;letter-spacing:.14em;cursor:pointer;user-select:none}
+.scan-raw-output>summary::-webkit-details-marker{display:none}
+.scan-raw-output>summary:before{content:"+";display:grid;place-items:center;width:17px;height:17px;border:1px solid rgba(122,210,255,.25);border-radius:5px;font-size:13px;letter-spacing:0}
+.scan-raw-output[open]>summary:before{content:"−"}
+.scan-raw-body{padding:0 13px 13px}
+.scan-raw-label{margin:10px 0 5px;color:rgba(177,211,235,.58);font-size:8px;font-weight:850;letter-spacing:.15em}
+.scan-raw-pre{display:block;max-width:100%;max-height:270px;overflow:auto;white-space:pre;overflow-wrap:normal;tab-size:4;margin:0;padding:11px;border-radius:8px;border:1px solid rgba(119,188,232,.12);background:rgba(0,4,12,.42);color:#d4e8f6;font:10px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:text}
+.scan-raw-command{color:#9be8c9}
+.scan-raw-stderr{color:#ffcfaa}
