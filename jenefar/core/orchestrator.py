@@ -979,12 +979,42 @@ class JenefarOrchestrator:
         local_address: str = "",
     ) -> dict | None:
         result = self._nmap_payload(raw_result)
-        if not result or result.get("returncode") != 0:
+        if not result:
             return None
+
+        stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        returncode = result.get("returncode")
+        completed_at = __import__("datetime").datetime.now().astimezone().isoformat()
+        if returncode != 0:
+            failed = {
+                "kind": "host_discovery",
+                "title": "SCAN FAILED",
+                "scan_status": "error",
+                "target": str(target),
+                "summary": f"Nmap host discovery failed (exit code {returncode})",
+                "host_count": 0,
+                "address_count": None,
+                "hosts": [],
+                "own_ip": str(local_address or ""),
+                "command": str(result.get("command") or ""),
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "completed_at": completed_at,
+                "scan_type": "Nmap host discovery (-sn)",
+            }
+            # Clear a previous live-host list after a failed fresh scan so a
+            # subsequent ordinal request cannot silently reuse stale hosts.
+            self._latest_host_discovery = {
+                "target": str(target), "hosts": [], "own_ip": str(local_address or ""),
+                "completed_at": completed_at,
+            }
+            self._latest_scan_result = failed
+            return failed
 
         hosts: list[dict] = []
         current = None
-        stdout = str(result.get("stdout") or "")
         for line in stdout.splitlines():
             report = re.match(r"^Nmap scan report for (.+?)\s*$", line.strip(), re.IGNORECASE)
             if report:
@@ -1063,6 +1093,33 @@ class JenefarOrchestrator:
             return None
 
         stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        returncode = result.get("returncode")
+        if returncode != 0:
+            completed = completed_at or __import__("datetime").datetime.now().astimezone().isoformat()
+            return {
+                "kind": "port_scan",
+                "title": "SCAN FAILED",
+                "scan_status": "error",
+                "target": str(target),
+                "host_index": int(host_index),
+                "summary": f"{target} • Nmap failed (exit code {returncode}); see exact output",
+                "command": str(result.get("command") or ""),
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "host_status": "ERROR",
+                "open_port_count": 0,
+                "filtered_port_count": 0,
+                "closed_port_count": None,
+                "port_scope": "Top 1000 TCP ports",
+                "ports": [],
+                "hosts": previous_hosts,
+                "host_discovery_target": str(host_discovery_target or ""),
+                "own_ip": str(own_ip or ""),
+                "completed_at": completed,
+                "scan_type": "Nmap TCP connect + service detection (-Pn)",
+            }
         ports: list[dict] = []
         port_pattern = re.compile(
             r"^\s*(\d{1,5})/(tcp|udp)\s+(open|closed|filtered|open\|filtered)\s+"
