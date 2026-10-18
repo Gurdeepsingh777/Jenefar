@@ -770,6 +770,8 @@ def main() -> int:
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice else None,
             voice_audio_handler=browser_voice.handle_audio if browser_voice else None,
+            approval_handler=orchestrator._approve_pending,
+            rejection_handler=orchestrator._reject_pending_workflow,
         )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
