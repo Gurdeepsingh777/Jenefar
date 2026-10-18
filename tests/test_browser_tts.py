@@ -95,3 +95,24 @@ def test_gemini_tts_style_changes_for_questions_and_reassurance():
     assert "empathetic" in reassurance.lower()
     assert "curious" in question.lower()
     assert "happy" in celebration.lower()
+
+
+
+def test_gemini_tts_quota_error_disables_repeated_calls_until_restart(monkeypatch):
+    import httpx
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    bridge = BrowserVoiceBridge.__new__(BrowserVoiceBridge)
+    bridge._gemini_tts_disabled = False
+    calls = []
+
+    def rate_limited_post(url, **_kwargs):
+        calls.append(url)
+        raise RuntimeError("HTTP 429 RESOURCE_EXHAUSTED: quota exceeded")
+
+    monkeypatch.setattr(httpx, "post", rate_limited_post)
+
+    assert bridge._synthesize_gemini_audio("Hello") == ("", "")
+    assert bridge._gemini_tts_disabled is True
+    assert bridge._synthesize_gemini_audio("Hello again") == ("", "")
+    assert len(calls) == 1
