@@ -286,6 +286,8 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
 
     assert "approval_handler=(" in run
     assert "browser_voice.approve_pending" in run
+    assert orchestrator.index("if self._is_local_host_port_scan_request(text):") < orchestrator.index("direct_window = self._direct_window_transfer(text)")
+    assert 'invoke("kali_tool_execute", arguments, confirmed=True)' in orchestrator
     assert "if browser_voice_enabled" in run
     assert "rejection_handler=orchestrator._reject_pending_workflow" in run
     assert 'avatar.publish("scan_results", str(data["summary"]), data=data)' in orchestrator
