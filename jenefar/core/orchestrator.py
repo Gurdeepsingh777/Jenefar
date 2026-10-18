@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import re
+import threading
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
@@ -80,6 +81,10 @@ class JenefarOrchestrator:
         self.verifier = Verifier()
         self.wakeword = WakeWord(self.config.wake_phrases)
         self.pending_approval_workflows: dict[str, dict] = {}
+        # Approval callbacks can arrive through both voice and the dashboard.
+        # Serialize them and reuse the first result so an action never executes twice.
+        self._approval_lock = threading.RLock()
+        self._approval_result_cache: dict[str, str] = {}
         self.offline_notice_open = False
 
     def run(self):
@@ -980,6 +985,25 @@ class JenefarOrchestrator:
             self.pending_approval_workflows[str(item["pending_id"])] = workflow
 
     def _approve_pending(self, pending_id: str) -> str:
+        approval_id = str(pending_id or "").strip()
+        if not approval_id:
+            return json.dumps({"status": "error", "error": "approval id required"})
+
+        with self._approval_lock:
+            if approval_id in self._approval_result_cache:
+                return self._approval_result_cache[approval_id]
+
+            result = self._approve_pending_once(approval_id)
+            # Do not cache a transient invalid/expired-ID response. Successful
+            # approvals and the associated workflow summary are idempotent.
+            if "Unknown or expired pending tool call." not in result:
+                self._approval_result_cache[approval_id] = result
+                while len(self._approval_result_cache) > 128:
+                    oldest_id = next(iter(self._approval_result_cache))
+                    self._approval_result_cache.pop(oldest_id, None)
+            return result
+
+    def _approve_pending_once(self, pending_id: str) -> str:
         workflow = self.pending_approval_workflows.get(pending_id)
         raw_result = self.tool_broker.approve(pending_id)
 
@@ -1013,7 +1037,8 @@ class JenefarOrchestrator:
                 if self.config.single_turn_sleep
                 else JenefarState.AWAKE
             )
-            self._avatar_state("speaking", summary)
+            # The caller owns speech playback (browser audio/TTS or CLI output).
+            # Publishing another speech event here caused duplicate voice playback.
             return summary
 
         tool_name = parsed.get("tool", "unknown")
