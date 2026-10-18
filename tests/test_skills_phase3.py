@@ -111,3 +111,32 @@ def test_learned_skill_is_persisted_and_auto_enabled(tmp_path: Path):
     assert manager_after_restart.is_enabled("learned_python_test_workflow") is True
     assert "verify results" in learned.system_prompt
     assert Path(learned.source).is_file()
+
+
+
+def test_skill_catalog_summary_hides_full_skill_prompt_and_local_source():
+    from jenefar.tools.broker import ToolBroker
+
+    listed = ToolBroker._skill_catalog_summary([{
+        "name": "rea_ci_tests_audit",
+        "version": "1.0",
+        "description": "Audit CI test results.",
+        "keywords": ["ci", "tests"],
+        "connectors": ["github"],
+        "permissions": ["repository_read"],
+        "enabled": True,
+        "available": True,
+        "system_prompt": "A very long private prompt body that should not be returned.",
+        "source": "/home/user/project/skills/private/SKILL.md",
+    }])
+
+    assert listed == [{
+        "name": "rea_ci_tests_audit",
+        "version": "1.0",
+        "description": "Audit CI test results.",
+        "keywords": ["ci", "tests"],
+        "connectors": ["github"],
+        "permissions": ["repository_read"],
+        "enabled": True,
+        "available": True,
+    }]
