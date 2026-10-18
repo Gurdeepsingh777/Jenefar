@@ -390,7 +390,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     # The browser voice handler wraps the orchestrator; resolve both
                     # shapes and clear stale scan state before this specific approval.
                     scan_owner = getattr(owner, "orchestrator", owner)
-                    if scan_owner is not None and hasattr(scan_owner, "_latest_scan_result"):
+                    if owner is scan_owner and scan_owner is not None and hasattr(scan_owner, "_latest_scan_result"):
                         scan_owner._latest_scan_result = None
                     result = handler(pending_id) if handler is not None else self.tool_broker.approve(pending_id)
                     payload = {"result": result}
