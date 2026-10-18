@@ -335,6 +335,8 @@ def test_network_scope_picker_shows_block_reason_without_false_zero_host_count()
     assert 'option.authorized===true' in app
     assert 'dispatchDashboardCommand("scan network "+network)' in app
     assert "CURRENT AUTHORIZED TARGETS" in app
+    assert "CHANGE NETWORK / INTERFACE" in app
+    assert "showNetworkPicker=!showNetworkPicker" in app
     assert "No Nmap command was executed" in orchestrator
     assert '"networks": candidates' in network_info
     assert ".scan-network-option" in css
