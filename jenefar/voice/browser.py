@@ -353,6 +353,19 @@ class BrowserVoiceBridge:
         if content_type and not str(content_type).lower().startswith("audio/"):
             return {"ok": False, "error": "Expected an audio recording from the browser microphone."}
 
+        # Do not transcribe stale audio while an assistant reply is being
+        # generated. STT may finish after that reply and otherwise enqueue
+        # microphone echo as a brand-new command.
+        active_task = self._active_task
+        if active_task is not None and not active_task.done():
+            return {
+                "ok": True,
+                "accepted": False,
+                "busy": True,
+                "status": "busy",
+                "reason": "assistant_busy",
+            }
+
         import shutil
         import subprocess
 
