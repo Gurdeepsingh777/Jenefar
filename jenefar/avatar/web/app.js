@@ -671,10 +671,10 @@ async function transcribeCapturedAudio(blob,durationMs){
     }
     if(result?.busy){
       fallbackSubmitting=false;
-      voiceLocked=false;
+      // A busy response means another task is still running. Keep capture
+      // locked; the active task's speaking/completed event will unlock it.
       setVoiceInputStatus("Jenefar is busy — mic will resume after reply",true);
       setMicButton(true,true);
-      resumeBrowserVoice();
       return;
     }
     if(result?.accepted){
