@@ -806,7 +806,7 @@ function renderScanResultsList(){
   const filteredCount=Number(data?.filtered_port_count??ports.filter(port=>["FILTERED","OPEN|FILTERED"].includes(String(port.state||"").toUpperCase())).length);
   const closedCount=data?.closed_port_count;
   main.append(scanNode("span","scan-result-big-number",hostStatus==="UP"?openCount:"—"));
-  const resultLabel=hostStatus!=="UP"?"HOST NOT CONFIRMED":filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
+  const resultLabel=hostStatus==="UNREACHABLE"?"HOST UNREACHABLE":hostStatus==="UNKNOWN"?(filteredCount?"REACHABILITY UNKNOWN · "+filteredCount+" FILTERED":"HOST NOT CONFIRMED"):filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
   main.append(scanNode("span","scan-result-summary-label",resultLabel));
   const summaryDetails=[data?.target||"TCP · Top 1000"];
   if(hostStatus!=="UP") summaryDetails.push(hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
@@ -821,7 +821,13 @@ function renderScanResultsList(){
   }
   if(!ports.length){
     const empty=scanNode("div","scan-result-empty");
-    if(hostStatus!=="UP"){
+    if(hostStatus==="UNREACHABLE"){
+      empty.append(scanNode("b","","Host reachability was not confirmed."));
+      empty.append(scanNode("span","","This is not the same as a verified result of zero open ports. Try a fresh host discovery before interpreting the port status."));
+    }else if(hostStatus==="UNKNOWN"&&filteredCount>0){
+      empty.append(scanNode("b","","Filtered ports were reported; host reachability remains uncertain."));
+      empty.append(scanNode("span","","Nmap reported "+filteredCount+" filtered TCP ports, but did not confirm an open/closed TCP response. A filtered state is not proof that the port is open."));
+    }else if(hostStatus!=="UP"){
       empty.append(scanNode("b","","Host reachability was not confirmed."));
       empty.append(scanNode("span","","This is not the same as a verified result of zero open ports. Try a fresh host discovery before interpreting the port status."));
     }else if(closedCount!==null&&closedCount!==undefined){
