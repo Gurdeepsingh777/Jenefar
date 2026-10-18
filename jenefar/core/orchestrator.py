@@ -706,7 +706,7 @@ class JenefarOrchestrator:
             return f"{target} par Nmap host discovery fail hua (exit code {return_code}): {detail}"
 
         done = re.search(
-            r"Nmap done:\\s*([0-9,]+)\\s+IP addresses?\\s+\\(([0-9,]+)\\s+hosts? up\\)",
+            r"Nmap done: *([0-9,]+) +IP addresses? +[(]([0-9,]+) +hosts? up[)]",
             stdout,
             re.IGNORECASE,
         )
@@ -719,7 +719,7 @@ class JenefarOrchestrator:
             address_count = int(done.group(1).replace(",", ""))
             host_count = int(done.group(2).replace(",", ""))
         elif reports:
-            address_count = network_size = None
+            address_count = None
             host_count = len(reports)
         else:
             return (
