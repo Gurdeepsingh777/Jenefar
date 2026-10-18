@@ -33,6 +33,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     voice_audio_handler = None
     approval_handler = None
     rejection_handler = None
+    runtime_status_handler = None
+    runtime_tasks_handler = None
+    runtime_cancel_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         try:
@@ -112,6 +115,33 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 return
             if path == "/system/metrics":
                 self._json(200, read_system_metrics())
+                return
+            if path == "/runtime/status":
+                handler = self.runtime_status_handler
+                if handler is None:
+                    self._json(503, {"error": "Runtime status is not connected to the orchestrator."})
+                else:
+                    self._json(200, handler())
+                return
+            if path == "/runtime/tasks":
+                handler = self.runtime_tasks_handler
+                if handler is None:
+                    self._json(503, {"error": "Runtime task history is not connected to the orchestrator."})
+                    return
+                query = parse_qs(parsed_url.query)
+                try:
+                    limit = max(1, min(1000, int((query.get("limit") or ["20"])[0])))
+                except (TypeError, ValueError):
+                    self._json(400, {"error": "limit must be an integer between 1 and 1000"})
+                    return
+                payload = handler(
+                    search=(query.get("search") or [""])[0][:200],
+                    state=(query.get("state") or [""])[0][:40],
+                    agent=(query.get("agent") or [""])[0][:80],
+                    provider=(query.get("provider") or [""])[0][:80],
+                    limit=limit,
+                )
+                self._json(200, payload)
                 return
             if path == "/model/status":
                 pool = ProviderPool()
@@ -304,6 +334,15 @@ class _AvatarHandler(BaseHTTPRequestHandler):
 
             body = self._read_json()
 
+            if path == "/runtime/cancel":
+                handler = self.runtime_cancel_handler
+                if handler is None:
+                    self._json(503, {"error": "Task cancellation is not connected to the orchestrator."})
+                    return
+                reason = str(body.get("reason") or "cancelled from runtime console")[:200]
+                self._json(200, handler(reason=reason))
+                return
+
             if path == "/voice/text":
                 handler = self.voice_handler
                 if handler is None:
@@ -457,6 +496,9 @@ class AvatarServer:
         voice_audio_handler=None,
         approval_handler=None,
         rejection_handler=None,
+        runtime_status_handler=None,
+        runtime_tasks_handler=None,
+        runtime_cancel_handler=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -467,6 +509,9 @@ class AvatarServer:
         self.voice_audio_handler = voice_audio_handler
         self.approval_handler = approval_handler
         self.rejection_handler = rejection_handler
+        self.runtime_status_handler = runtime_status_handler
+        self.runtime_tasks_handler = runtime_tasks_handler
+        self.runtime_cancel_handler = runtime_cancel_handler
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -483,6 +528,9 @@ class AvatarServer:
         voice_audio_handler = self.voice_audio_handler
         approval_handler = self.approval_handler
         rejection_handler = self.rejection_handler
+        runtime_status_handler = self.runtime_status_handler
+        runtime_tasks_handler = self.runtime_tasks_handler
+        runtime_cancel_handler = self.runtime_cancel_handler
 
         class Handler(_AvatarHandler):
             pass
@@ -496,6 +544,9 @@ class AvatarServer:
         Handler.voice_audio_handler = staticmethod(voice_audio_handler) if voice_audio_handler is not None else None
         Handler.approval_handler = staticmethod(approval_handler) if approval_handler is not None else None
         Handler.rejection_handler = staticmethod(rejection_handler) if rejection_handler is not None else None
+        Handler.runtime_status_handler = staticmethod(runtime_status_handler) if runtime_status_handler is not None else None
+        Handler.runtime_tasks_handler = staticmethod(runtime_tasks_handler) if runtime_tasks_handler is not None else None
+        Handler.runtime_cancel_handler = staticmethod(runtime_cancel_handler) if runtime_cancel_handler is not None else None
         return Handler
 
     def _create_server(self) -> None:
