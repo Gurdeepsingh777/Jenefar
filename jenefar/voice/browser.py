@@ -35,6 +35,15 @@ class BrowserVoiceBridge:
             thread_name_prefix="jenefar-task",
         )
         self._active_task = None
+        self._last_assistant_text = ""
+        self._last_assistant_spoken_at = 0.0
+        try:
+            self._ip_echo_window = max(
+                0.0,
+                float(os.getenv("JENEFAR_BROWSER_IP_ECHO_WINDOW", "24")),
+            )
+        except (TypeError, ValueError):
+            self._ip_echo_window = 24.0
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._tts_lock = threading.Lock()
         self._openai_tts_disabled = False
@@ -387,10 +396,32 @@ class BrowserVoiceBridge:
         transcript = " ".join(str(transcript or "").split()).strip()
         if not transcript:
             return {"ok": True, "ignored": True, "reason": "empty_transcript"}
+        if self._is_recent_assistant_ip_echo(transcript):
+            display = self._display_text(transcript)
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "assistant_ip_echo",
+                "text": display,
+                "display_text": display,
+                "transcript": display,
+            }
         result = self.submit_text(transcript)
         result["transcript"] = self._display_text(transcript)
         return result
 
+
+    def _is_recent_assistant_ip_echo(self, transcript: str) -> bool:
+        """Drop a mic transcript that repeats an IP query just after an IP report."""
+        if not self._last_assistant_spoken_at:
+            return False
+        if time.monotonic() - self._last_assistant_spoken_at > self._ip_echo_window:
+            return False
+        previous = self._last_assistant_text.casefold()
+        if not any(marker in previous for marker in ("ip information", "local ipv4", "public ipv4")):
+            return False
+        matcher = getattr(self.orchestrator, "_is_ip_info_query", None)
+        return bool(callable(matcher) and matcher(transcript))
 
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
@@ -433,6 +464,8 @@ class BrowserVoiceBridge:
             self._publish("result", display_reply, task_id)
             if speech_text:
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+                self._last_assistant_text = display_reply
+                self._last_assistant_spoken_at = time.monotonic()
                 self._publish(
                     "speaking",
                     display_reply,
