@@ -374,14 +374,16 @@ function showApproval(event){
         body:JSON.stringify({approve_id:pendingId})
       });
       const payload=await response.json();
-      const reply=String(payload?.result||"").trim();
+      const resultValue=payload?.result;
+      const reply=typeof resultValue==="string"
+        ? resultValue.trim()
+        : String(resultValue?.result||resultValue?.message||"").trim();
       if(!response.ok) throw new Error(reply||("HTTP "+response.status));
       if(reply){
+        // Approval results are spoken only by the avatar event/audio pipeline.
+        // Speaking this HTTP response here would overlap the server-generated
+        // TTS event and may stringify an object as "[object Object]".
         addActivity({state:"result",text:reply});
-        // A direct approval callback can return a completed result without an
-        // audio event. Speak it in-browser so the mic is re-locked during TTS
-        // and reliably resumes when the utterance ends.
-        browserSpeakFallback(reply);
       }
     }catch(error){
       addActivity({state:"error",text:"Approval execution failed: "+String(error?.message||error)});
@@ -437,53 +439,105 @@ function selectPremiumVoice(){
       || null;
 }
 
+function stopBrowserAudio(){
+  // Invalidate queued play/rejection/ended callbacks before stopping the track.
+  browserAudioGeneration+=1;
+  const activeAudio=browserAudio;
+  browserAudio=null;
+  if(!activeAudio) return;
+  activeAudio.onplay=null;
+  activeAudio.onended=null;
+  activeAudio.onerror=null;
+  try{activeAudio.pause();}catch(_){}
+  try{URL.revokeObjectURL(activeAudio.dataset?.url||"");}catch(_){}
+}
+
 function playBrowserAudio(base64,mime,text){
   if(!base64) return false;
+  let url="";
+  let audio=null;
+  let failureHandled=false;
   try{
+    // A single playback owner is active at any time: invalidate old audio and
+    // cancel any old browser-native utterance before starting generated audio.
+    stopBrowserAudio();
+    browserSpeechGeneration+=1;
+    if(browserSpeechReady) window.speechSynthesis.cancel();
+    browserSpeechActive=false;
+
     const bytes=Uint8Array.from(atob(base64),char=>char.charCodeAt(0));
     const blob=new Blob([bytes],{type:mime||"audio/wav"});
-    const url=URL.createObjectURL(blob);
-    if(browserAudio){
-      try{browserAudio.pause();}catch(_){}
-      try{URL.revokeObjectURL(browserAudio.dataset?.url||"");}catch(_){}
-    }
-    browserAudio=new Audio(url);
-    browserAudio.dataset.url=url;
-    browserAudio.preload="auto";
-    browserAudio.onplay=()=>{browserSpeechActive=true;};
-    browserAudio.onended=()=>{
+    url=URL.createObjectURL(blob);
+    const generation=browserAudioGeneration;
+    audio=new Audio(url);
+    browserAudio=audio;
+    audio.dataset.url=url;
+    audio.preload="auto";
+
+    const failPlayback=()=>{
+      if(failureHandled||generation!==browserAudioGeneration) return;
+      failureHandled=true;
+      browserAudioGeneration+=1;
+      if(browserAudio===audio) browserAudio=null;
+      audio.onplay=null;
+      audio.onended=null;
+      audio.onerror=null;
+      browserSpeechActive=false;
+      try{URL.revokeObjectURL(url);}catch(_){}
+      if(text) browserSpeakFallback(text);
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
+    };
+
+    audio.onplay=()=>{
+      if(generation===browserAudioGeneration) browserSpeechActive=true;
+    };
+    audio.onended=()=>{
+      if(failureHandled||generation!==browserAudioGeneration) return;
+      failureHandled=true;
+      browserAudioGeneration+=1;
+      if(browserAudio===audio) browserAudio=null;
       browserSpeechActive=false;
       voiceLocked=false;
-      URL.revokeObjectURL(url);
+      try{URL.revokeObjectURL(url);}catch(_){}
       resumeBrowserVoice();
     };
-    browserAudio.onerror=()=>{
-      browserSpeechActive=false;
-      URL.revokeObjectURL(url);
-      voiceLocked=false;
-      if(text) browserSpeakFallback(text);
-      else resumeBrowserVoice();
-    };
-    browserAudio.play().catch(()=>{
-      browserSpeechActive=false;
-      URL.revokeObjectURL(url);
-      if(text) browserSpeakFallback(text);
-      else {voiceLocked=false;resumeBrowserVoice();}
-    });
+    audio.onerror=failPlayback;
+    audio.play().catch(failPlayback);
     return true;
   }catch(_){
+    if(url){try{URL.revokeObjectURL(url);}catch(__){}}
+    if(text) browserSpeakFallback(text);
+    else{
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    }
     return false;
   }
 }
 
 function browserSpeakFallback(text){
-  if(!text||!browserSpeechReady) return;
-  const clean=String(text).replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
+  const clean=String(text||"").replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
   if(!clean) return;
+
+  // Native speech is a fallback, never a second simultaneous playback path.
+  stopBrowserAudio();
+  browserSpeechGeneration+=1;
+  const generation=browserSpeechGeneration;
+  if(!browserSpeechReady){
+    browserSpeechActive=false;
+    voiceLocked=false;
+    resumeBrowserVoice();
+    return;
+  }
+
   try{
-    browserSpeechActive=true;
-    pauseBrowserVoice();
     window.speechSynthesis.cancel();
+    pauseBrowserVoice();
+    browserSpeechActive=true;
     const utterance=new SpeechSynthesisUtterance(clean);
     const voice=selectPremiumVoice();
     if(voice) utterance.voice=voice;
@@ -491,10 +545,26 @@ function browserSpeakFallback(text){
     utterance.rate=.94;
     utterance.pitch=1.04;
     utterance.volume=.96;
-    utterance.onend=()=>{browserSpeechActive=false;voiceLocked=false;resumeBrowserVoice();};
-    utterance.onerror=()=>{browserSpeechActive=false;voiceLocked=false;resumeBrowserVoice();};
+    utterance.onend=()=>{
+      if(generation!==browserSpeechGeneration) return;
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    };
+    utterance.onerror=()=>{
+      if(generation!==browserSpeechGeneration) return;
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    };
     window.speechSynthesis.speak(utterance);
-  }catch(_){}
+  }catch(_){
+    if(generation===browserSpeechGeneration){
+      browserSpeechActive=false;
+      voiceLocked=false;
+      resumeBrowserVoice();
+    }
+  }
 }
 
 function apply(event){
@@ -597,6 +667,8 @@ let restartTimer=null;
 let restartDelay=450;
 let browserSpeechActive=false;
 let browserAudio=null;
+let browserAudioGeneration=0;
+let browserSpeechGeneration=0;
 let fallbackMode=false;
 let fallbackStream=null;
 let fallbackContext=null;
@@ -1248,17 +1320,12 @@ window.addEventListener("jenefar-realtime-start",()=>{
 
 
 document.getElementById("media-pause")?.addEventListener("click",()=>{
-  if(browserAudio){
-    try{browserAudio.pause();}catch(_){}
-    try{URL.revokeObjectURL(browserAudio.dataset?.url||"");}catch(_){}
-    browserAudio=null;
-  }
-  if("speechSynthesis" in window){
-    window.speechSynthesis.cancel();
-    browserSpeechActive=false;
-    voiceLocked=false;
-    resumeBrowserVoice();
-  }
+  stopBrowserAudio();
+  browserSpeechGeneration+=1;
+  if(browserSpeechReady) window.speechSynthesis.cancel();
+  browserSpeechActive=false;
+  voiceLocked=false;
+  resumeBrowserVoice();
 });
 
 
