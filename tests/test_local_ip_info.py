@@ -65,7 +65,7 @@ def test_orchestrator_check_my_ip_uses_read_only_ip_tool_and_skips_llm():
     assert [name for name, _args in orchestrator.tool_broker.calls] == ["network_ip_info"]
     assert "192.168.1.20" in reply
     assert "203.0.113.20" in reply
-    assert "local/public IP address lookup" in reply
+    assert "IP details yahi hain" in reply
     assert "Nmap" not in reply
     assert "port scan" not in reply
 
@@ -136,3 +136,23 @@ def test_planner_does_not_route_plain_ip_check_to_security_agent():
     plan = Planner().plan("check my ip")
     assert plan.agent == "utility"
     assert plan.intent == "network_ip_info"
+
+def test_recent_ip_response_echo_does_not_retrigger_ip_lookup():
+    import time
+    from jenefar.voice.browser import BrowserVoiceBridge
+
+    orchestrator = SimpleNamespace(
+        _is_ip_info_query=JenefarOrchestrator._is_ip_info_query,
+    )
+    bridge = object.__new__(BrowserVoiceBridge)
+    bridge.orchestrator = orchestrator
+    bridge._last_assistant_text = (
+        "Aapke computer ki IP information: Local IPv4: 192.168.1.20; "
+        "Public IPv4: 203.0.113.20"
+    )
+    bridge._last_assistant_spoken_at = time.monotonic()
+    bridge._ip_echo_window = 24.0
+
+    assert bridge._is_recent_assistant_ip_echo("check my ip")
+    assert not bridge._is_recent_assistant_ip_echo("scan my network with nmap")
+
