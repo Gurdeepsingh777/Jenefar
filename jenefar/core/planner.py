@@ -78,7 +78,7 @@ class Planner:
         # Host-discovery intent must take precedence over the shorter "my IP"
         # phrase contained inside requests about an IP range or online hosts.
         import re
-        has_cidr = bool(re.search(r"(?<![0-9.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}(?![0-9.])", t))
+        has_cidr = bool(re.search(r"(?<![0-9.])(?:[0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}(?![0-9.])", t))
         range_terms = (
             "ip range", "ip ki range", "subnet", "cidr", "network range",
             "meri range", "my range", "local network",
