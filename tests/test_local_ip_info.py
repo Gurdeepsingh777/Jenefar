@@ -65,7 +65,9 @@ def test_orchestrator_check_my_ip_uses_read_only_ip_tool_and_skips_llm():
     assert [name for name, _args in orchestrator.tool_broker.calls] == ["network_ip_info"]
     assert "192.168.1.20" in reply
     assert "203.0.113.20" in reply
-    assert "koi Nmap, port scan ya subnet scan nahi chalaya" in reply
+    assert "local/public IP address lookup" in reply
+    assert "Nmap" not in reply
+    assert "port scan" not in reply
 
 
 class _FakeIpProcess:
