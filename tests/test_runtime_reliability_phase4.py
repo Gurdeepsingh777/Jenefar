@@ -376,5 +376,5 @@ def test_desktop_health_is_actionable_in_doctor_and_dashboard():
     assert 'id="service-desktop"' in html
     assert 'id="desktop-status-detail"' in html
     assert 'status["diagnosis"] = diagnosis' in desktop
-    assert '"  desktop diagnosis             "' in run
+    assert '"  desktop diagnosis             {desktop_status.get' in run
     assert '.desktop-diagnostic[data-state="unavailable"]' in css
