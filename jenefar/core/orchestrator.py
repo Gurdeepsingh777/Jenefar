@@ -4,8 +4,10 @@ import hashlib
 import inspect
 import ipaddress
 import json
+import os
 import re
 import threading
+import time
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
@@ -28,6 +30,10 @@ from jenefar.events.engine import EventEngine
 from jenefar.evaluation.loop import EvaluationLoop
 from jenefar.evaluation.trace import ExecutionTrace, TraceStore
 from jenefar.core.self_healing import SelfHealingRuntime
+from jenefar.core.cancellation import CancellationToken
+from jenefar.core.task_lifecycle import TaskLifecycle
+from jenefar.core.production_runtime import ProductionRuntime
+from jenefar.evaluation.runtime_status import build_runtime_snapshot
 from jenefar.core.state import JenefarState
 from jenefar.critic.verifier import Verifier
 from jenefar.tools.broker import ToolBroker
@@ -89,6 +95,57 @@ class JenefarOrchestrator:
         self._latest_scan_result: dict | None = None
         self._latest_host_discovery: dict = {"target": "", "hosts": [], "own_ip": ""}
         self.offline_notice_open = False
+        self.runtime_context: dict[str, Any] = {"state": "idle"}
+        self._active_cancel_token: CancellationToken | None = None
+        self._runtime_task_id: str | None = None
+        self.task_lifecycle = TaskLifecycle()
+        self.production = ProductionRuntime()
+
+    @staticmethod
+    def _execution_budget_seconds(model_role: str, agent: str) -> float:
+        role = str(model_role or "fast").strip().lower()
+        agent_name = str(agent or "agent").strip().lower().replace("-", "_")
+        agent_key = f"JENEFAR_AGENT_TIMEOUT_{agent_name.upper()}"
+        role_key = f"JENEFAR_AGENT_TIMEOUT_{role.upper()}"
+        raw = os.getenv(agent_key, os.getenv(role_key, os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "60")))
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 60.0
+        return min(max(value, 10.0), 300.0)
+
+    def cancel_active_task(self, reason: str = "cancelled by user") -> dict[str, Any]:
+        token = self._active_cancel_token
+        active = self.task_lifecycle.active()
+        if token is None or token.cancelled or active is None:
+            return {"cancelled": False, "active": False, "reason": "no cancellable active task"}
+        changed = token.cancel(reason)
+        if active.get("state") not in {"waiting_approval", "cancelling"}:
+            self.task_lifecycle.transition(active["task_id"], "cancelling", reason=token.reason)
+        self.runtime_context.update({"state": "cancelling", "last_event": token.reason})
+        return {"cancelled": changed, "active": True, "task_id": active["task_id"], "reason": token.reason}
+
+    def runtime_status(self) -> dict[str, Any]:
+        """Return a credential-safe live runtime snapshot for the operations UI."""
+        from jenefar.core.provider_pool import ProviderPool
+        snapshot = build_runtime_snapshot(
+            runtime_context=self.runtime_context,
+            self_healing=self.self_healing,
+            trace_store=self.trace_store,
+            provider_pool=ProviderPool(),
+        )
+        snapshot["tasks"] = self.task_lifecycle.snapshot()
+        snapshot["production"] = self.production.snapshot()
+        return snapshot
+
+    def runtime_tasks(
+        self, *, search: str = "", state: str = "", agent: str = "",
+        provider: str = "", limit: int = 20,
+    ) -> dict[str, Any]:
+        """Return filtered persistent task history for the runtime console."""
+        return self.task_lifecycle.query_history(
+            search=search, state=state, agent=agent, provider=provider, limit=limit,
+        )
 
     def run(self):
         print(f"[JENEFAR] {self.config.name} is running.")
@@ -198,6 +255,17 @@ class JenefarOrchestrator:
                 result=str(output),
                 provider=provider,
             )
+            if self._runtime_task_id == trace.trace_id:
+                task_state = "waiting_approval" if final_status == "awaiting_approval" else ("failed" if final_status == "error" else "completed")
+                try:
+                    self.task_lifecycle.transition(trace.trace_id, task_state, reason=str(output) if task_state == "failed" else "", provider=provider, agent=trace.actual_agent or intent)
+                    self.runtime_context.update({"state": task_state, "task_id": trace.trace_id[:12], "agent": trace.actual_agent or intent, "provider": provider, "last_event": intent})
+                    self.production.task_finished(trace.trace_id, state=task_state, agent=trace.actual_agent or intent, provider=provider, error=str(output) if task_state == "failed" else "")
+                    if task_state != "waiting_approval":
+                        self._runtime_task_id = None
+                        self._active_cancel_token = None
+                except (KeyError, ValueError, RuntimeError):
+                    pass
 
         pending_reply = self._handle_conversational_confirmation(
             text,
@@ -214,7 +282,24 @@ class JenefarOrchestrator:
                 provider="local_confirmation",
                 status="awaiting_approval" if self.state == JenefarState.WAITING_APPROVAL else None,
             )
+            active = self.task_lifecycle.active()
+            if active and active.get("state") == "waiting_approval" and self.state != JenefarState.WAITING_APPROVAL:
+                try:
+                    final_state = "cancelled" if any(word in pending_reply.casefold() for word in ("cancel", "reject", "decline", "mana kar")) else "completed"
+                    self.task_lifecycle.transition(active["task_id"], final_state, reason=pending_reply, provider="local_confirmation")
+                    self.production.task_finished(active["task_id"], state=final_state, agent=active.get("agent", "approval"), provider="local_confirmation")
+                    self.runtime_context.update({"state": final_state, "last_event": "approval_resolved"})
+                    self._runtime_task_id = None
+                    self._active_cancel_token = None
+                except (KeyError, ValueError, RuntimeError):
+                    pass
             return pending_reply
+        if self.task_lifecycle.admit(trace.trace_id, text, agent="pending") is None:
+            return "Jenefar abhi ek task execute kar rahi hai. Pehle current task complete ya cancel hone dein."
+        self._runtime_task_id = trace.trace_id
+        self.task_lifecycle.transition(trace.trace_id, "running")
+        self.production.task_started(trace.trace_id, text, agent="pending")
+        self.runtime_context = {"state": "thinking", "task_id": trace.trace_id[:12], "task": text, "agent": "pending", "provider": "", "started_at": time.time(), "last_event": "request_started"}
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "")
         self.session.add("user", text)
@@ -349,6 +434,16 @@ class JenefarOrchestrator:
             trace.planned_agent = plan.agent
             trace.planner_confidence = plan.confidence
             trace.model_role = self._model_role_for_plan(plan)
+            budget_seconds = self._execution_budget_seconds(trace.model_role, plan.agent)
+            deadline = time.monotonic() + budget_seconds
+            self._active_cancel_token = CancellationToken()
+            self.runtime_context.update({
+                "state": "thinking", "task_id": trace.trace_id[:12], "task": text,
+                "agent": plan.agent, "provider": "", "model_role": trace.model_role,
+                "started_at": time.time(), "budget_seconds": budget_seconds,
+                "deadline_monotonic": deadline, "last_event": "dispatch_started",
+            })
+            self.task_lifecycle.transition(trace.trace_id, "running", agent=plan.agent)
             connected = internet_available()
             trace.connectivity = "online" if connected else "offline"
             online_task = any(marker in text.lower() for marker in (
@@ -375,6 +470,9 @@ class JenefarOrchestrator:
                 "planner_confidence": plan.confidence,
                 "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
                 "model_role": trace.model_role,
+                "execution_budget_seconds": budget_seconds,
+                "deadline_monotonic": deadline,
+                "cancel_token": self._active_cancel_token,
                 "response_language": response_language,
                 "source": source,
                 "event_id": event_id,
@@ -423,7 +521,12 @@ class JenefarOrchestrator:
                 "total_retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
+            if self._active_cancel_token is not None:
+                self._active_cancel_token.raise_if_cancelled()
+            if deadline <= time.monotonic():
+                raise TimeoutError("Jenefar execution budget exhausted")
             trace.actual_agent = result.agent
+            self.runtime_context.update({"agent": result.agent, "provider": str(result.metadata.get("provider", "")), "last_event": "agent_result"})
             for action in task_actions:
                 trace.add_tool_call(
                     name=str(action.get("tool") or "unknown"),
@@ -475,8 +578,21 @@ class JenefarOrchestrator:
             else:
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+            if awaiting:
+                self.task_lifecycle.transition(trace.trace_id, "waiting_approval", reason="approval_required", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
+                self.runtime_context.update({"state": "waiting_approval", "last_event": "approval_required"})
+                self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
+            else:
+                self.task_lifecycle.transition(trace.trace_id, "completed", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
+                self.runtime_context.update({"state": "speaking", "last_event": "response_ready"})
+                self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
+                self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
+                self._runtime_task_id = None
+                self._active_cancel_token = None
             return output
         except Exception as exc:
+            cancelled = bool(self._active_cancel_token and self._active_cancel_token.cancelled)
+            self.runtime_context.update({"state": "cancelled" if cancelled else "error", "last_event": str(exc)})
             trace.add_error(f"{type(exc).__name__}: {exc}")
             healing = getattr(self, "self_healing", None)
             if healing is not None:
@@ -486,16 +602,23 @@ class JenefarOrchestrator:
                     "consecutive_failures": healing.health.consecutive_failures,
                     "circuit_open": healing.health.circuit_open,
                 }
-            trace.finish(status="error", provider="error", verification={"passed": False})
+            trace.finish(status="cancelled" if cancelled else "error", provider="cancelled" if cancelled else "error", verification={"passed": False})
             self._persist_runtime_trace(
                 trace,
                 task=text,
                 result=str(exc),
-                provider="error",
+                provider="cancelled" if cancelled else "error",
             )
+            try:
+                self.task_lifecycle.transition(trace.trace_id, "cancelled" if cancelled else "failed", reason=str(exc), provider="cancelled" if cancelled else "error")
+                self.production.task_finished(trace.trace_id, state="cancelled" if cancelled else "failed", agent=trace.actual_agent or trace.planned_agent, provider="cancelled" if cancelled else "error", error=str(exc))
+            except (KeyError, ValueError, RuntimeError):
+                pass
+            self._runtime_task_id = None
+            self._active_cancel_token = None
             self.state = JenefarState.SLEEPING
-            self._avatar_state("error", str(exc))
-            return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
+            self._avatar_state("cancelled" if cancelled else "error", str(exc))
+            return "Task cancel kar diya gaya hai." if cancelled else f"Jenefar runtime error: {type(exc).__name__}: {exc}"
 
     def _persist_runtime_trace(
         self,
