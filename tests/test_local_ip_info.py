@@ -684,3 +684,43 @@ def test_port_scan_request_understands_target_number_ordinal_phrasing():
     assert JenefarOrchestrator._host_ordinal("target number 2 ke ports scan karo") == 2
     assert JenefarOrchestrator._host_ordinal("number 3 target ke port scan karo") == 3
     assert JenefarOrchestrator._host_ordinal("second target ke ports scan karo") == 2
+
+
+
+def test_failed_nmap_runs_preserve_exact_command_stdout_and_stderr():
+    raw = json.dumps({
+        "status": "ok",
+        "result": {
+            "tool": "nmap",
+            "command": "/usr/bin/nmap -Pn -n -sT 192.168.29.35",
+            "returncode": 2,
+            "stdout": "Nmap scan failed before host probing.\\n",
+            "stderr": "route lookup failed",
+        },
+    })
+    orchestrator = object.__new__(JenefarOrchestrator)
+
+    port_result = JenefarOrchestrator._build_port_scan_result(
+        raw,
+        "192.168.29.35",
+        host_index=2,
+        previous_hosts=[{"index": 2, "ip": "192.168.29.35", "state": "UP"}],
+    )
+    host_result = orchestrator._record_host_discovery_result(
+        raw,
+        "192.168.29.0/24",
+        "not completed",
+        local_address="192.168.29.165",
+    )
+
+    for result in (port_result, host_result):
+        assert result is not None
+        assert result["scan_status"] == "error"
+        assert result["returncode"] == 2
+        assert result["command"] == "/usr/bin/nmap -Pn -n -sT 192.168.29.35"
+        assert result["stdout"] == "Nmap scan failed before host probing.\\n"
+        assert result["stderr"] == "route lookup failed"
+
+    assert port_result["host_status"] == "ERROR"
+    assert host_result["hosts"] == []
+    assert orchestrator._latest_host_discovery["hosts"] == []
