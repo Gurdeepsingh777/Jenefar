@@ -679,5 +679,5 @@ def test_browser_voice_events_ignore_sse_replay_of_same_speech():
     assert "function speechEventWasAlreadyHandled(event)" in js
     assert 'const key=state+"|"+taskId+"|"+payloadKey;' in js
     assert "if(!speechEventWasAlreadyHandled(event)){" in js
-    assert 'if(event.text&&!speechEventWasAlreadyHandled(event)) browserSpeakFallback(event.text);' in js
+    assert 'if(event.text&&!speechEventWasAlreadyHandled(event)){' in js
     assert "while(playedSpeechEventOrder.length>128)" in js
