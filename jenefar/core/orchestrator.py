@@ -128,11 +128,24 @@ class JenefarOrchestrator:
     def runtime_status(self) -> dict[str, Any]:
         """Return a credential-safe live runtime snapshot for the operations UI."""
         from jenefar.core.provider_pool import ProviderPool
+        provider_pool = ProviderPool()
+        # Each agent owns an LLM client; combine their bounded in-process latency
+        # windows so the dashboard reports real samples instead of a fresh empty pool.
+        for agent in getattr(getattr(self, "router", None), "agents", []):
+            client = getattr(agent, "llm", None)
+            source_pool = getattr(client, "providers", None)
+            if source_pool is None:
+                continue
+            for name in provider_pool.CONFIGS:
+                samples = list(getattr(source_pool, "latency_samples", {}).get(name, []))
+                if samples:
+                    provider_pool.latency_samples[name] = (provider_pool.latency_samples[name] + samples)[-8:]
+                provider_pool.failure_samples[name] += int(getattr(source_pool, "failure_samples", {}).get(name, 0))
         snapshot = build_runtime_snapshot(
             runtime_context=self.runtime_context,
             self_healing=self.self_healing,
             trace_store=self.trace_store,
-            provider_pool=ProviderPool(),
+            provider_pool=provider_pool,
         )
         snapshot["tasks"] = self.task_lifecycle.snapshot()
         snapshot["production"] = self.production.snapshot()
