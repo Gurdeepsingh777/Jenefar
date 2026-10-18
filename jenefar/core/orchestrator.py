@@ -192,36 +192,6 @@ class JenefarOrchestrator:
         )
         self.graph.learn_text(text)
         try:
-            direct_window = self._direct_window_transfer(text)
-            if direct_window:
-                from jenefar.voice.speech import devanagari_to_roman
-                output = devanagari_to_roman(direct_window)
-                self.session.add("assistant", output)
-                self.memory_engine.record_message(
-                    self.session.session_id,
-                    "assistant",
-                    output,
-                    importance=0.5,
-                )
-                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
-                self._avatar_state("speaking", output)
-                return output
-
-            direct_screen = self._direct_screen_read(text)
-            if direct_screen:
-                from jenefar.voice.speech import devanagari_to_roman
-                output = devanagari_to_roman(direct_screen)
-                self.session.add("assistant", output)
-                self.memory_engine.record_message(
-                    self.session.session_id,
-                    "assistant",
-                    output,
-                    importance=0.5,
-                )
-                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
-                self._avatar_state("speaking", output)
-                return output
-
             if self._is_local_host_port_scan_request(text):
                 output = self._request_discovered_host_port_scan(text)
                 self.session.add("assistant", output)
@@ -263,6 +233,36 @@ class JenefarOrchestrator:
                     pass
                 else:
                     self._avatar_state("waiting_approval" if awaiting else "speaking", output)
+                return output
+
+            direct_window = self._direct_window_transfer(text)
+            if direct_window:
+                from jenefar.voice.speech import devanagari_to_roman
+                output = devanagari_to_roman(direct_window)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.5,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
+                return output
+
+            direct_screen = self._direct_screen_read(text)
+            if direct_screen:
+                from jenefar.voice.speech import devanagari_to_roman
+                output = devanagari_to_roman(direct_screen)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.5,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", output)
                 return output
 
             if self._is_ip_info_query(text):
@@ -834,7 +834,8 @@ class JenefarOrchestrator:
             + (f", local address: {local_address}" if local_address else "")
             + "). Plan: verify configured authorization scope; run Nmap host discovery only with "
             "-sn, numeric targets (-n), conservative timing (-T3), and one retry; report hosts up. "
-            "Do not enumerate ports or services. Wait for explicit user approval before execution."
+            "This direct request authorizes only host discovery; do not enumerate ports or services. "
+            "Configured target scope must still pass."
         )
         arguments = {
             "tool": "nmap",
