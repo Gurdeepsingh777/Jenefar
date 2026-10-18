@@ -584,13 +584,21 @@ function apply(event){
 
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"){
-    pauseBrowserVoice();
-    if(event.audio_b64&&!speechEventWasAlreadyHandled(event)){
-      playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+    if(event.audio_b64){
+      // Do not re-lock the microphone when EventSource replays a speech event
+      // that this tab has already played or is already playing.
+      if(!speechEventWasAlreadyHandled(event)){
+        pauseBrowserVoice();
+        playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+      }
+    }else{
+      pauseBrowserVoice();
     }
   }else if(currentState==="speaking_fallback"){
-    pauseBrowserVoice();
-    if(event.text&&!speechEventWasAlreadyHandled(event)) browserSpeakFallback(event.text);
+    if(event.text&&!speechEventWasAlreadyHandled(event)){
+      pauseBrowserVoice();
+      browserSpeakFallback(event.text);
+    }
   }else if(currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
