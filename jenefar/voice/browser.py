@@ -66,6 +66,7 @@ class BrowserVoiceBridge:
         *,
         audio_b64: str = "",
         audio_mime: str = "",
+        data: dict[str, Any] | None = None,
     ) -> None:
         if self.avatar is not None:
             self.avatar.publish(
@@ -74,6 +75,7 @@ class BrowserVoiceBridge:
                 task_id=task_id,
                 audio_b64=audio_b64,
                 audio_mime=audio_mime,
+                data=data,
             )
 
     @staticmethod
@@ -398,8 +400,22 @@ class BrowserVoiceBridge:
                 }
 
             result = self.orchestrator._approve_pending(approval_id)
-            display = self._display_text(result)
             task_id = uuid.uuid4().hex[:10]
+            structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
+            if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
+                "host_discovery", "port_scan"
+            }:
+                display = self._display_text(str(structured_scan.get("summary") or result))
+                # Network results are visual-only by design: display actionable
+                # rows in the glass panel instead of speaking a list of IPs/ports.
+                self._publish("scan_results", display, task_id, data=structured_scan)
+                self._approval_voice_results[approval_id] = display
+                while len(self._approval_voice_results) > 128:
+                    oldest_id = next(iter(self._approval_voice_results))
+                    self._approval_voice_results.pop(oldest_id, None)
+                return {"status": "ok", "result": display, "structured_scan": True}
+
+            display = self._display_text(result)
             self._publish("result", display, task_id)
             try:
                 self._speech_queue.put_nowait((task_id, display))
@@ -553,6 +569,25 @@ class BrowserVoiceBridge:
                     raw,
                     response_language="Hinglish",
                 )
+
+            structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
+            if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
+                "host_discovery", "port_scan"
+            }:
+                display_summary = self._display_text(
+                    str(structured_scan.get("summary") or reply)
+                )
+                # Do not synthesize or enqueue spoken IP/port lists. The browser's
+                # dedicated glass results window is the sole presentation path.
+                self._last_assistant_text = ""
+                self._last_assistant_spoken_at = 0.0
+                self._publish(
+                    "scan_results",
+                    display_summary,
+                    task_id,
+                    data=structured_scan,
+                )
+                return
 
             speech_source = enforce_hinglish(reply)
             display_reply = self._display_text(reply)
