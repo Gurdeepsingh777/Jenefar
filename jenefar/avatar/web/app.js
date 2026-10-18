@@ -64,6 +64,7 @@ const labels={
   speaking_fallback:["SPEAKING","Browser voice use ho rahi hai"],
   completed:["DONE","Kaam complete"],
   waiting_approval:["APPROVAL","Confirmation chahiye"],
+  scan_results:["RESULTS","Scan results are displayed in the glass window"],
   error:["ERROR","Ek issue aaya hai"]
 };
 
@@ -569,7 +570,14 @@ function browserSpeakFallback(text){
 
 function apply(event){
   currentState=event.state||"idle";
-  updateEmbeddedHud(currentState,event.text||"");
+  const isScanResults=currentState==="scan_results";
+  const isRawScannerActivity=currentState==="thinking"&&/^Tool result: kali_tool_execute\s*->/i.test(String(event.text||""));
+  if(isScanResults){
+    openScanResults(event.data||{},event.task_id||"");
+  }else if(scanResultsTaskId&&["listening","queued","thinking"].includes(currentState)){
+    closeScanResults();
+  }
+  updateEmbeddedHud(currentState,isScanResults?(event.data?.summary||event.text||"Scan results ready"):(isRawScannerActivity?"Network scan completed":event.text||""));
   speechLevel=Number(event.level||0);
   stage.dataset.state=currentState;
   emotion=event.emotion||"neutral";
@@ -578,9 +586,11 @@ function apply(event){
   stage.style.setProperty("--emotion-intensity",emotionIntensity.toFixed(3));
   stage.dataset.emotion=emotion;
   window.dispatchEvent(new CustomEvent("jenefar-avatar-event",{detail:event}));
-  addActivity(event);
-  updateTaskScreen(event);
-  updateChatFromEvent(event);
+  if(!isScanResults&&!isRawScannerActivity){
+    addActivity(event);
+    updateTaskScreen(event);
+    updateChatFromEvent(event);
+  }
 
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"){
@@ -599,7 +609,7 @@ function apply(event){
       pauseBrowserVoice();
       browserSpeakFallback(event.text);
     }
-  }else if(currentState==="idle"||currentState==="completed"){
+  }else if(currentState==="scan_results"||currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
   }
@@ -610,7 +620,7 @@ function apply(event){
 
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     document.body.dataset.voiceActive="true";
-  }else if(currentState==="idle"||currentState==="listening"||currentState==="completed"){
+  }else if(currentState==="scan_results"||currentState==="idle"||currentState==="listening"||currentState==="completed"){
     document.body.dataset.voiceActive="false";
   }
 
@@ -655,6 +665,169 @@ function updateChatFromEvent(event){
     log.scrollTop=log.scrollHeight;
   }
 }
+
+
+/* Structured, visual-only network scan results */
+const scanResultsWindow=document.getElementById("scan-results-window");
+const scanResultsList=document.getElementById("scan-results-list");
+const scanResultsSummary=document.getElementById("scan-results-summary");
+const scanResultsTitle=document.getElementById("scan-results-title");
+const scanResultsSubtitle=document.getElementById("scan-results-subtitle");
+let latestHostScanData=null;
+let latestPortScanData=null;
+let scanResultsTaskId="";
+let scanResultsView="hosts";
+
+function closeScanResults(){
+  if(scanResultsWindow) scanResultsWindow.hidden=true;
+  document.body.dataset.scanResultsOpen="false";
+  scanResultsTaskId="";
+}
+
+function scanNode(tag,className,text){
+  const node=document.createElement(tag);
+  if(className) node.className=className;
+  if(text!==undefined) node.textContent=String(text);
+  return node;
+}
+
+function setScanView(view){
+  scanResultsView=view==="ports"?"ports":"hosts";
+  document.querySelectorAll("[data-scan-view]").forEach(button=>{
+    const active=button.dataset.scanView===scanResultsView;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-selected",String(active));
+  });
+  renderScanResultsList();
+}
+
+function openScanResults(data,taskId=""){
+  if(!data||typeof data!=="object") return;
+  if(data.kind==="host_discovery"){
+    latestHostScanData=data;
+    latestPortScanData=null;
+    scanResultsView="hosts";
+  }else if(data.kind==="port_scan"){
+    latestPortScanData=data;
+    if(Array.isArray(data.hosts)&&data.hosts.length){
+      latestHostScanData={
+        kind:"host_discovery",
+        target:data.host_discovery_target||"Previous live-host discovery",
+        hosts:data.hosts,
+        host_count:data.hosts.length,
+        own_ip:data.own_ip||"",
+        summary:data.hosts.length+" live hosts"
+      };
+    }
+    scanResultsView="ports";
+  }else{
+    return;
+  }
+  scanResultsTaskId=String(taskId||"");
+  if(scanResultsWindow) scanResultsWindow.hidden=false;
+  document.body.dataset.scanResultsOpen="true";
+  setScanView(scanResultsView);
+}
+
+function renderScanResultsList(){
+  if(!scanResultsList||!scanResultsSummary) return;
+  scanResultsList.replaceChildren();
+  if(scanResultsView==="hosts"){
+    const data=latestHostScanData;
+    if(scanResultsTitle) scanResultsTitle.textContent="LIVE HOSTS";
+    if(scanResultsSubtitle) scanResultsSubtitle.textContent=data
+      ? "Each row is a host that responded to discovery."
+      : "No saved host-discovery result yet.";
+    const hosts=Array.isArray(data?.hosts)?data.hosts:[];
+    const target=String(data?.target||"");
+    const main=scanNode("div","scan-result-summary-main");
+    main.append(scanNode("span","scan-result-big-number",data?.host_count??hosts.length));
+    main.append(scanNode("span","scan-result-summary-label","LIVE HOSTS"));
+    scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",target));
+    if(!hosts.length){
+      const empty=scanNode("div","scan-result-empty");
+      empty.append(scanNode("div","", "No live hosts to display."));
+      scanResultsList.appendChild(empty);
+      return;
+    }
+    const head=scanNode("div","scan-result-list-head");
+    ["HOST / IP","STATUS","LATENCY","ACTION"].forEach(label=>head.appendChild(scanNode("span","",label)));
+    scanResultsList.appendChild(head);
+    hosts.forEach((host,index)=>{
+      if(!host||!host.ip) return;
+      const row=scanNode("article","scan-host-row");
+      const identity=scanNode("div","scan-host-identity");
+      identity.appendChild(scanNode("span","scan-host-index",String(host.index||index+1).padStart(2,"0")));
+      const identityText=scanNode("div","");
+      identityText.appendChild(scanNode("span","scan-host-ip",host.ip));
+      const detail=[host.vendor,host.mac].filter(Boolean).join(" · ");
+      if(detail) identityText.appendChild(scanNode("span","scan-host-meta",detail));
+      if(host.is_local) identityText.appendChild(scanNode("span","scan-host-local","THIS DEVICE"));
+      identity.appendChild(identityText);
+      row.appendChild(identity);
+
+      const status=scanNode("span","scan-host-up");
+      status.appendChild(scanNode("i",""));
+      status.appendChild(scanNode("span","",host.state||"UP"));
+      row.appendChild(status);
+      row.appendChild(scanNode("span","scan-host-latency scan-host-latency-cell",host.latency||"—"));
+
+      const action=scanNode("button","scan-host-action","SCAN PORTS");
+      action.type="button";
+      action.title="Analyze and scan the top 1000 TCP ports of "+host.ip;
+      action.addEventListener("click",()=>{
+        dispatchDashboardCommand("scan ports of host "+host.ip);
+      });
+      row.appendChild(action);
+      scanResultsList.appendChild(row);
+    });
+    return;
+  }
+
+  const data=latestPortScanData;
+  if(scanResultsTitle) scanResultsTitle.textContent="PORT SCAN";
+  if(scanResultsSubtitle) scanResultsSubtitle.textContent=data
+    ? "Open ports and detected service information. Closed ports are hidden."
+    : "Select a live host in the LIVE HOSTS tab to run a focused port scan.";
+  const ports=Array.isArray(data?.ports)?data.ports:[];
+  const main=scanNode("div","scan-result-summary-main");
+  main.append(scanNode("span","scan-result-big-number",data?.open_port_count??ports.length));
+  main.append(scanNode("span","scan-result-summary-label","OPEN PORTS"));
+  scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",data?.target||"TCP · Top 1000"));
+  if(!data){
+    const empty=scanNode("div","scan-result-empty");
+    empty.append(scanNode("b","","No port scan has run yet."));
+    empty.append(scanNode("span","","Open LIVE HOSTS and choose SCAN PORTS beside a host."));
+    scanResultsList.appendChild(empty);
+    return;
+  }
+  const head=scanNode("div","scan-result-list-head");
+  ["PORT","PROTOCOL","SERVICE","VERSION / DETAIL"].forEach(label=>head.appendChild(scanNode("span","",label)));
+  scanResultsList.appendChild(head);
+  if(!ports.length){
+    const empty=scanNode("div","scan-result-empty");
+    empty.append(scanNode("b","","No open TCP ports found."));
+    empty.append(scanNode("span","","Nmap checked the top 1000 TCP ports on "+data.target+"."));
+    scanResultsList.appendChild(empty);
+    return;
+  }
+  ports.forEach(port=>{
+    const row=scanNode("article","scan-port-row");
+    row.appendChild(scanNode("span","scan-port-number",String(port.port)+"/"+String(port.protocol||"tcp")));
+    row.appendChild(scanNode("span","scan-port-protocol",port.state||"OPEN"));
+    row.appendChild(scanNode("span","scan-port-service",port.service||"unknown service"));
+    row.appendChild(scanNode("span","scan-port-version",port.version||"Version not identified"));
+    scanResultsList.appendChild(row);
+  });
+}
+
+document.getElementById("scan-results-close")?.addEventListener("click",closeScanResults);
+document.querySelectorAll("[data-scan-view]").forEach(button=>{
+  button.addEventListener("click",()=>setScanView(button.dataset.scanView||"hosts"));
+});
+window.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&scanResultsWindow&&!scanResultsWindow.hidden) closeScanResults();
+});
 
 
 /* Browser voice */
@@ -1169,6 +1342,8 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
 async function dispatchDashboardCommand(command){
   const clean=String(command||"").trim();
   if(!clean) return;
+  // The previous result window is transient; the new user request owns the stage.
+  closeScanResults();
   // Typed commands can arrive while the mic is enabled. Stop capture before
   // sending so Jenefar cannot transcribe its own answer as a fresh user task.
   pauseBrowserVoice();
