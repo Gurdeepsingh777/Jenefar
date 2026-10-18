@@ -102,6 +102,21 @@ class JenefarOrchestrator:
         self.task_lifecycle = TaskLifecycle()
         self.production = ProductionRuntime()
 
+    def _ensure_runtime_components(self) -> None:
+        """Lazily add runtime observability state for embedded/test instances."""
+        if not hasattr(self, "task_lifecycle"):
+            self.task_lifecycle = TaskLifecycle()
+        if not hasattr(self, "runtime_context"):
+            self.runtime_context = {"state": "idle"}
+        if not hasattr(self, "_active_cancel_token"):
+            self._active_cancel_token = None
+        if not hasattr(self, "_runtime_task_id"):
+            self._runtime_task_id = None
+        # Keep legacy embedders and lightweight object.__new__ test fixtures
+        # working without forcing persistent production stores into them.
+        if not hasattr(self, "production"):
+            self.production = None
+
     @staticmethod
     def _execution_budget_seconds(model_role: str, agent: str) -> float:
         role = str(model_role or "fast").strip().lower()
@@ -161,7 +176,7 @@ class JenefarOrchestrator:
             provider_pool=provider_pool,
         )
         snapshot["tasks"] = self.task_lifecycle.snapshot()
-        snapshot["production"] = self.production.snapshot()
+        snapshot["production"] = self.production.snapshot() if self.production is not None else {}
         return snapshot
 
     def runtime_tasks(
@@ -241,6 +256,7 @@ class JenefarOrchestrator:
         source: str = "user",
         event_id: int | None = None,
     ) -> str:
+        self._ensure_runtime_components()
         # Jenefar's user-facing runtime is intentionally Roman Hinglish-first.
         # Keep the language stable even when a caller omits the preference.
         response_language = response_language or "Hinglish"
@@ -286,7 +302,8 @@ class JenefarOrchestrator:
                 try:
                     self.task_lifecycle.transition(trace.trace_id, task_state, reason=str(output) if task_state == "failed" else "", provider=provider, agent=trace.actual_agent or intent)
                     self.runtime_context.update({"state": task_state, "task_id": trace.trace_id[:12], "agent": trace.actual_agent or intent, "provider": provider, "last_event": intent})
-                    self.production.task_finished(trace.trace_id, state=task_state, agent=trace.actual_agent or intent, provider=provider, error=str(output) if task_state == "failed" else "")
+                    if self.production is not None:
+                        self.production.task_finished(trace.trace_id, state=task_state, agent=trace.actual_agent or intent, provider=provider, error=str(output) if task_state == "failed" else "")
                     if task_state != "waiting_approval":
                         self._runtime_task_id = None
                         self._active_cancel_token = None
@@ -313,7 +330,8 @@ class JenefarOrchestrator:
                 try:
                     final_state = "cancelled" if any(word in pending_reply.casefold() for word in ("cancel", "reject", "decline", "mana kar")) else "completed"
                     self.task_lifecycle.transition(active["task_id"], final_state, reason=pending_reply, provider="local_confirmation")
-                    self.production.task_finished(active["task_id"], state=final_state, agent=active.get("agent", "approval"), provider="local_confirmation")
+                    if self.production is not None:
+                        self.production.task_finished(active["task_id"], state=final_state, agent=active.get("agent", "approval"), provider="local_confirmation")
                     self.runtime_context.update({"state": final_state, "last_event": "approval_resolved"})
                     self._runtime_task_id = None
                     self._active_cancel_token = None
@@ -324,7 +342,8 @@ class JenefarOrchestrator:
             return "Jenefar abhi ek task execute kar rahi hai. Pehle current task complete ya cancel hone dein."
         self._runtime_task_id = trace.trace_id
         self.task_lifecycle.transition(trace.trace_id, "running")
-        self.production.task_started(trace.trace_id, text, agent="pending")
+        if self.production is not None:
+            self.production.task_started(trace.trace_id, text, agent="pending")
         self.runtime_context = {"state": "thinking", "task_id": trace.trace_id[:12], "task": text, "agent": "pending", "provider": "", "started_at": time.time(), "last_event": "request_started"}
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "")
@@ -607,12 +626,14 @@ class JenefarOrchestrator:
             if awaiting:
                 self.task_lifecycle.transition(trace.trace_id, "waiting_approval", reason="approval_required", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
                 self.runtime_context.update({"state": "waiting_approval", "last_event": "approval_required"})
-                self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
+                if self.production is not None:
+                    self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
             else:
                 self.task_lifecycle.transition(trace.trace_id, "completed", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
                 self.runtime_context.update({"state": "speaking", "last_event": "response_ready"})
-                self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
-                self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
+                if self.production is not None:
+                    self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
+                    self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
                 self._runtime_task_id = None
                 self._active_cancel_token = None
             return output
@@ -637,7 +658,8 @@ class JenefarOrchestrator:
             )
             try:
                 self.task_lifecycle.transition(trace.trace_id, "cancelled" if cancelled else "failed", reason=str(exc), provider="cancelled" if cancelled else "error")
-                self.production.task_finished(trace.trace_id, state="cancelled" if cancelled else "failed", agent=trace.actual_agent or trace.planned_agent, provider="cancelled" if cancelled else "error", error=str(exc))
+                if self.production is not None:
+                    self.production.task_finished(trace.trace_id, state="cancelled" if cancelled else "failed", agent=trace.actual_agent or trace.planned_agent, provider="cancelled" if cancelled else "error", error=str(exc))
             except (KeyError, ValueError, RuntimeError):
                 pass
             self._runtime_task_id = None
