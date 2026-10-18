@@ -549,6 +549,9 @@ def main() -> int:
                 else orchestrator._approve_pending
             ),
             rejection_handler=orchestrator._reject_pending_workflow,
+            runtime_status_handler=orchestrator.runtime_status,
+            runtime_tasks_handler=orchestrator.runtime_tasks,
+            runtime_cancel_handler=orchestrator.cancel_active_task,
         )
         avatar_server.start()
 
@@ -863,6 +866,9 @@ def main() -> int:
                 else orchestrator._approve_pending
             ),
             rejection_handler=orchestrator._reject_pending_workflow,
+            runtime_status_handler=orchestrator.runtime_status,
+            runtime_tasks_handler=orchestrator.runtime_tasks,
+            runtime_cancel_handler=orchestrator.cancel_active_task,
         )
         avatar_server.start()
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
