@@ -31,6 +31,8 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     tool_broker = None
     voice_handler = None
     voice_audio_handler = None
+    approval_handler = None
+    rejection_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         try:
@@ -371,7 +373,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 if not self.tool_broker or not pending_id:
                     self._json(400, {"error": "approval id required"})
                     return
-                self._json(200, {"result": self.tool_broker.reject(pending_id)})
+                handler = getattr(self, "rejection_handler", None)
+                result = handler(pending_id) if handler is not None else self.tool_broker.reject(pending_id)
+                self._json(200, {"result": result})
                 return
 
             if path == "/realtime/session":
@@ -381,7 +385,9 @@ class _AvatarHandler(BaseHTTPRequestHandler):
             if path == "/realtime/tool":
                 pending_id = str(body.get("approve_id", "")).strip()
                 if pending_id and self.tool_broker:
-                    self._json(200, {"result": self.tool_broker.approve(pending_id)})
+                    handler = getattr(self, "approval_handler", None)
+                    result = handler(pending_id) if handler is not None else self.tool_broker.approve(pending_id)
+                    self._json(200, {"result": result})
                     return
                 tool_name = str(body.get("name", "")).strip()
                 args = body.get("arguments", {})
@@ -417,6 +423,8 @@ class AvatarServer:
         tool_broker=None,
         voice_handler=None,
         voice_audio_handler=None,
+        approval_handler=None,
+        rejection_handler=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -425,6 +433,8 @@ class AvatarServer:
         self.tool_broker = tool_broker
         self.voice_handler = voice_handler
         self.voice_audio_handler = voice_audio_handler
+        self.approval_handler = approval_handler
+        self.rejection_handler = rejection_handler
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -439,6 +449,8 @@ class AvatarServer:
         tool_broker = self.tool_broker
         voice_handler = self.voice_handler
         voice_audio_handler = self.voice_audio_handler
+        approval_handler = self.approval_handler
+        rejection_handler = self.rejection_handler
 
         class Handler(_AvatarHandler):
             pass
@@ -450,6 +462,8 @@ class AvatarServer:
         # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
         Handler.voice_audio_handler = staticmethod(voice_audio_handler) if voice_audio_handler is not None else None
+        Handler.approval_handler = staticmethod(approval_handler) if approval_handler is not None else None
+        Handler.rejection_handler = staticmethod(rejection_handler) if rejection_handler is not None else None
         return Handler
 
     def _create_server(self) -> None:
