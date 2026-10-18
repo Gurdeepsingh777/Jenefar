@@ -638,4 +638,7 @@ def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
     assert 'handler = getattr(self, "rejection_handler", None)' in server
     assert "approval_handler=orchestrator._approve_pending" in run
     assert "rejection_handler=orchestrator._reject_pending_workflow" in run
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'const payload=await response.json();' in app
+    assert 'browserSpeakFallback(reply);' in app
 
