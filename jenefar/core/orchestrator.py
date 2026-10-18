@@ -897,10 +897,10 @@ class JenefarOrchestrator:
             f"{address_count if address_count is not None else 'unknown'} addresses checked in {target}. "
             "Command Nmap -sn tha; ports aur services scan nahi kiye gaye."
         )
-        if reports:
-            summary += "\nReported hosts: " + ", ".join(reports[:30])
-            if len(reports) > 30:
-                summary += f" (aur {len(reports) - 30} hosts)"
+        # Keep the spoken/chat response minimal. The complete, verified host
+        # list is carried separately in structured_scan data for the transparent
+        # Scan Results window and must not be read aloud or duplicated in chat.
+        summary += " Results screen par live hosts ki list dikh rahi hai."
         return summary
 
     @staticmethod
