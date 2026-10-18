@@ -689,6 +689,7 @@ let latestHostScanData=null;
 let latestPortScanData=null;
 let scanResultsTaskId="";
 let scanResultsView="hosts";
+let portScanRunning=false;
 
 function closeScanResults(){
   if(scanResultsWindow) scanResultsWindow.hidden=true;
@@ -745,6 +746,7 @@ function appendExactNmapOutput(container,data){
 function openScanResults(data,taskId=""){
   if(!data||typeof data!=="object") return;
   if(data.kind==="host_discovery"){
+    portScanRunning=false;
     latestHostScanData=data;
     latestPortScanData=null;
     scanResultsView="hosts";
@@ -770,32 +772,115 @@ function openScanResults(data,taskId=""){
   setScanView(scanResultsView);
 }
 
+function renderNetworkScopePanel(container,data){
+  const panel=scanNode("section","scan-scope-panel");
+  panel.appendChild(scanNode("div","scan-scope-kicker","NETWORK SELECTION & AUTHORIZATION"));
+  const reason=String(data?.scope_message||"No scan was executed. Review the selected range and configured allow-list.");
+  panel.appendChild(scanNode("p","scan-scope-reason",reason));
+
+  const allowed=Array.isArray(data?.authorized_targets)?data.authorized_targets:[];
+  const allowBox=scanNode("div","scan-scope-allowlist");
+  allowBox.appendChild(scanNode("div","scan-scope-label","CURRENT AUTHORIZED TARGETS"));
+  allowBox.appendChild(scanNode("div","scan-scope-values",allowed.length?allowed.join(", "):"Empty allow-list — security tools deny targets by default."));
+  panel.appendChild(allowBox);
+
+  const options=Array.isArray(data?.available_networks)?data.available_networks:[];
+  panel.appendChild(scanNode("div","scan-scope-label","DETECTED LOCAL NETWORKS"));
+  if(!options.length){
+    panel.appendChild(scanNode("div","scan-scope-empty","No safe interface candidate is available. Enter an exact IPv4 CIDR after checking your active interface."));
+  }else{
+    const list=scanNode("div","scan-network-options");
+    options.forEach(option=>{
+      const network=String(option?.network||"").trim();
+      if(!network) return;
+      const row=scanNode("article","scan-network-option");
+      const identity=scanNode("div","scan-network-identity");
+      identity.appendChild(scanNode("b","",String(option.interface||"Interface unknown")));
+      identity.appendChild(scanNode("span","",String(option.address||"")+(option.address?" · ":"")+network));
+      row.appendChild(identity);
+      const authorized=option.authorized===true;
+      row.appendChild(scanNode("span",authorized?"scan-scope-badge allowed":"scan-scope-badge denied",authorized?"AUTHORIZED":"NOT IN SCOPE"));
+      const action=scanNode("button","scan-network-action",authorized?"SCAN THIS NETWORK":"COPY CIDR");
+      action.type="button";
+      action.title=authorized?"Run bounded host discovery on this authorized network":"Copy this CIDR to review and add it to the allow-list only if you are authorized to test it";
+      action.addEventListener("click",async()=>{
+        if(authorized){
+          action.disabled=true;
+          action.textContent="STARTING…";
+          const result=await dispatchDashboardCommand("scan network "+network);
+          if(!result?.accepted&&!result?.busy){
+            action.disabled=false;
+            action.textContent="SCAN THIS NETWORK";
+          }
+          return;
+        }
+        try{
+          await navigator.clipboard.writeText(network);
+          action.textContent="COPIED";
+          panel.querySelector(".scan-scope-feedback")?.remove();
+          panel.appendChild(scanNode("div","scan-scope-feedback","CIDR copied. Add it to JENEFAR_AUTHORIZED_TARGETS only if this is your authorized network, then restart Jenefar."));
+        }catch(_){
+          action.textContent=network;
+          panel.querySelector(".scan-scope-feedback")?.remove();
+          panel.appendChild(scanNode("div","scan-scope-feedback","Copy unavailable. CIDR: "+network+". Add it to JENEFAR_AUTHORIZED_TARGETS only if authorized, then restart Jenefar."));
+        }
+      });
+      row.appendChild(action);
+      list.appendChild(row);
+    });
+    panel.appendChild(list);
+  }
+
+  const hint=scanNode("p","scan-scope-help","Jenefar will not automatically authorize a discovered range. To change scope, edit JENEFAR_AUTHORIZED_TARGETS in the project .env (or security.authorized_targets in config.yaml), then restart and re-check /security/scope.");
+  panel.appendChild(hint);
+  container.appendChild(panel);
+}
+
 function renderScanResultsList(){
   if(!scanResultsList||!scanResultsSummary) return;
   scanResultsList.replaceChildren();
   if(scanResultsView==="hosts"){
     const data=latestHostScanData;
     const scanFailed=data?.scan_status==="error";
-    if(scanResultsTitle) scanResultsTitle.textContent=scanFailed?"SCAN FAILED":"LIVE HOSTS";
-    if(scanResultsSubtitle) scanResultsSubtitle.textContent=scanFailed
-      ? "Nmap did not complete successfully. Expand EXACT NMAP OUTPUT to inspect the command and error."
-      : data ? "Each row is a host that responded to discovery."
-      : "No saved host-discovery result yet.";
+    const scanBlocked=data?.scan_status==="blocked";
+    const scanSelectionRequired=data?.scan_status==="selection_required";
+    const requiresGuidance=scanBlocked||scanSelectionRequired;
+    const heading=scanBlocked?"AUTHORIZATION REQUIRED":scanSelectionRequired?"SELECT NETWORK":scanFailed?"SCAN FAILED":"LIVE HOSTS";
+    if(scanResultsTitle) scanResultsTitle.textContent=heading;
+    if(scanResultsSubtitle) scanResultsSubtitle.textContent=scanBlocked
+      ? "The selected network is not authorized. No Nmap command was executed."
+      : scanSelectionRequired
+        ? "Several local interfaces/ranges were detected. Choose the intended authorized network below."
+        : scanFailed
+          ? "Host discovery did not complete. Inspect the reason and any available execution output below."
+          : data ? "Each row is a host that responded to discovery."
+          : "No saved host-discovery result yet.";
+    const statusBadge=document.querySelector(".scan-results-complete");
+    if(statusBadge){
+      statusBadge.classList.toggle("scope-blocked",requiresGuidance||scanFailed);
+      statusBadge.textContent=scanBlocked?"NO SCAN EXECUTED":scanSelectionRequired?"CHOICE REQUIRED":scanFailed?"SCAN FAILED":"RESULT AVAILABLE";
+    }
     const hosts=Array.isArray(data?.hosts)?data.hosts:[];
-    const target=String(data?.target||"");
+    const target=String(data?.target||(scanSelectionRequired?"Choose a local interface / CIDR":""));
     const main=scanNode("div","scan-result-summary-main");
-    main.append(scanNode("span","scan-result-big-number",scanFailed?"—":(data?.host_count??hosts.length)));
-    main.append(scanNode("span","scan-result-summary-label",scanFailed?"SCAN FAILED":"LIVE HOSTS"));
+    const countKnown=data?.host_count!==null&&data?.host_count!==undefined;
+    const countLabel=requiresGuidance||scanFailed||!countKnown?"—":data.host_count;
+    main.append(scanNode("span","scan-result-big-number",countLabel));
+    main.append(scanNode("span","scan-result-summary-label",heading));
     scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",target));
     if(!hosts.length){
-      const empty=scanNode("div","scan-result-empty");
-      if(scanFailed){
-        empty.append(scanNode("b","","Host discovery did not complete."));
-        empty.append(scanNode("span","","No live-host count is being claimed because Nmap returned a non-zero exit code."));
+      if(requiresGuidance){
+        renderNetworkScopePanel(scanResultsList,data);
       }else{
-        empty.append(scanNode("div","", "No live hosts to display."));
+        const empty=scanNode("div","scan-result-empty");
+        if(scanFailed){
+          empty.append(scanNode("b","","Host discovery did not complete."));
+          empty.append(scanNode("span","",String(data?.scope_message||"No verified live-host count is available.")));
+        }else{
+          empty.append(scanNode("div","", "No live hosts were reported by the completed discovery."));
+        }
+        scanResultsList.appendChild(empty);
       }
-      scanResultsList.appendChild(empty);
       appendExactNmapOutput(scanResultsList,data);
       return;
     }
@@ -824,8 +909,17 @@ function renderScanResultsList(){
       const action=scanNode("button","scan-host-action","SCAN PORTS");
       action.type="button";
       action.title="Analyze and scan the top 1000 TCP ports of "+host.ip;
-      action.addEventListener("click",()=>{
-        dispatchDashboardCommand("scan ports of host "+host.ip);
+      action.addEventListener("click",async()=>{
+        if(portScanRunning) return;
+        portScanRunning=true;
+        action.disabled=true;
+        action.textContent="QUEUED…";
+        const result=await dispatchDashboardCommand("scan ports of host "+host.ip);
+        if(!result?.accepted&&!result?.busy){
+          portScanRunning=false;
+          action.disabled=false;
+          action.textContent="SCAN PORTS";
+        }
       });
       row.appendChild(action);
       scanResultsList.appendChild(row);
