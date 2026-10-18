@@ -1645,7 +1645,7 @@ setupActivityFilters();
 
 /* Production runtime status, persistent task history and cooperative cancellation. */
 const runtimeOpsStatus=document.getElementById("runtime-ops-status");
-const runtimeHistoryList=document.getElementById("runtime-history-list");
+const runtimeHistoryList=document.getElementById("task-history-list");
 const runtimeHistorySearch=document.getElementById("runtime-history-search");
 const runtimeHistoryState=document.getElementById("runtime-history-state");
 const runtimeRefreshButton=document.getElementById("runtime-ops-refresh");
