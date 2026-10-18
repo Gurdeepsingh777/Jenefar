@@ -306,3 +306,5 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
     assert '["PORT","STATE","SERVICE","VERSION / DETAIL"]' in app
     assert "Host reachability was not confirmed." in app
     assert "No open or filtered TCP ports were reported." in app
+    assert "REACHABILITY UNKNOWN · " in app
+    assert "filtered-only output does not" in orchestrator
