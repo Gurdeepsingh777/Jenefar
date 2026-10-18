@@ -387,7 +387,15 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 if pending_id and self.tool_broker:
                     handler = getattr(self, "approval_handler", None)
                     result = handler(pending_id) if handler is not None else self.tool_broker.approve(pending_id)
-                    self._json(200, {"result": result})
+                    payload = {"result": result}
+                    # Direct host discovery/port-scan approvals produce structured
+                    # data on the orchestrator. Return it with the approval response
+                    # as a reliable fallback to the live SSE event.
+                    owner = getattr(handler, "__self__", None) if handler is not None else None
+                    scan_data = getattr(owner, "_latest_scan_result", None)
+                    if isinstance(scan_data, dict) and scan_data.get("kind") in {"host_discovery", "port_scan"}:
+                        payload["structured_scan"] = scan_data
+                    self._json(200, payload)
                     return
                 tool_name = str(body.get("name", "")).strip()
                 args = body.get("arguments", {})
