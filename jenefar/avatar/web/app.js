@@ -2214,3 +2214,162 @@ refreshModelStatus();
   // The initial font/layout pass can change card height after the first frame.
   window.addEventListener("load", scheduleLayout, { once: true });
 })();
+
+
+/* Live system telemetry from the loopback-only monitoring WebSocket. */
+(function setupLiveSystemTelemetry() {
+  const cpuRing = document.getElementById("metric-cpu");
+  const cpuValue = document.getElementById("metric-cpu-value");
+  const cpuDetail = document.getElementById("metric-cpu-detail");
+  const ramRing = document.getElementById("metric-ram");
+  const ramValue = document.getElementById("metric-ram-value");
+  const ramDetail = document.getElementById("metric-ram-detail");
+  const gpuRing = document.getElementById("metric-gpu");
+  const gpuValue = document.getElementById("metric-gpu-value");
+  const gpuDetail = document.getElementById("metric-gpu-detail");
+  const updated = document.getElementById("metrics-updated");
+  if (!cpuRing || !cpuValue || !ramRing || !ramValue || !gpuRing || !gpuValue) return;
+
+  let socket = null;
+  let retryTimer = null;
+  let freshnessTimer = null;
+  let retryDelay = 1000;
+  let lastPayloadAt = 0;
+
+  function percent(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+  }
+
+  function paintRing(ring, label, value) {
+    const n = percent(value);
+    if (n === null) return;
+    ring.style.setProperty("--meter-value", n + "%");
+    ring.setAttribute("aria-valuenow", String(Math.round(n)));
+    label.textContent = Math.round(n) + "%";
+    ring.classList.remove("meter-unavailable");
+  }
+
+  function setOffline(message) {
+    if (updated) {
+      updated.textContent = message || "SYSTEM TELEMETRY OFFLINE · RETRYING";
+      updated.dataset.state = "offline";
+    }
+    if (cpuDetail) cpuDetail.textContent = "Waiting for live data";
+    if (ramDetail && !lastPayloadAt) ramDetail.textContent = "Waiting for live data";
+    if (!lastPayloadAt && gpuDetail) gpuDetail.textContent = "GPU sensor unavailable";
+  }
+
+  function updateTelemetry(data) {
+    if (!data || typeof data !== "object") return;
+    lastPayloadAt = Date.now();
+    paintRing(cpuRing, cpuValue, data.cpu);
+    if (cpuDetail) cpuDetail.textContent = "Live system usage";
+
+    if (data.ram && typeof data.ram === "object") {
+      paintRing(ramRing, ramValue, data.ram.percent);
+      const used = Number(data.ram.used_gb);
+      const total = Number(data.ram.total_gb);
+      if (ramDetail && Number.isFinite(used) && Number.isFinite(total)) {
+        ramDetail.textContent = used.toFixed(1) + " / " + total.toFixed(1) + " GB";
+      } else if (ramDetail) {
+        ramDetail.textContent = "RAM " + Math.round(Number(data.ram.percent) || 0) + "%";
+      }
+    }
+
+    const gpu = data.gpu || {};
+    if (gpu.available && percent(gpu.usage) !== null) {
+      paintRing(gpuRing, gpuValue, gpu.usage);
+      gpuRing.setAttribute("aria-label", "GPU usage " + Math.round(Number(gpu.usage)) + "%");
+      const name = [gpu.vendor, gpu.name].filter(Boolean).join(" · ");
+      const memory = Number.isFinite(Number(gpu.memory_used_gb)) &&
+        Number.isFinite(Number(gpu.memory_total_gb))
+        ? " · " + Number(gpu.memory_used_gb).toFixed(1) + "/" +
+          Number(gpu.memory_total_gb).toFixed(1) + " GB VRAM"
+        : "";
+      if (gpuDetail) {
+        gpuDetail.textContent = (name || "GPU") + memory +
+          (Number.isFinite(Number(gpu.power_w)) ? " · " + Number(gpu.power_w).toFixed(1) + " W" : "");
+        gpuDetail.title = gpuDetail.textContent;
+      }
+    } else {
+      gpuValue.textContent = "N/A";
+      gpuRing.classList.add("meter-unavailable");
+      gpuRing.setAttribute("aria-label", "GPU telemetry unavailable");
+      if (gpuDetail) gpuDetail.textContent = "Sensor unavailable";
+    }
+
+    if (updated) {
+      const now = new Date();
+      updated.textContent = "LIVE SYSTEM TELEMETRY · " +
+        now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      updated.dataset.state = "online";
+    }
+  }
+
+  function socketUrl() {
+    const isLocal = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+    const host = isLocal ? location.hostname : "127.0.0.1";
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    return scheme + "//" + (host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host) + ":8765";
+  }
+
+  function scheduleReconnect() {
+    if (retryTimer) return;
+    setOffline("SYSTEM TELEMETRY OFFLINE · RETRYING");
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 10000);
+  }
+
+  function connect() {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+    if (location.protocol === "https:") {
+      setOffline("SYSTEM TELEMETRY NEEDS A SECURE WEBSOCKET ENDPOINT");
+      return;
+    }
+    try {
+      socket = new WebSocket(socketUrl());
+    } catch (_) {
+      scheduleReconnect();
+      return;
+    }
+    socket.addEventListener("open", () => {
+      retryDelay = 1000;
+      if (updated) updated.textContent = "MONITOR CONNECTED · WAITING FOR FIRST SAMPLE";
+    });
+    socket.addEventListener("message", event => {
+      try {
+        updateTelemetry(JSON.parse(event.data));
+      } catch (error) {
+        console.error("[JENEFAR] Invalid system telemetry payload", error);
+      }
+    });
+    socket.addEventListener("error", () => setOffline("SYSTEM TELEMETRY CONNECTION ERROR"));
+    socket.addEventListener("close", () => {
+      socket = null;
+      scheduleReconnect();
+    });
+  }
+
+  freshnessTimer = setInterval(() => {
+    if (lastPayloadAt && Date.now() - lastPayloadAt > 5000) {
+      setOffline("SYSTEM TELEMETRY STALE · RECONNECTING");
+      if (socket) {
+        try { socket.close(); } catch (_) {}
+      }
+    }
+  }, 2000);
+
+  window.addEventListener("beforeunload", () => {
+    if (retryTimer) clearTimeout(retryTimer);
+    if (freshnessTimer) clearInterval(freshnessTimer);
+    if (socket) {
+      try { socket.close(); } catch (_) {}
+    }
+  }, { once: true });
+
+  connect();
+})();
