@@ -8,6 +8,7 @@ import os
 import re
 import threading
 import time
+from typing import Any
 from jenefar.agents.automation.desktop import AutomationAgent
 from jenefar.agents.automation.gui import VisionGUIAgent
 from jenefar.agents.bugbounty.bugbounty import BugBountyAgent
