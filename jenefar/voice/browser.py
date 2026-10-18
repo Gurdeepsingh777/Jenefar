@@ -399,6 +399,11 @@ class BrowserVoiceBridge:
                     "duplicate": True,
                 }
 
+            # Reset only after the duplicate guard, so a repeated click can still
+            # reuse its cached scan result. A fresh approval must not inherit data
+            # from an unrelated earlier scan.
+            if hasattr(self.orchestrator, "_latest_scan_result"):
+                self.orchestrator._latest_scan_result = None
             result = self.orchestrator._approve_pending(approval_id)
             task_id = uuid.uuid4().hex[:10]
             structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
