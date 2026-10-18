@@ -670,3 +670,14 @@ def test_approval_speech_queue_uses_browser_fallback_and_does_not_unlock_early()
     assert 'self._publish("speaking_fallback", display_text, task_id)' in speech_loop
     assert 'self._publish("idle", "", "")' not in speech_loop
     assert "Queue completion means synthesis ended, not that browser" in speech_loop
+
+
+
+def test_browser_voice_events_ignore_sse_replay_of_same_speech():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "const playedSpeechEventKeys=new Set();" in js
+    assert "function speechEventWasAlreadyHandled(event)" in js
+    assert 'const key=state+"|"+taskId+"|"+payloadKey;' in js
+    assert "if(event.audio_b64&&!speechEventWasAlreadyHandled(event))" in js
+    assert 'if(event.text&&!speechEventWasAlreadyHandled(event)) browserSpeakFallback(event.text);' in js
+    assert "while(playedSpeechEventOrder.length>128)" in js
