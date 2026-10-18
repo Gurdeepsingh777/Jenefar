@@ -303,7 +303,13 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
     assert '"-Pn", "-n", "-sT", "-sV"' in orchestrator
     assert '"filtered_port_count": filtered_count' in orchestrator
     assert '"closed_port_count": closed_count' in orchestrator
+    assert '"stdout": stdout' in orchestrator
+    assert '"stderr": str(result.get("stderr") or "")' in orchestrator
+    assert 'appendExactNmapOutput(scanResultsList,data)' in app
+    assert 'scanNode("summary","","EXACT NMAP OUTPUT")' in app
+    assert 'scanNode("pre","scan-raw-pre",stdout)' in app
     assert '["PORT","STATE","SERVICE","VERSION / DETAIL"]' in app
+    assert "NO SCAN YET" in app
     assert "Host reachability was not confirmed." in app
     assert "No open or filtered TCP ports were reported." in app
     assert "REACHABILITY UNKNOWN · " in app
