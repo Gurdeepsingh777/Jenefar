@@ -286,9 +286,10 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
 
     assert "approval_handler=orchestrator._approve_pending" in run
     assert "rejection_handler=orchestrator._reject_pending_workflow" in run
-    assert 'self.avatar.publish("scan_results", str(data["summary"]), data=data)' in orchestrator
-    assert 'self.avatar.publish("scan_results", str(result_data["summary"]), data=result_data)' in orchestrator
-    assert "Results screen par live hosts ki list dikh rahi hai." in orchestrator
+    assert 'avatar.publish("scan_results", str(data["summary"]), data=data)' in orchestrator
+    assert 'avatar.publish("scan_results", str(result_data["summary"]), data=result_data)' in orchestrator
+    assert "only the compact result-window summary to the voice UI." in orchestrator
+    assert 'summary += "\\nReported hosts: "' in orchestrator
     assert 'payload["structured_scan"] = scan_data' in server
     assert "openScanResults(payload.structured_scan" in app
     assert 'dispatchDashboardCommand("scan ports of host "+host.ip)' in app
