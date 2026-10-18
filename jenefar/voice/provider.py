@@ -273,33 +273,61 @@ class ProviderVoiceRuntime:
             return model
 
     async def _transcribe_local(self, audio) -> str:
-        """Transcribe a WAV buffer with a locally cached faster-whisper model."""
+        """Transcribe a WAV buffer with cached Whisper, retrying without VAD.
+
+        VAD can discard quiet Hinglish syllables or short commands. If the
+        filtered pass produces no text, replay the same in-memory audio without
+        VAD and with a wider beam before reporting failure to the browser.
+        """
         def run() -> str:
             with self._local_stt_inference_lock:
                 model = self._get_local_stt_model()
-                audio.seek(0)
                 configured_language = os.getenv(
                     "JENEFAR_LOCAL_STT_LANGUAGE", "auto"
                 ).strip().lower()
                 language = None if configured_language in {"", "auto"} else configured_language
-                segments, _info = model.transcribe(
-                    audio,
-                    language=language,
-                    beam_size=1,
-                    vad_filter=True,
-                    temperature=0.0,
+                attempts = (
+                    {"beam_size": 1, "vad_filter": True},
+                    {"beam_size": 3, "vad_filter": False},
                 )
-                transcript = " ".join(
-                    str(segment.text or "").strip()
-                    for segment in segments
-                    if str(segment.text or "").strip()
-                ).strip()
-                if not transcript:
-                    raise RuntimeError(
-                        "Local Whisper STT did not recognize speech. Speak closer to the microphone "
-                        "or set JENEFAR_LOCAL_STT_LANGUAGE to hi or en."
+                failures: list[str] = []
+                for attempt_number, options in enumerate(attempts, start=1):
+                    audio.seek(0)
+                    try:
+                        segments, _info = model.transcribe(
+                            audio,
+                            language=language,
+                            beam_size=options["beam_size"],
+                            vad_filter=options["vad_filter"],
+                            temperature=0.0,
+                            condition_on_previous_text=False,
+                        )
+                        transcript = " ".join(
+                            str(segment.text or "").strip()
+                            for segment in segments
+                            if str(segment.text or "").strip()
+                        ).strip()
+                    except Exception as exc:
+                        failures.append(f"pass {attempt_number}: {type(exc).__name__}: {exc}")
+                        continue
+                    if transcript:
+                        if attempt_number > 1:
+                            print(
+                                "[JENEFAR] Local Whisper recovered the transcript "
+                                "on the unfiltered-audio retry."
+                            )
+                        return transcript
+                    failures.append(
+                        f"pass {attempt_number}: no speech text "
+                        f"(vad_filter={options['vad_filter']}, beam_size={options['beam_size']})"
                     )
-                return transcript
+
+                detail = "; ".join(failures[-2:])
+                raise RuntimeError(
+                    "Local Whisper loaded, but no transcript was produced from the captured audio. "
+                    "Check the selected microphone/input level, speak a little closer, and try a "
+                    "short 2–4 second phrase. " + detail
+                )
 
         return await asyncio.to_thread(run)
 
