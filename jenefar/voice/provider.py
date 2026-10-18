@@ -286,17 +286,25 @@ class ProviderVoiceRuntime:
                     "JENEFAR_LOCAL_STT_LANGUAGE", "auto"
                 ).strip().lower()
                 language = None if configured_language in {"", "auto"} else configured_language
-                attempts = (
-                    {"beam_size": 1, "vad_filter": True},
-                    {"beam_size": 3, "vad_filter": False},
-                )
+                attempts = [
+                    {"language": language, "beam_size": 1, "vad_filter": True},
+                    {"language": language, "beam_size": 3, "vad_filter": False},
+                ]
+                # Auto-detection can miss short Hindi/Hinglish utterances. When
+                # language is auto, give the cached model one explicit Hindi pass
+                # before telling the user that speech was not recognized.
+                if language is None:
+                    attempts.append(
+                        {"language": "hi", "beam_size": 3, "vad_filter": False}
+                    )
+
                 failures: list[str] = []
                 for attempt_number, options in enumerate(attempts, start=1):
                     audio.seek(0)
                     try:
                         segments, _info = model.transcribe(
                             audio,
-                            language=language,
+                            language=options["language"],
                             beam_size=options["beam_size"],
                             vad_filter=options["vad_filter"],
                             temperature=0.0,
@@ -313,16 +321,18 @@ class ProviderVoiceRuntime:
                     if transcript:
                         if attempt_number > 1:
                             print(
-                                "[JENEFAR] Local Whisper recovered the transcript "
-                                "on the unfiltered-audio retry."
+                                "[JENEFAR] Local Whisper recovered speech on fallback "
+                                f"pass {attempt_number} (language={options['language'] or 'auto'}, "
+                                f"vad_filter={options['vad_filter']})."
                             )
                         return transcript
                     failures.append(
                         f"pass {attempt_number}: no speech text "
-                        f"(vad_filter={options['vad_filter']}, beam_size={options['beam_size']})"
+                        f"(language={options['language'] or 'auto'}, "
+                        f"vad_filter={options['vad_filter']}, beam_size={options['beam_size']})"
                     )
 
-                detail = "; ".join(failures[-2:])
+                detail = "; ".join(failures)
                 raise RuntimeError(
                     "Local Whisper loaded, but no transcript was produced from the captured audio. "
                     "Check the selected microphone/input level, speak a little closer, and try a "
