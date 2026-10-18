@@ -1013,7 +1013,7 @@ class JenefarOrchestrator:
         ports: list[dict] = []
         port_pattern = re.compile(
             r"^\s*(\d{1,5})/(tcp|udp)\s+(open|closed|filtered|open\|filtered)\s+"
-            r"([A-Za-z0-9._+-]+)(?:\s+(.*?))?\s*$",
+            r"([A-Za-z0-9._:+-]+)(?:\s+(.*?))?\s*$",
             re.IGNORECASE,
         )
         for line in stdout.splitlines():
