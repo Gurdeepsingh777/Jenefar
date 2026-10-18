@@ -365,3 +365,50 @@ def test_nmap_host_discovery_summary_uses_real_reported_count():
     assert "192.168.29.165" in reply
     assert "ports aur services scan nahi kiye gaye" in reply
 
+def test_approved_host_discovery_returns_summary_and_clears_pending_workflow():
+    from jenefar.core.state import JenefarState
+
+    pending_id = "b" * 32
+    stdout = (
+        "Starting Nmap 7.95\\n"
+        "Nmap scan report for 192.168.29.1\\n"
+        "Host is up.\\n"
+        "Nmap done: 256 IP addresses (1 host up) scanned in 1.02 seconds\\n"
+    )
+
+    class FakeHostBroker:
+        def approve(self, selected_id):
+            assert selected_id == pending_id
+            return json.dumps({
+                "status": "ok",
+                "result": {
+                    "tool": "nmap",
+                    "returncode": 0,
+                    "stdout": stdout,
+                    "stderr": "",
+                },
+            })
+
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator.pending_approval_workflows = {
+        pending_id: {
+            "remaining": {pending_id},
+            "direct_workflow": "local_host_discovery",
+            "target": "192.168.29.0/24",
+        }
+    }
+    orchestrator.tool_broker = FakeHostBroker()
+    orchestrator.session = _FakeSession()
+    orchestrator.memory_engine = _FakeMemory()
+    orchestrator.graph = _FakeGraph()
+    orchestrator.config = SimpleNamespace(single_turn_sleep=False)
+    orchestrator.state = JenefarState.WAITING_APPROVAL
+    orchestrator._avatar_state = lambda *_args, **_kwargs: None
+
+    reply = orchestrator._approve_pending(pending_id)
+
+    assert "1 host(s) online" in reply
+    assert "192.168.29.1" in reply
+    assert pending_id not in orchestrator.pending_approval_workflows
+    assert orchestrator.state == JenefarState.AWAKE
+
