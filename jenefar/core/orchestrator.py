@@ -547,13 +547,13 @@ class JenefarOrchestrator:
         ))
         has_range = any(marker in lowered for marker in (
             "ip range", "ip ki range", "range", "subnet", "cidr",
-            "network range", "local network", "meri ip", "mera ip",
-            "my ip", "my network", "meri range", "my range",
+            "network range", "local network", "my subnet", "meri subnet",
+            "meri range", "my range",
         ))
         has_host_goal = any(marker in lowered for marker in (
             "host", "hosts", "device", "devices", "online", "live",
             "ping sweep", "host discovery", "kitne", "count", "discover",
-            "scan", "check",
+            "scan",
         ))
         explicit_goal = any(marker in lowered for marker in (
             "host discovery", "live hosts", "online hosts", "hosts online",
