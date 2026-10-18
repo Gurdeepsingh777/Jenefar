@@ -482,9 +482,13 @@ def main() -> int:
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
             voice_audio_handler=browser_voice.handle_audio if browser_voice_enabled else None,
-            # Route dashboard approvals through the orchestrator so workflow state,
-            # structured scan results, and duplicate-click idempotency stay in sync.
-            approval_handler=orchestrator._approve_pending,
+            # Use the browser voice bridge as the approval owner in the default
+            # UI path so duplicate clicks are serialized and scan results are visual-only.
+            approval_handler=(
+                browser_voice.approve_pending
+                if browser_voice_enabled
+                else orchestrator._approve_pending
+            ),
             rejection_handler=orchestrator._reject_pending_workflow,
         )
         avatar_server.start()
