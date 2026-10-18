@@ -158,6 +158,30 @@
         <div class="workspace-idle" id="workspace-idle">Ready</div>
       </div>
     </aside>
+    <section id="scan-results-window" class="scan-results-window" role="dialog"
+             aria-modal="false" aria-labelledby="scan-results-title" aria-live="polite" hidden>
+      <header class="scan-results-header">
+        <div class="scan-results-heading">
+          <div class="scan-results-kicker"><span class="scan-live-indicator"></span> JENEFAR / NETWORK INTELLIGENCE</div>
+          <h2 id="scan-results-title">SCAN RESULTS</h2>
+          <p id="scan-results-subtitle">Live hosts from your authorized scan</p>
+        </div>
+        <div class="scan-results-header-actions">
+          <span class="scan-results-complete"><i></i> VERIFIED OUTPUT</span>
+          <button id="scan-results-close" class="scan-results-close" type="button" aria-label="Close scan results">×</button>
+        </div>
+      </header>
+      <div id="scan-results-summary" class="scan-results-summary"></div>
+      <nav class="scan-results-tabs" aria-label="Scan result views">
+        <button type="button" data-scan-view="hosts" class="active">LIVE HOSTS</button>
+        <button type="button" data-scan-view="ports">OPEN PORTS</button>
+      </nav>
+      <div id="scan-results-list" class="scan-results-list"></div>
+      <footer class="scan-results-footer">
+        <span><b></b> Select a host to inspect its ports</span>
+        <span>New instruction closes this window automatically</span>
+      </footer>
+    </section>
     <div class="bottom-dock">
       <button type="button" class="talk-button" id="mic-button" aria-pressed="false" aria-label="Turn microphone on"><span aria-hidden="true">●</span><span class="mic-label">MIC OFF</span></button>
       <button type="button" class="live-voice-button" id="realtime-button" aria-pressed="false" aria-label="Start live conversational voice"><span aria-hidden="true">◉</span><span id="realtime-button-label">LIVE VOICE</span></button>
