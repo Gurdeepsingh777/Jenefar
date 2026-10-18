@@ -147,7 +147,7 @@ class BrowserVoiceBridge:
     def _synthesize_gemini_audio(self, text: str) -> tuple[str, str]:
         """Expressive Google Gemini TTS fallback, independent of chat-model quota."""
         key = self._direct_gemini_tts_key()
-        if not key or self._gemini_tts_disabled:
+        if not key or getattr(self, "_gemini_tts_disabled", False):
             return "", ""
         import httpx
 
