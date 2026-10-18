@@ -611,7 +611,9 @@ def test_browser_mic_stays_locked_when_server_reports_busy():
     assert "voiceLocked=false" not in busy_block
     assert "resumeBrowserVoice()" not in busy_block
     assert "setMicButton(true,true)" in busy_block
-    assert "active task's speaking/completed event will unlock it" in busy_block
+    assert "Do not unlock during a still-running task" in busy_block
+    assert "resumeVoiceIfAssistantIdle();" in busy_block
+    assert "function resumeVoiceIfAssistantIdle()" in js
 
 
 def test_avatar_server_silently_handles_closed_browser_socket():
