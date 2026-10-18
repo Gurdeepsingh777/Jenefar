@@ -55,7 +55,7 @@ def get_primary_private_ipv4_network() -> dict[str, Any]:
             check=False,
         )
         if route_result.returncode == 0:
-            match = re.search(r"(?:^|[ \\t])dev[ \\t]+([^ \\t\\r\\n]+)", route_result.stdout or "")
+            match = re.search(r"(?:^| )dev +([^ ]+)", route_result.stdout or "")
             if match:
                 default_interface = match.group(1)
     except (OSError, subprocess.TimeoutExpired):
