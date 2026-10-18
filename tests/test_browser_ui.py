@@ -578,3 +578,24 @@ def test_browser_tts_prefers_expressive_gemini_before_edge_fallback():
     assert "JENEFAR_GEMINI_TTS_MODEL" in bridge
     assert "self._synthesize_gemini_audio(text)" in bridge
     assert "trying expressive Gemini TTS" in bridge
+
+
+
+def test_browser_mic_stays_locked_until_assistant_finishes_responding():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    voice_start = js.index("async function sendBrowserTranscript(text){")
+    voice_end = js.index("function setupBrowserVoice(){", voice_start)
+    voice_handler = js[voice_start:voice_end]
+    accepted = voice_handler.index("if(result?.accepted){")
+    accepted_end = voice_handler.index("\n    }", accepted)
+    accepted_block = voice_handler[accepted:accepted_end]
+
+    assert "Keep the microphone locked while the server thinks and synthesizes TTS" in accepted_block
+    assert "return;" in accepted_block
+    assert "voiceLocked=false" not in accepted_block
+
+    dashboard_start = js.index("async function dispatchDashboardCommand(command){")
+    dashboard_end = js.index('document.querySelectorAll("[data-command]")', dashboard_start)
+    dashboard_handler = js[dashboard_start:dashboard_end]
+    assert dashboard_handler.index("pauseBrowserVoice();") < dashboard_handler.index('fetch("/voice/text"')
+    assert "Keep capture locked until the corresponding speaking/completed event." in dashboard_handler
