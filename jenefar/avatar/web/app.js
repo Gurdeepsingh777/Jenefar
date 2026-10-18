@@ -616,7 +616,11 @@ function apply(event){
 
   const [stateText,caption]=labels[currentState]||["ACTIVE",event.text||""];
   if(stateEl) stateEl.textContent=stateText;
-  if(captionEl) captionEl.textContent=event.text||caption;
+  if(captionEl) captionEl.textContent=isRawScannerActivity
+    ? "Network scan running"
+    : isScanResults
+      ? String(event.data?.summary||event.text||caption)
+      : (event.text||caption);
 
   if(currentState==="speaking"||currentState==="speaking_fallback"){
     document.body.dataset.voiceActive="true";
