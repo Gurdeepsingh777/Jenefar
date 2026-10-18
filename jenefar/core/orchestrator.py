@@ -765,6 +765,100 @@ class JenefarOrchestrator:
             avatar.publish("scan_results", str(data["summary"]), data=data)
         return str(data["summary"])
 
+    def _publish_network_scan_guidance(
+        self,
+        *,
+        target: str,
+        status: str,
+        summary: str,
+        reason: str = "",
+        interface: str = "",
+        local_address: str = "",
+        networks: list[dict] | None = None,
+    ) -> str:
+        """Publish an actionable network-selection/scope result without implying a scan ran."""
+        scope = getattr(self, "scope", None) or getattr(
+            getattr(self, "tool_broker", None), "scope", None
+        )
+        allowed_targets = list(getattr(scope, "allowed_targets", []) or [])
+        options: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for item in networks or []:
+            if not isinstance(item, dict):
+                continue
+            network = str(item.get("network") or item.get("cidr") or "").strip()
+            if not network:
+                continue
+            iface = str(item.get("interface") or "selected CIDR").strip()
+            identity = (iface, network)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            try:
+                authorized = bool(scope and scope.allows(network))
+            except Exception:
+                authorized = False
+            options.append({
+                "interface": iface,
+                "address": str(item.get("address") or ""),
+                "network": network,
+                "prefixlen": item.get("prefixlen"),
+                "num_addresses": item.get("num_addresses"),
+                "authorized": authorized,
+            })
+
+        if target and not any(item["network"] == target for item in options):
+            try:
+                authorized = bool(scope and scope.allows(target))
+            except Exception:
+                authorized = False
+            options.insert(0, {
+                "interface": interface or "selected CIDR",
+                "address": str(local_address or ""),
+                "network": str(target),
+                "prefixlen": None,
+                "num_addresses": None,
+                "authorized": authorized,
+            })
+
+        # Never allow a stale successful discovery list to survive a blocked or
+        # ambiguous scan request: later ordinal commands must not use old hosts.
+        self._latest_host_discovery = {
+            "target": str(target or ""),
+            "hosts": [],
+            "own_ip": str(local_address or ""),
+        }
+        data = {
+            "kind": "host_discovery",
+            "title": (
+                "AUTHORIZATION REQUIRED" if status == "blocked"
+                else "SELECT NETWORK" if status == "selection_required"
+                else "SCAN FAILED"
+            ),
+            "scan_status": status,
+            "target": str(target or ""),
+            "interface": str(interface or ""),
+            "own_ip": str(local_address or ""),
+            "summary": str(summary),
+            "scope_message": str(reason or ""),
+            "authorized_targets": allowed_targets,
+            "available_networks": options,
+            "host_count": None,
+            "address_count": None,
+            "hosts": [],
+            "command": "",
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
+            "completed_at": __import__("datetime").datetime.now().astimezone().isoformat(),
+            "scan_type": "Nmap host discovery (-sn), not executed",
+        }
+        self._latest_scan_result = data
+        avatar = getattr(self, "avatar", None)
+        if avatar is not None and hasattr(avatar, "publish"):
+            avatar.publish("scan_results", str(data["summary"]), data=data)
+        return str(summary) + ((" " + str(reason)) if reason else "")
+
     def _request_local_host_discovery(self, text: str) -> str:
         """Plan a bounded host-only scan of a clearly selected, authorized IPv4 range."""
         import ipaddress
@@ -775,11 +869,19 @@ class JenefarOrchestrator:
         )
         interface = "user-specified CIDR"
         local_address = ""
+        candidate_networks: list[dict] = []
         if explicit:
             try:
                 network = ipaddress.ip_network(explicit.group(1), strict=False)
             except ValueError:
                 return "Diya gaya CIDR valid nahi hai. Example: 192.168.29.0/24. Koi scan execute nahi hua."
+            candidate_networks = [{
+                "interface": interface,
+                "address": "",
+                "network": str(network),
+                "prefixlen": network.prefixlen,
+                "num_addresses": network.num_addresses,
+            }]
         else:
             local_range_reference = any(marker in str(text or "").casefold() for marker in (
                 "meri ip", "mera ip", "mere ip", "my ip",
@@ -796,23 +898,28 @@ class JenefarOrchestrator:
             from jenefar.tools.network_info import get_primary_private_ipv4_network
 
             selected = get_primary_private_ipv4_network()
+            candidate_networks = list(selected.get("networks") or [])
             if selected.get("status") != "ok":
-                candidates = selected.get("networks") or []
-                if candidates:
-                    options = "; ".join(
-                        f"{item.get('interface')} {item.get('network')}"
-                        for item in candidates[:6]
+                candidates = candidate_networks or []
+                if selected.get("status") == "ambiguous" and candidates:
+                    return self._publish_network_scan_guidance(
+                        target="",
+                        status="selection_required",
+                        summary="Multiple local IPv4 networks detected. Select an interface/network in the results window.",
+                        reason=str(selected.get("error") or "Choose the intended active local interface. No scan has run."),
+                        interface=str(selected.get("default_interface") or ""),
+                        networks=candidates,
                     )
-                    return (
-                        "Ek se zyada possible local ranges milin, isliye main guess nahi karungi: "
-                        + options
-                        + ". Interface ya exact CIDR choose karo. Koi scan execute nahi hua."
-                    )
-                return (
-                    "Local IP range safely select nahi ho paayi: "
-                    + str(selected.get("error") or selected.get("status") or "unknown error")
-                    + ". Exact CIDR specify karo. Koi scan execute nahi hua."
+                detail = str(selected.get("error") or selected.get("status") or "unknown error")
+                return self._publish_network_scan_guidance(
+                    target="",
+                    status="error",
+                    summary="Local network selection failed. No Nmap command was executed.",
+                    reason=detail,
+                    networks=candidates,
                 )
+            if not candidate_networks:
+                candidate_networks = [selected]
             try:
                 network = ipaddress.ip_network(str(selected["network"]), strict=False)
             except (KeyError, ValueError):
@@ -828,6 +935,30 @@ class JenefarOrchestrator:
                 "4096 se zyada hai. Isse chhote authorized CIDR mein divide karke do. Koi scan execute nahi hua."
             )
         target = str(network)
+        if not any(str(item.get("network") or "") == target for item in candidate_networks if isinstance(item, dict)):
+            candidate_networks.insert(0, {
+                "interface": interface,
+                "address": local_address,
+                "network": target,
+                "prefixlen": network.prefixlen,
+                "num_addresses": network.num_addresses,
+            })
+
+        active_scope = getattr(self, "scope", None) or getattr(
+            getattr(self, "tool_broker", None), "scope", None
+        )
+        if active_scope is not None and not active_scope.allows(target):
+            explanation = active_scope.explain(target)
+            return self._publish_network_scan_guidance(
+                target=target,
+                status="blocked",
+                summary=f"Scan blocked before execution: {target} is outside the configured authorization scope. No Nmap command was executed.",
+                reason=explanation,
+                interface=interface,
+                local_address=local_address,
+                networks=candidate_networks,
+            )
+
         plan_text = (
             "Goal: count hosts responding on the selected IPv4 network. "
             f"Selected target: {target} (interface: {interface}"
@@ -888,14 +1019,42 @@ class JenefarOrchestrator:
             result_data = self._record_host_discovery_result(
                 raw, target, summary, local_address=local_address
             )
+            if result_data is not None:
+                active_scope = getattr(self, "scope", None) or getattr(
+                    getattr(self, "tool_broker", None), "scope", None
+                )
+                result_data["interface"] = interface
+                result_data["available_networks"] = [
+                    {
+                        "interface": str(item.get("interface") or "selected CIDR"),
+                        "address": str(item.get("address") or ""),
+                        "network": str(item.get("network") or ""),
+                        "prefixlen": item.get("prefixlen"),
+                        "num_addresses": item.get("num_addresses"),
+                        "authorized": bool(active_scope and active_scope.allows(str(item.get("network") or ""))),
+                    }
+                    for item in candidate_networks
+                    if isinstance(item, dict) and item.get("network")
+                ]
+                result_data["authorized_targets"] = list(getattr(active_scope, "allowed_targets", []) or [])
             avatar = getattr(self, "avatar", None)
             if result_data and avatar is not None:
                 avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
             return summary
         error = str(payload.get("error") or "authorization/tool preflight blocked execution")
-        return (
-            f"Plan bana, lekin preflight ne scan rok diya for {target}: {error}. "
-            "Configured authorization scope check karo; koi host scan execute nahi hua."
+        scope_blocked = "scope" in error.casefold() or "outside the configured authorization" in error.casefold()
+        return self._publish_network_scan_guidance(
+            target=target,
+            status="blocked" if scope_blocked else "error",
+            summary=(
+                f"Scan blocked before execution for {target}; no Nmap command ran."
+                if scope_blocked
+                else f"Host discovery failed during preflight for {target}; no verified host count is available."
+            ),
+            reason=error,
+            interface=interface,
+            local_address=local_address,
+            networks=candidate_networks,
         )
 
     @staticmethod
