@@ -172,3 +172,37 @@ def test_browser_audio_is_rejected_as_busy_before_stt_when_task_is_running():
     assert result["reason"] == "assistant_busy"
     assert result["accepted"] is False
 
+def test_browser_audio_is_discarded_if_another_task_starts_during_stt(monkeypatch):
+    from jenefar.voice.browser import BrowserVoiceBridge
+    import subprocess
+    import shutil
+
+    class FakeProcess:
+        returncode = 0
+        stdout = b"\\x00" * 3200
+        stderr = b""
+
+    class FakeStt:
+        async def transcribe_pcm(self, _pcm):
+            bridge._task_generation += 1
+            return "check my ip"
+
+    bridge = object.__new__(BrowserVoiceBridge)
+    bridge._active_task = None
+    bridge._task_generation = 0
+    bridge._stt_runtime = FakeStt()
+    bridge._last_assistant_spoken_at = 0.0
+    bridge._last_assistant_text = ""
+    bridge._ip_echo_window = 24.0
+    bridge.orchestrator = SimpleNamespace(
+        _is_ip_info_query=JenefarOrchestrator._is_ip_info_query,
+    )
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: FakeProcess())
+
+    result = bridge.handle_audio(b"fake-audio", "audio/webm")
+
+    assert result["busy"] is True
+    assert result["reason"] == "task_started_during_transcription"
+    assert result["accepted"] is False
+\n
