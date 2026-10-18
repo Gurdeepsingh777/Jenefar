@@ -716,6 +716,8 @@ class JenefarOrchestrator:
         if data is None:
             return summary + " Lekin verified port output parse nahi ho paaya."
         self._latest_scan_result = data
+        if self.avatar is not None:
+            self.avatar.publish("scan_results", str(data["summary"]), data=data)
         return str(data["summary"])
 
     def _request_local_host_discovery(self, text: str) -> str:
@@ -831,9 +833,11 @@ class JenefarOrchestrator:
             )
         if payload.get("status") == "ok":
             summary = self._summarize_local_host_discovery(raw, target)
-            self._record_host_discovery_result(
+            result_data = self._record_host_discovery_result(
                 raw, target, summary, local_address=local_address
             )
+            if result_data and self.avatar is not None:
+                self.avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
             return summary
         error = str(payload.get("error") or "authorization/tool preflight blocked execution")
         return (
@@ -1325,12 +1329,14 @@ class JenefarOrchestrator:
                 raw_result,
                 str(workflow.get("target") or "selected network"),
             )
-            self._record_host_discovery_result(
+            result_data = self._record_host_discovery_result(
                 raw_result,
                 str(workflow.get("target") or "selected network"),
                 summary,
                 local_address=str(workflow.get("local_address") or ""),
             )
+            if result_data and self.avatar is not None:
+                self.avatar.publish("scan_results", str(result_data["summary"]), data=result_data)
             self.session.add("assistant", summary)
             self.memory_engine.record_message(
                 self.session.session_id,
