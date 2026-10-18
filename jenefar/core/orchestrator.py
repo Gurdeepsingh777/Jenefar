@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import ipaddress
 import json
 import re
 import threading
@@ -85,6 +86,8 @@ class JenefarOrchestrator:
         # Serialize them and reuse the first result so an action never executes twice.
         self._approval_lock = threading.RLock()
         self._approval_result_cache: dict[str, str] = {}
+        self._latest_scan_result: dict | None = None
+        self._latest_host_discovery: dict = {"target": "", "hosts": [], "own_ip": ""}
         self.offline_notice_open = False
 
     def run(self):
@@ -158,13 +161,19 @@ class JenefarOrchestrator:
         # Jenefar's user-facing runtime is intentionally Roman Hinglish-first.
         # Keep the language stable even when a caller omits the preference.
         response_language = response_language or "Hinglish"
+        # Structured scan results belong to the current user request only.
+        # Keep the previous host-discovery list separately for explicit follow-ups.
+        self._latest_scan_result = None
 
         pending_reply = self._handle_conversational_confirmation(
             text,
             response_language=response_language,
         )
         if pending_reply is not None:
-            self._avatar_state("speaking", pending_reply)
+            # A scan-result window owns this response; don't also publish a
+            # speaking transcript that would duplicate the host list in the HUD.
+            if not getattr(self, "_latest_scan_result", None):
+                self._avatar_state("speaking", pending_reply)
             return pending_reply
         trace = ExecutionTrace(
             session_id=self.session.session_id,
@@ -213,6 +222,25 @@ class JenefarOrchestrator:
                 self._avatar_state("speaking", output)
                 return output
 
+            if self._is_local_host_port_scan_request(text):
+                output = self._request_discovered_host_port_scan(text)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.6,
+                )
+                if self.state != JenefarState.WAITING_APPROVAL:
+                    self.state = (
+                        JenefarState.SLEEPING
+                        if self.config.single_turn_sleep
+                        else JenefarState.AWAKE
+                    )
+                if not self._latest_scan_result:
+                    self._avatar_state("speaking", output)
+                return output
+
             if self._is_local_host_discovery_request(text):
                 output = self._request_local_host_discovery(text)
                 self.session.add("assistant", output)
@@ -229,7 +257,12 @@ class JenefarOrchestrator:
                         if self.config.single_turn_sleep
                         else JenefarState.AWAKE
                     )
-                self._avatar_state("waiting_approval" if awaiting else "speaking", output)
+                if self._latest_scan_result:
+                    # BrowserVoiceBridge publishes the structured result event.
+                    # Don't broadcast the same host list as a speech/chat event.
+                    pass
+                else:
+                    self._avatar_state("waiting_approval" if awaiting else "speaking", output)
                 return output
 
             if self._is_ip_info_query(text):
@@ -569,6 +602,120 @@ class JenefarOrchestrator:
         ))
         return explicit_goal or (has_host_goal and (has_range or cidr))
 
+    @staticmethod
+    def _is_local_host_port_scan_request(text: str) -> bool:
+        lowered = " ".join(str(text or "").casefold().split())
+        if not lowered:
+            return False
+        markers = (
+            "port scan", "scan ports", "scan port", "ports of", "port of",
+            "ke ports", "ke port", "port ko scan", "open ports", "check ports",
+            "ports scan", "port check", "porton ko scan",
+        )
+        return any(marker in lowered for marker in markers)
+
+    @staticmethod
+    def _host_ordinal(text: str) -> int | None:
+        lowered = " ".join(str(text or "").casefold().split())
+        ordinal_patterns = (
+            (r"\b(?:first|1st|pehla|pahla|pehli|pahli)\b", 1),
+            (r"\b(?:second|2nd|doosra|dusra|doosri|dusri)\b", 2),
+            (r"\b(?:third|3rd|teesra|tisra|teesri|tisri)\b", 3),
+            (r"\b(?:fourth|4th|chautha|chauthi)\b", 4),
+            (r"\b(?:fifth|5th|paanchva|panchva|panchvi)\b", 5),
+        )
+        for pattern, index in ordinal_patterns:
+            if re.search(pattern, lowered):
+                return index
+        numbered_host = re.search(
+            r"\b(?:host|device|machine)\s*(?:number|no\.?|#)?\s*(\d{1,2})\b",
+            lowered,
+        )
+        if numbered_host:
+            return int(numbered_host.group(1))
+        numbered = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:host|device|machine)\b", lowered)
+        return int(numbered.group(1)) if numbered else None
+
+    def _request_discovered_host_port_scan(self, text: str) -> str:
+        """Run a bounded Nmap TCP service scan only against a recently discovered live host."""
+        from datetime import datetime, timezone
+
+        latest = getattr(self, "_latest_host_discovery", {}) or {}
+        hosts = latest.get("hosts") if isinstance(latest, dict) else None
+        if not isinstance(hosts, list) or not hosts:
+            return "Pehle authorized local network par live-host discovery karo. Abhi koi saved live-host list nahi hai."
+
+        ip_match = re.search(
+            r"(?<![0-9.])((?:[0-9]{1,3}\.){3}[0-9]{1,3})(?![0-9.])",
+            str(text or ""),
+        )
+        selected_ip = ""
+        selected_index = 0
+        if ip_match:
+            try:
+                selected_ip = str(ipaddress.IPv4Address(ip_match.group(1)))
+            except ipaddress.AddressValueError:
+                return "Diya gaya IPv4 address valid nahi hai; port scan execute nahi hua."
+            for index, host in enumerate(hosts, 1):
+                if isinstance(host, dict) and str(host.get("ip") or "") == selected_ip:
+                    selected_index = index
+                    break
+            if not selected_index:
+                return "Ye IP latest live-host results mein nahi hai. Pehle host discovery dobara chalao ya displayed live host select karo."
+        else:
+            selected_index = self._host_ordinal(text) or 0
+            if not selected_index:
+                return "Kis live host ke ports scan karne hain? Latest Scan Results window se host select karo ya bolo: 'second host ke ports scan karo'."
+            if selected_index < 1 or selected_index > len(hosts):
+                return f"Latest scan mein sirf {len(hosts)} live hosts mile the. Host number {selected_index} available nahi hai."
+            chosen = hosts[selected_index - 1]
+            selected_ip = str(chosen.get("ip") or "") if isinstance(chosen, dict) else ""
+            try:
+                selected_ip = str(ipaddress.IPv4Address(selected_ip))
+            except ipaddress.AddressValueError:
+                return "Selected host ke paas valid IPv4 address nahi hai; koi port scan execute nahi hua."
+
+        plan = (
+            "User explicitly requested a port scan of one host from Jenefar's most recent authorized local host-discovery results. "
+            f"Selected live host #{selected_index}: {selected_ip}. Re-check JENEFAR_AUTHORIZED_TARGETS scope, then run only "
+            "Nmap TCP connect scan with service identification over the top 1000 TCP ports, -n, -T3, one retry, and a 120-second timeout. "
+            "No subnet scan, UDP scan, vulnerability scripts, exploitation, or additional targets."
+        )
+        arguments = {
+            "tool": "nmap",
+            "args": [
+                "-n", "-sT", "-sV", "-T3", "--max-retries", "1",
+                "--top-ports", "1000", selected_ip,
+            ],
+            "target": selected_ip,
+            "timeout": 120,
+            "plan": plan,
+        }
+        try:
+            # This user's direct, explicit port-scan request is the confirmation.
+            # ToolBroker still runs its normal executable, argument, and target-scope preflight.
+            raw = self.tool_broker.invoke("kali_tool_execute", arguments, confirmed=True)
+            payload = json.loads(raw)
+        except Exception as exc:
+            return f"{selected_ip} ka port scan start nahi ho paaya: {type(exc).__name__}: {exc}"
+
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            error = str(payload.get("error") or "authorization/preflight failed") if isinstance(payload, dict) else "invalid tool response"
+            return f"{selected_ip} ka port scan block hua: {error}. Authorization scope aur Nmap availability check karo."
+
+        summary = f"{selected_ip} ka port scan complete."
+        data = self._build_port_scan_result(
+            raw,
+            selected_ip,
+            host_index=selected_index,
+            previous_hosts=hosts,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+        )
+        if data is None:
+            return summary + " Lekin verified port output parse nahi ho paaya."
+        self._latest_scan_result = data
+        return str(data["summary"])
+
     def _request_local_host_discovery(self, text: str) -> str:
         """Plan a bounded host-only scan of a clearly selected, authorized IPv4 range."""
         import ipaddress
@@ -672,6 +819,7 @@ class JenefarOrchestrator:
                 "direct_workflow": "local_host_discovery",
                 "target": target,
                 "interface": interface,
+                "local_address": local_address,
             }
             self.pending_approval_workflows[pending_id] = workflow
             self.state = JenefarState.WAITING_APPROVAL
@@ -680,7 +828,11 @@ class JenefarOrchestrator:
                 "Execution se pehle approval zaroori hai.\n\n" + user_prompt
             )
         if payload.get("status") == "ok":
-            return self._summarize_local_host_discovery(raw, target)
+            summary = self._summarize_local_host_discovery(raw, target)
+            self._record_host_discovery_result(
+                raw, target, summary, local_address=local_address
+            )
+            return summary
         error = str(payload.get("error") or "authorization/tool preflight blocked execution")
         return (
             f"Plan bana, lekin preflight ne scan rok diya for {target}: {error}. "
@@ -744,6 +896,140 @@ class JenefarOrchestrator:
             if len(reports) > 30:
                 summary += f" (aur {len(reports) - 30} hosts)"
         return summary
+
+    @staticmethod
+    def _nmap_payload(raw_result: str) -> dict | None:
+        try:
+            payload = json.loads(raw_result)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            return None
+        result = payload.get("result")
+        return result if isinstance(result, dict) else None
+
+    def _record_host_discovery_result(
+        self,
+        raw_result: str,
+        target: str,
+        summary: str,
+        *,
+        local_address: str = "",
+    ) -> dict | None:
+        result = self._nmap_payload(raw_result)
+        if not result or result.get("returncode") != 0:
+            return None
+
+        hosts: list[dict] = []
+        current = None
+        stdout = str(result.get("stdout") or "")
+        for line in stdout.splitlines():
+            report = re.match(r"^Nmap scan report for (.+?)\s*$", line.strip(), re.IGNORECASE)
+            if report:
+                raw_ip = report.group(1).strip()
+                try:
+                    ip = str(ipaddress.IPv4Address(raw_ip))
+                except ipaddress.AddressValueError:
+                    current = None
+                    continue
+                current = {
+                    "index": len(hosts) + 1,
+                    "ip": ip,
+                    "state": "UP",
+                    "latency": "",
+                    "mac": "",
+                    "vendor": "",
+                    "is_local": bool(local_address and ip == local_address),
+                }
+                hosts.append(current)
+                continue
+            if current is None:
+                continue
+            latency = re.search(r"Host is up \(([^)]+)\)", line.strip(), re.IGNORECASE)
+            if latency:
+                current["latency"] = latency.group(1).strip()
+            mac = re.search(r"MAC Address:\s*([0-9a-f:.-]{17})(?:\s+\((.*?)\))?", line.strip(), re.IGNORECASE)
+            if mac:
+                current["mac"] = mac.group(1).upper()
+                current["vendor"] = str(mac.group(2) or "").strip()
+
+        count_match = re.search(
+            r"Nmap done:\s*([0-9,]+)\s+IP addresses?\s+\(([0-9,]+)\s+hosts? up\)",
+            stdout,
+            re.IGNORECASE,
+        )
+        reported_count = int(count_match.group(1).replace(",", "")) if count_match else None
+        host_count = len(hosts)
+        result_data = {
+            "kind": "host_discovery",
+            "title": "LIVE HOSTS",
+            "target": str(target),
+            "summary": f"{host_count} live host(s) found in {target}",
+            "host_count": host_count,
+            "address_count": reported_count,
+            "hosts": hosts,
+            "own_ip": str(local_address or ""),
+            "completed_at": __import__("datetime").datetime.now().astimezone().isoformat(),
+            "scan_type": "Nmap host discovery (-sn)",
+        }
+        self._latest_host_discovery = {
+            "target": str(target),
+            "hosts": hosts,
+            "own_ip": str(local_address or ""),
+            "completed_at": result_data["completed_at"],
+        }
+        self._latest_scan_result = result_data
+        return result_data
+
+    @staticmethod
+    def _build_port_scan_result(
+        raw_result: str,
+        target: str,
+        *,
+        host_index: int,
+        previous_hosts: list[dict],
+        completed_at: str = "",
+    ) -> dict | None:
+        result = JenefarOrchestrator._nmap_payload(raw_result)
+        if not result or result.get("returncode") != 0:
+            return None
+
+        ports: list[dict] = []
+        stdout = str(result.get("stdout") or "")
+        port_pattern = re.compile(
+            r"^\s*(\d{1,5})/(tcp|udp)\s+(open|closed|filtered|open\|filtered)\s+"
+            r"([A-Za-z0-9._+-]+)(?:\s+(.*?))?\s*$",
+            re.IGNORECASE,
+        )
+        for line in stdout.splitlines():
+            match = port_pattern.match(line)
+            if not match:
+                continue
+            if match.group(3).casefold() != "open":
+                continue
+            ports.append({
+                "port": int(match.group(1)),
+                "protocol": match.group(2).lower(),
+                "state": match.group(3).upper(),
+                "service": match.group(4),
+                "version": str(match.group(5) or "").strip(),
+            })
+        ports.sort(key=lambda item: (item["protocol"], item["port"]))
+        count = len(ports)
+        summary = f"{target} • {count} open TCP port(s)"
+        return {
+            "kind": "port_scan",
+            "title": "PORT SCAN",
+            "target": str(target),
+            "host_index": int(host_index),
+            "summary": summary,
+            "open_port_count": count,
+            "port_scope": "Top 1000 TCP ports",
+            "ports": ports,
+            "hosts": previous_hosts,
+            "completed_at": completed_at,
+            "scan_type": "Nmap TCP connect + service detection",
+        }
 
     @staticmethod
     def _is_ip_info_query(text: str) -> bool:
@@ -1032,6 +1318,12 @@ class JenefarOrchestrator:
             summary = self._summarize_local_host_discovery(
                 raw_result,
                 str(workflow.get("target") or "selected network"),
+            )
+            self._record_host_discovery_result(
+                raw_result,
+                str(workflow.get("target") or "selected network"),
+                summary,
+                local_address=str(workflow.get("local_address") or ""),
             )
             self.session.add("assistant", summary)
             self.memory_engine.record_message(
