@@ -275,3 +275,18 @@ def test_realtime_session_includes_enabled_persistent_skills(monkeypatch):
     assert "Check the current checkout before running tests." in instructions
     assert "auto_python_test" in instructions
     assert "approval_required" in instructions
+
+
+
+def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
+    orchestrator = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+
+    assert 'self.avatar.publish("scan_results", str(data["summary"]), data=data)' in orchestrator
+    assert 'self.avatar.publish("scan_results", str(result_data["summary"]), data=result_data)' in orchestrator
+    assert "Results screen par live hosts ki list dikh rahi hai." in orchestrator
+    assert 'payload["structured_scan"] = scan_data' in server
+    assert "openScanResults(payload.structured_scan" in app
+    assert 'dispatchDashboardCommand("scan ports of host "+host.ip)' in app
+    assert "New instruction closes this window automatically" in (WEB / "index.html").read_text(encoding="utf-8")
