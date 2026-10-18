@@ -55,7 +55,7 @@ python run.py
 - browser microphone permission ke baad Web SpeechRecognition input enable karta hai
 - specialist multi-agent orchestrator use karta hai
 - memory, knowledge graph, scheduler, approval-gated tools, vision/desktop/robotics connectors aur runtime diagnostics ko wahi orchestrator instance se expose karta hai
-- server-generated browser-playable TTS ko prefer karta hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser SpeechSynthesis fallback hota hai; Python speaker playback browser runtime me start nahi hota
+- server-generated browser-playable TTS ko prefer karta hai: OpenAI TTS → expressive Gemini TTS → Edge TTS; generated audio unavailable ya unplayable ho tabhi browser SpeechSynthesis fallback hota hai. Browser runtime me Python/native speaker playback start nahi hota.
 - avatar ko listening/thinking/speaking/waiting-approval states ke saath update karta hai
 
 Manual modes available hain:
@@ -76,7 +76,7 @@ Voice provider behavior:
 - Server STT configured OpenAI, Groq aur Gemini providers ko failover order me try karta hai. Quota/credits exhaust hone ya providers fail hone par cached local Whisper STT fallback try hota hai.
 - Local STT ke liye optional `faster-whisper` package aur ek Whisper model ki one-time download zaroori hai. Runtime model ko local cache se hi load karta hai, isliye mic use karte waqt model download nahi karta.
 - Browser server STT fail hone par Web SpeechRecognition fallback bhi use kar sakta hai, agar browser us API ko expose karta hai.
-- Default browser runtime me speech output server-generated audio se hota hai; OpenAI TTS unavailable ho to Edge TTS aur phir browser Web SpeechSynthesis fallback hota hai. Python/native speaker playback start nahi hota.
+- Default browser runtime me speech output server-generated audio se hota hai: OpenAI TTS → expressive Gemini TTS → Edge TTS. Generated audio unavailable ya playback fail ho to browser Web SpeechSynthesis fallback hota hai. Ek waqt me sirf ek playback path active rehta hai; approval ka HTTP response audio ko dobara nahi bolta. Python/native speaker playback start nahi hota.
 - `--voice` aur `--voice-continuous` legacy CLI runtimes alag Python audio providers use kar sakte hain.
 - Legacy/native Python TTS ko browser architecture se alag rakhne ke liye `JENEFAR_ENABLE_NATIVE_TTS=1` explicit opt-in flag available hai.
 
