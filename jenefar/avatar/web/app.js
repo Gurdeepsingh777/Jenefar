@@ -642,7 +642,7 @@ function stopFallbackMonitor(releaseStream=false){
 }
 
 function resumeVoiceIfAssistantIdle(){
-  const taskInProgress=["listening","queued","thinking","result","waiting_approval"].includes(currentState);
+  const taskInProgress=["listening","queued","thinking","result","waiting_approval","speaking","speaking_fallback","error"].includes(currentState);
   const audioPlaying=browserSpeechActive
     || Boolean(browserAudio&&!browserAudio.ended)
     || ("speechSynthesis" in window&&window.speechSynthesis.speaking);
