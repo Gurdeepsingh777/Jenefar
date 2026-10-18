@@ -94,8 +94,25 @@ class Planner:
             "ping sweep", "check online host", "check live host",
             "scan my network", "scan the network", "scan local network",
             "scan network", "network scan", "check the network",
+            "mere network ko scan", "mera network scan", "meri network scan",
+            "apne network ko scan", "network ko scan", "network scan karke",
+            "scan karke live host", "live host detect", "live hosts detect",
+            "network ke live host", "network par live host",
         ))
-        if explicit_discovery or (has_cidr and any(term in t for term in host_terms)) or (
+        local_network_phrases = (
+            "my network", "mere network", "mera network", "meri network",
+            "apne network", "apna network", "apni network", "current network",
+            "local network", "my lan", "meri lan", "apna lan",
+        )
+        scan_action_phrases = (
+            "scan", "scanning", "detect", "discover", "check", "find", "show",
+            "list", "identify", "pata karo", "pata lagao", "dikhao", "nikalo",
+        )
+        implicit_lan_discovery = (
+            any(phrase in t for phrase in local_network_phrases)
+            and any(phrase in t for phrase in scan_action_phrases)
+        )
+        if explicit_discovery or implicit_lan_discovery or (has_cidr and any(term in t for term in host_terms)) or (
             any(term in t for term in range_terms) and any(term in t for term in host_terms)
         ):
             return self._make_plan(
