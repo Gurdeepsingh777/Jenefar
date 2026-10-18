@@ -284,7 +284,9 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
     server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
     run = (ROOT / "run.py").read_text(encoding="utf-8")
 
-    assert "approval_handler=orchestrator._approve_pending" in run
+    assert "approval_handler=(" in run
+    assert "browser_voice.approve_pending" in run
+    assert "if browser_voice_enabled" in run
     assert "rejection_handler=orchestrator._reject_pending_workflow" in run
     assert 'avatar.publish("scan_results", str(data["summary"]), data=data)' in orchestrator
     assert 'avatar.publish("scan_results", str(result_data["summary"]), data=result_data)' in orchestrator
