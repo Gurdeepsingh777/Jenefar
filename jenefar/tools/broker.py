@@ -405,8 +405,11 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="skill_catalog",
-            description="List available declarative Jenefar skills and whether each skill is enabled.",
-            handler=lambda _args: self.skills.list(),
+            description=(
+                "List available declarative Jenefar skills and whether each skill is enabled. "
+                "Return bounded metadata only; do not include full skill prompt bodies."
+            ),
+            handler=lambda _args: self._skill_catalog_summary(self.skills.list()),
         ))
         self.registry.register(ToolSpec(
             name="skill_learn",
@@ -1359,6 +1362,24 @@ class ToolBroker:
             requires_confirmation=True,
             action=True,
         ))
+
+    @staticmethod
+    def _skill_catalog_summary(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return the documented skill catalog fields without bulky instruction text."""
+        public_fields = (
+            "name", "version", "description", "keywords", "connectors",
+            "permissions", "enabled", "available",
+        )
+        summary: list[dict[str, Any]] = []
+        for item in skills:
+            if not isinstance(item, dict):
+                continue
+            summary.append({
+                key: item[key]
+                for key in public_fields
+                if key in item
+            })
+        return summary
 
     def _skill_learn(self, args: dict[str, Any]) -> dict[str, Any]:
         """Save a prompt-only learned skill inside configured local skill roots."""
