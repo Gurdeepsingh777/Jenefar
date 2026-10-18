@@ -164,6 +164,40 @@ class JenefarOrchestrator:
         # Structured scan results belong to the current user request only.
         # Keep the previous host-discovery list separately for explicit follow-ups.
         self._latest_scan_result = None
+        trace = ExecutionTrace(
+            session_id=self.session.session_id,
+            task=text,
+            source=source,
+            event_id=event_id,
+        )
+
+        def record_shortcut_trace(
+            output: str,
+            *,
+            intent: str,
+            provider: str = "local_runtime",
+            status: str | None = None,
+        ) -> None:
+            trace.intent = intent
+            trace.planned_agent = trace.planned_agent or "local_runtime"
+            trace.actual_agent = trace.actual_agent or "local_runtime"
+            trace.metadata["route"] = "direct_runtime"
+            is_error = str(output).startswith("Jenefar runtime error:")
+            final_status = status or ("error" if is_error else "success")
+            trace.finish(
+                status=final_status,
+                provider=provider,
+                verification={
+                    "passed": bool(str(output).strip()) and not is_error,
+                    "kind": "direct_runtime_response",
+                },
+            )
+            self._persist_runtime_trace(
+                trace,
+                task=text,
+                result=str(output),
+                provider=provider,
+            )
 
         pending_reply = self._handle_conversational_confirmation(
             text,
@@ -174,13 +208,13 @@ class JenefarOrchestrator:
             # speaking transcript that would duplicate the host list in the HUD.
             if not getattr(self, "_latest_scan_result", None):
                 self._avatar_state("speaking", pending_reply)
+            record_shortcut_trace(
+                pending_reply,
+                intent="approval_confirmation",
+                provider="local_confirmation",
+                status="awaiting_approval" if self.state == JenefarState.WAITING_APPROVAL else None,
+            )
             return pending_reply
-        trace = ExecutionTrace(
-            session_id=self.session.session_id,
-            task=text,
-            source=source,
-            event_id=event_id,
-        )
         self.state = JenefarState.THINKING
         self._avatar_state("thinking", "")
         self.session.add("user", text)
@@ -209,6 +243,12 @@ class JenefarOrchestrator:
                     )
                 if not self._latest_scan_result:
                     self._avatar_state("speaking", output)
+                record_shortcut_trace(
+                    output,
+                    intent="network_port_scan",
+                    provider="local_network",
+                    status="awaiting_approval" if self.state == JenefarState.WAITING_APPROVAL else None,
+                )
                 return output
 
             if self._is_local_host_discovery_request(text):
@@ -233,6 +273,12 @@ class JenefarOrchestrator:
                     pass
                 else:
                     self._avatar_state("waiting_approval" if awaiting else "speaking", output)
+                record_shortcut_trace(
+                    output,
+                    intent="network_host_discovery",
+                    provider="local_network",
+                    status="awaiting_approval" if awaiting else None,
+                )
                 return output
 
             direct_window = self._direct_window_transfer(text)
@@ -248,6 +294,7 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="window_transfer", provider="desktop")
                 return output
 
             direct_screen = self._direct_screen_read(text)
@@ -263,6 +310,7 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="screen_read", provider="desktop")
                 return output
 
             if self._is_ip_info_query(text):
@@ -276,6 +324,7 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="local_ip_info", provider="local_network")
                 return output
 
             if self._is_local_time_query(text):
@@ -289,6 +338,7 @@ class JenefarOrchestrator:
                 )
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
                 self._avatar_state("speaking", output)
+                record_shortcut_trace(output, intent="local_time", provider="local_runtime")
                 return output
 
             recall = self.memory_engine.recall(text, limit=8)
@@ -343,6 +393,7 @@ class JenefarOrchestrator:
                 ],
             }
             self._avatar_activity("thinking", "")
+            retry_count_before = self.self_healing.health.retries
             task_actions: list[dict[str, str]] = []
             if hasattr(self.tool_broker, "set_task_context"):
                 self.tool_broker.set_task_context(
@@ -356,6 +407,10 @@ class JenefarOrchestrator:
                     metadata={
                         "approval_required": False,
                         "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
+                        # Only the read-oriented research specialist is eligible for
+                        # an automatic agent-dispatch retry. Other agents may perform
+                        # writes, desktop actions, or other state-changing operations.
+                        "retry_safe": plan.agent == "research",
                     },
                 )
             finally:
@@ -364,10 +419,16 @@ class JenefarOrchestrator:
                 if hasattr(self.tool_broker, "clear_task_context"):
                     self.tool_broker.clear_task_context()
             trace.metadata["self_healing"] = {
-                "retries": self.self_healing.health.retries,
+                "retries": self.self_healing.health.retries - retry_count_before,
+                "total_retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
             }
             trace.actual_agent = result.agent
+            for action in task_actions:
+                trace.add_tool_call(
+                    name=str(action.get("tool") or "unknown"),
+                    status="success",
+                )
             self._avatar_activity("thinking", "")
             trace.provider = str(result.metadata.get("provider", ""))
             for pending in result.metadata.get("pending_tools", []) or []:
@@ -401,13 +462,12 @@ class JenefarOrchestrator:
                     self.session.recent(12),
                     importance=0.72,
                 )
-            self.evaluator.evaluate(
-                text,
-                output,
+            self._persist_runtime_trace(
+                trace,
+                task=text,
+                result=output,
                 provider=trace.provider,
-                trace=trace.as_dict(),
             )
-            self.trace_store.append(trace)
             if awaiting:
                 self._register_pending_workflow(text, result, response_language=response_language)
                 self.state = JenefarState.WAITING_APPROVAL
@@ -418,12 +478,54 @@ class JenefarOrchestrator:
             return output
         except Exception as exc:
             trace.add_error(f"{type(exc).__name__}: {exc}")
+            healing = getattr(self, "self_healing", None)
+            if healing is not None:
+                trace.metadata["self_healing"] = {
+                    "retries": max(0, healing.health.retries - locals().get("retry_count_before", healing.health.retries)),
+                    "total_retries": healing.health.retries,
+                    "consecutive_failures": healing.health.consecutive_failures,
+                    "circuit_open": healing.health.circuit_open,
+                }
             trace.finish(status="error", provider="error", verification={"passed": False})
-            self.trace_store.append(trace)
-            self.evaluator.evaluate(text, str(exc), provider="error", trace=trace.as_dict())
+            self._persist_runtime_trace(
+                trace,
+                task=text,
+                result=str(exc),
+                provider="error",
+            )
             self.state = JenefarState.SLEEPING
             self._avatar_state("error", str(exc))
             return f"Jenefar runtime error: {type(exc).__name__}: {exc}"
+
+    def _persist_runtime_trace(
+        self,
+        trace: ExecutionTrace,
+        *,
+        task: str,
+        result: str,
+        provider: str,
+    ) -> None:
+        """Persist diagnostics best-effort so logging failures never fail user work."""
+        try:
+            self.evaluator.evaluate(
+                task,
+                result,
+                provider=provider,
+                trace=trace.as_dict(),
+            )
+        except Exception as exc:
+            trace.metadata.setdefault("diagnostic_errors", []).append(
+                f"evaluation persistence failed: {type(exc).__name__}"
+            )
+        try:
+            self.trace_store.append(trace)
+        except Exception as exc:
+            # Do not let an unavailable local disk or a malformed diagnostics path
+            # turn an otherwise completed task into a user-visible runtime failure.
+            trace.metadata.setdefault("diagnostic_errors", []).append(
+                f"trace persistence failed: {type(exc).__name__}"
+            )
+            print(f"[JENEFAR] Runtime trace persistence warning: {type(exc).__name__}")
 
     @staticmethod
     def _confirmation_choice(text: str) -> str | None:
