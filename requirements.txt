@@ -14,3 +14,4 @@ python-telegram-bot>=21.10,<23
 
 mcp>=1.6,<2
 psutil>=5.9,<8
+websockets>=14.0,<16
