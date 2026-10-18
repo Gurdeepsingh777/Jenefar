@@ -186,6 +186,45 @@ def doctor() -> int:
         )
         if local_model:
             print("  local inference               not tested by --doctor (run --llm-smoke-test)")
+        local_fallback_disabled = os.getenv("JENEFAR_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        print(
+            "  cloud-failure local fallback "
+            + ("DISABLED by JENEFAR_DISABLE_LOCAL_FALLBACK" if local_fallback_disabled else "ENABLED")
+        )
+
+        # Report the optional offline voice fallbacks without downloading models
+        # or loading heavy inference weights during a diagnostic run.
+        import shutil
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        audio_status = ProviderVoiceRuntime.audio_status()
+        print(
+            "  cloud STT providers           "
+            + (", ".join(
+                [audio_status["stt"]["provider"]]
+                + list(audio_status["stt"].get("fallback") or [])
+            ) if audio_status.get("stt") else "NONE CONFIGURED")
+        )
+        whisper_installed = importlib.util.find_spec("faster_whisper") is not None
+        local_stt_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
+        local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip() or "small"
+        local_stt_path_ok = not local_stt_path or Path(local_stt_path).expanduser().is_dir()
+        print(
+            "  local Whisper STT             "
+            + (
+                f"PACKAGE READY ({local_stt_model}; cache checked only during use)"
+                if whisper_installed and local_stt_path_ok
+                else "NOT READY (install faster-whisper and cache the model before going offline)"
+            )
+        )
+        piper_path = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        piper_ready = bool(shutil.which("piper") and piper_path and Path(piper_path).expanduser().is_file())
+        print(
+            "  local Piper browser TTS       "
+            + (f"READY ({Path(piper_path).expanduser().name})" if piper_ready
+               else "NOT CONFIGURED (optional; cloud TTS -> local Piper -> Edge/browser speech)")
+        )
         try:
             from jenefar.vision.screen import ScreenVision
             vision_base = os.getenv("JENEFAR_LOCAL_VISION_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
