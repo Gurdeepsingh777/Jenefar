@@ -51,6 +51,7 @@ class BrowserVoiceBridge:
         self._tts_lock = threading.Lock()
         self._openai_tts_disabled = False
         self._gemini_tts_disabled = False
+        self._piper_tts_disabled = False
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -220,6 +221,99 @@ class BrowserVoiceBridge:
             )
             return "", ""
 
+    def _synthesize_local_piper_audio(self, text: str) -> tuple[str, str]:
+        """Generate browser-playable WAV audio with an explicitly configured local Piper model."""
+        if getattr(self, "_piper_tts_disabled", False):
+            return "", ""
+
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        executable = shutil.which("piper")
+        model_value = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
+        # Piper is optional. Do not log a warning on every answer when it has
+        # not been configured; Edge/browser speech remain valid fallbacks.
+        if not executable or not model_value:
+            return "", ""
+
+        model_path = Path(model_value).expanduser()
+        if not model_path.is_file():
+            self._piper_tts_disabled = True
+            print(
+                "[JENEFAR] Local Piper TTS skipped: JENEFAR_LOCAL_TTS_MODEL "
+                f"does not point to an ONNX model file: {model_path}"
+            )
+            return "", ""
+
+        clean = str(text or "").strip()
+        if not clean:
+            return "", ""
+        try:
+            timeout = max(5.0, min(90.0, float(
+                os.getenv("JENEFAR_LOCAL_TTS_TIMEOUT_SECONDS", "35")
+            )))
+        except (TypeError, ValueError):
+            timeout = 35.0
+
+        output_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", prefix="jenefar_piper_", delete=False
+            ) as tmp:
+                output_path = tmp.name
+            result = subprocess.run(
+                [
+                    executable,
+                    "--model", str(model_path),
+                    "--output_file", output_path,
+                ],
+                input=clean[:4096].encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or b"").decode(
+                    "utf-8", errors="replace"
+                ).strip()[-500:]
+                self._piper_tts_disabled = True
+                print(
+                    "[JENEFAR] Local Piper TTS failed; skipping further Piper attempts this run: "
+                    + (detail or f"exit code {result.returncode}")
+                )
+                return "", ""
+
+            with open(output_path, "rb") as handle:
+                audio_data = handle.read()
+            if not audio_data:
+                self._piper_tts_disabled = True
+                print("[JENEFAR] Local Piper TTS returned an empty WAV file; disabling it for this run.")
+                return "", ""
+            print(f"[JENEFAR] Browser TTS: local Piper ({model_path.name}).")
+            return base64.b64encode(audio_data).decode("ascii"), "audio/wav"
+        except subprocess.TimeoutExpired:
+            self._piper_tts_disabled = True
+            print(
+                f"[JENEFAR] Local Piper TTS timed out after {timeout:g}s; "
+                "skipping further Piper attempts this run."
+            )
+            return "", ""
+        except Exception as exc:
+            self._piper_tts_disabled = True
+            print(
+                "[JENEFAR] Local Piper TTS unavailable; "
+                f"trying another voice fallback: {type(exc).__name__}: {exc}"
+            )
+            return "", ""
+        finally:
+            if output_path:
+                try:
+                    os.unlink(output_path)
+                except OSError:
+                    pass
+
     def _synthesize_edge_audio(self, text: str) -> tuple[str, str]:
         try:
             import edge_tts
@@ -257,9 +351,12 @@ class BrowserVoiceBridge:
     def _synthesize_browser_audio(self, text: str) -> tuple[str, str]:
         key = self._direct_openai_key()
         if not key or self._openai_tts_disabled:
-            # The Gemini TTS model has explicit emotional/style controls; prefer
-            # it over the plain Edge voice when a Google API key is available.
+            # Prefer expressive cloud TTS when configured, then a genuinely local
+            # Piper voice before Edge (which needs internet) or browser synthesis.
             audio = self._synthesize_gemini_audio(text)
+            if audio[0]:
+                return audio
+            audio = self._synthesize_local_piper_audio(text)
             return audio if audio[0] else self._synthesize_edge_audio(text)
 
         model = os.getenv("JENEFAR_BROWSER_TTS_MODEL", "gpt-4o-mini-tts").strip()
@@ -300,6 +397,9 @@ class BrowserVoiceBridge:
                 f"trying expressive Gemini TTS: {type(exc).__name__}: {exc}"
             )
             audio = self._synthesize_gemini_audio(text)
+            if audio[0]:
+                return audio
+            audio = self._synthesize_local_piper_audio(text)
             return audio if audio[0] else self._synthesize_edge_audio(text)
 
     def submit_text(self, text: str) -> dict[str, Any]:
