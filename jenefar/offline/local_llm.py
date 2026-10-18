@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -588,6 +589,8 @@ class LocalLLMClient:
         tool_broker=None,
         max_tool_rounds: int = 4,
         model_role: str | None = None,
+        deadline: float | None = None,
+        cancel_token: Any = None,
     ) -> tuple[str, list[dict[str, str]]]:
         info = self.detect(model_role=model_role)
         if info is None:
@@ -606,6 +609,13 @@ class LocalLLMClient:
         local_tools = self._convert_tools(tools)
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            if cancel_token is not None:
+                cancel_token.raise_if_cancelled()
+            remaining = None
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Jenefar execution budget exhausted")
             payload: dict[str, Any] = {
                 "model": info.model,
                 "messages": messages,
@@ -627,6 +637,8 @@ class LocalLLMClient:
             except ValueError:
                 configured_timeout = 600.0
             configured_timeout = max(15.0, min(900.0, configured_timeout))
+            if remaining is not None:
+                configured_timeout = min(configured_timeout, max(0.5, remaining))
             result, info = self._request_with_timeout_recovery(
                 info,
                 payload,
@@ -680,6 +692,10 @@ class LocalLLMClient:
                 if not name:
                     raise RuntimeError("Local model returned a tool call without a function name.")
 
+                if cancel_token is not None:
+                    cancel_token.raise_if_cancelled()
+                if deadline is not None and deadline <= time.monotonic():
+                    raise TimeoutError("Jenefar execution budget exhausted")
                 output = tool_broker.invoke(name, arguments)
                 try:
                     parsed = json.loads(output)
