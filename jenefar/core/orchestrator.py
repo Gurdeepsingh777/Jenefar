@@ -989,7 +989,16 @@ class JenefarOrchestrator:
         if not approval_id:
             return json.dumps({"status": "error", "error": "approval id required"})
 
-        with self._approval_lock:
+        # A few compatibility tests and embedders construct this object without
+        # running __init__; initialize the approval state lazily for those cases.
+        approval_lock = getattr(self, "_approval_lock", None)
+        if approval_lock is None:
+            approval_lock = threading.RLock()
+            self._approval_lock = approval_lock
+        if not hasattr(self, "_approval_result_cache"):
+            self._approval_result_cache = {}
+
+        with approval_lock:
             if approval_id in self._approval_result_cache:
                 return self._approval_result_cache[approval_id]
 
