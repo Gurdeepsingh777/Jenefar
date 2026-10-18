@@ -631,3 +631,11 @@ def test_avatar_server_silently_handles_closed_browser_socket():
     handler.wfile = DisconnectedWriter()
     handler._send(200, "application/json; charset=utf-8", b"{}")
 
+def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert 'handler = getattr(self, "approval_handler", None)' in server
+    assert 'handler = getattr(self, "rejection_handler", None)' in server
+    assert "approval_handler=orchestrator._approve_pending" in run
+    assert "rejection_handler=orchestrator._reject_pending_workflow" in run
+
