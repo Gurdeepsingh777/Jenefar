@@ -710,6 +710,8 @@ class JenefarOrchestrator:
             host_index=selected_index,
             previous_hosts=hosts,
             completed_at=datetime.now(timezone.utc).isoformat(),
+            host_discovery_target=str(latest.get("target") or ""),
+            own_ip=str(latest.get("own_ip") or ""),
         )
         if data is None:
             return summary + " Lekin verified port output parse nahi ho paaya."
@@ -989,6 +991,8 @@ class JenefarOrchestrator:
         host_index: int,
         previous_hosts: list[dict],
         completed_at: str = "",
+        host_discovery_target: str = "",
+        own_ip: str = "",
     ) -> dict | None:
         result = JenefarOrchestrator._nmap_payload(raw_result)
         if not result or result.get("returncode") != 0:
@@ -1027,6 +1031,8 @@ class JenefarOrchestrator:
             "port_scope": "Top 1000 TCP ports",
             "ports": ports,
             "hosts": previous_hosts,
+            "host_discovery_target": str(host_discovery_target or ""),
+            "own_ip": str(own_ip or ""),
             "completed_at": completed_at,
             "scan_type": "Nmap TCP connect + service detection",
         }
