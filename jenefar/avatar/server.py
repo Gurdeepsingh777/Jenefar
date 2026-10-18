@@ -225,6 +225,23 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                     return
                 self._send(200, "model/gltf-binary", self.vrm_path.read_bytes())
                 return
+            if path == "/desktop/status":
+                broker = self.tool_broker
+                desktop = getattr(broker, "desktop", None) if broker is not None else None
+                status_handler = getattr(desktop, "backend_status", None)
+                if not callable(status_handler):
+                    self._json(503, {
+                        "status": "unavailable",
+                        "desktop_ready": False,
+                        "input_control": False,
+                        "screenshot_capture": False,
+                        "diagnosis": "Desktop backend health reporting is not available in this runtime.",
+                        "recommendations": [],
+                    })
+                    return
+                status = status_handler()
+                self._json(200, {"status": "ok", **status})
+                return
             if path == "/desktop/mirror/status":
                 mirror = self.tool_broker
                 payload = (
