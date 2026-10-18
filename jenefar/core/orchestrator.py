@@ -586,7 +586,9 @@ class JenefarOrchestrator:
         has_range = any(marker in lowered for marker in (
             "ip range", "ip ki range", "range", "subnet", "cidr",
             "network range", "local network", "my subnet", "meri subnet",
-            "meri range", "my range",
+            "meri range", "my range", "mere network", "mera network",
+            "meri network", "apne network", "apna network", "apni network",
+            "current network", "my lan", "meri lan", "apna lan",
         ))
         has_host_goal = any(marker in lowered for marker in (
             "host", "hosts", "device", "devices", "online", "live",
@@ -599,8 +601,39 @@ class JenefarOrchestrator:
             "ping sweep", "check online host", "check live host",
             "scan my network", "scan the network", "scan local network",
             "scan network", "network scan", "check the network",
+            "scan my lan", "scan local lan", "mere network ko scan",
+            "mera network scan", "meri network scan", "apne network ko scan",
+            "network ko scan", "network scan karke", "scan karke live host",
+            "live host detect", "live hosts detect", "host ko detect",
+            "hosts ko detect", "network ke live host", "network par live host",
         ))
-        return explicit_goal or (has_host_goal and (has_range or cidr))
+        # Hinglish word order varies ("mere network ko scan karo", "network
+        # scan karke live hosts dikhao"). Catch explicit current-network requests
+        # before they can fall through to an LLM, without treating unrelated
+        # mentions of networking as a request to execute a scan.
+        has_network_reference = bool(re.search(
+            r"\b(?:network|networks|lan|subnet|ip range|cidr)\b", lowered
+        ))
+        has_scan_verb = bool(re.search(
+            r"\b(?:scan|scanning|check|detect|discover|find|show|list|identify)\b", lowered
+        )) or any(phrase in lowered for phrase in ("pata karo", "pata lagao", "dikhao", "nikalo", "check karo", "scan karo"))
+        has_live_host_goal = any(marker in lowered for marker in (
+            "live host", "live hosts", "online host", "online hosts",
+            "host online", "hosts online", "device online", "devices online",
+            "host detect", "hosts detect", "host discovery", "kitne host",
+            "kitne device", "live device", "live devices",
+        ))
+        current_network_reference = any(marker in lowered for marker in (
+            "my network", "mere network", "mera network", "meri network",
+            "apne network", "apna network", "apni network", "current network",
+            "local network", "my lan", "meri lan", "apna lan",
+        ))
+        return (
+            explicit_goal
+            or (has_host_goal and (has_range or cidr))
+            or (has_network_reference and has_scan_verb and has_live_host_goal)
+            or (current_network_reference and has_scan_verb)
+        )
 
     @staticmethod
     def _is_local_host_port_scan_request(text: str) -> bool:
@@ -627,13 +660,22 @@ class JenefarOrchestrator:
         for pattern, index in ordinal_patterns:
             if re.search(pattern, lowered):
                 return index
-        numbered_host = re.search(
-            r"\b(?:host|device|machine)\s*(?:number|no\.?|#)?\s*(\d{1,2})\b",
+        numbered_target = re.search(
+            r"\b(?:target|host|device|machine)\s*(?:number|no\.?|#)?\s*(\d{1,2})\b",
             lowered,
         )
-        if numbered_host:
-            return int(numbered_host.group(1))
-        numbered = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:host|device|machine)\b", lowered)
+        if numbered_target:
+            return int(numbered_target.group(1))
+        number_before_target = re.search(
+            r"\b(?:number|no\.?|#)\s*(\d{1,2})\s+(?:target|host|device|machine)\b",
+            lowered,
+        )
+        if number_before_target:
+            return int(number_before_target.group(1))
+        numbered = re.search(
+            r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:host|device|machine|target)\b",
+            lowered,
+        )
         return int(numbered.group(1)) if numbered else None
 
     def _request_discovered_host_port_scan(self, text: str) -> str:
@@ -740,8 +782,11 @@ class JenefarOrchestrator:
                 return "Diya gaya CIDR valid nahi hai. Example: 192.168.29.0/24. Koi scan execute nahi hua."
         else:
             local_range_reference = any(marker in str(text or "").casefold() for marker in (
-                "meri ip", "mera ip", "my ip", "my network", "meri network",
-                "local network", "my subnet", "meri subnet", "meri range",
+                "meri ip", "mera ip", "mere ip", "my ip",
+                "my network", "mere network", "mera network", "meri network",
+                "apne network", "apna network", "apni network", "current network",
+                "local network", "my lan", "meri lan", "apna lan",
+                "my subnet", "meri subnet", "meri range", "my range",
             ))
             if not local_range_reference:
                 return (
@@ -801,7 +846,10 @@ class JenefarOrchestrator:
             "plan": plan_text,
         }
         try:
-            raw = self.tool_broker.invoke("kali_tool_execute", arguments)
+            # This direct, explicit request for the user's current LAN is confirmation
+            # for bounded host discovery. The broker still enforces authorized target
+            # scope, executable validation, and command preflight.
+            raw = self.tool_broker.invoke("kali_tool_execute", arguments, confirmed=True)
             payload = json.loads(raw)
         except Exception as exc:
             return (
@@ -982,6 +1030,10 @@ class JenefarOrchestrator:
             "address_count": reported_count,
             "hosts": hosts,
             "own_ip": str(local_address or ""),
+            "command": str(result.get("command") or ""),
+            "returncode": result.get("returncode"),
+            "stdout": stdout,
+            "stderr": str(result.get("stderr") or ""),
             "completed_at": __import__("datetime").datetime.now().astimezone().isoformat(),
             "scan_type": "Nmap host discovery (-sn)",
         }
@@ -1085,6 +1137,10 @@ class JenefarOrchestrator:
             "target": str(target),
             "host_index": int(host_index),
             "summary": summary,
+            "command": str(result.get("command") or ""),
+            "returncode": result.get("returncode"),
+            "stdout": stdout,
+            "stderr": str(result.get("stderr") or ""),
             "host_status": host_status,
             "open_port_count": open_count,
             "filtered_port_count": filtered_count,
