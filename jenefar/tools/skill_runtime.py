@@ -23,8 +23,28 @@ class SkillRuntime:
         self.manifests: dict[str,SkillManifest]={}
         self.health: dict[str,SkillHealth]={}
     def register(self, manifest: SkillManifest) -> None:
-        if manifest.name in self.manifests: raise ValueError(f"skill already registered: {manifest.name}")
-        self.manifests[manifest.name]=manifest; self.health[manifest.name]=SkillHealth()
+        if manifest.name in self.manifests:
+            raise ValueError(f"skill already registered: {manifest.name}")
+        self.manifests[manifest.name] = manifest
+        self.health[manifest.name] = SkillHealth()
+
+    def sync(self, manifest: SkillManifest, *, enabled: bool = True) -> None:
+        """Mirror a declarative SkillManager entry without losing health counters."""
+        self.manifests[manifest.name] = manifest
+        health = self.health.setdefault(manifest.name, SkillHealth())
+        health.available = bool(enabled)
+        if enabled and health.last_error == "disabled by SkillManager":
+            health.last_error = None
+        elif not enabled:
+            health.last_error = "disabled by SkillManager"
+
+    def enable(self, name: str) -> None:
+        health = self.health.get(name)
+        if health is None or name not in self.manifests:
+            raise KeyError(f"unknown skill: {name}")
+        health.available = True
+        if health.last_error == "disabled by SkillManager":
+            health.last_error = None
     def available(self, name: str, permissions=()) -> bool:
         m=self.manifests.get(name)
         return bool(m and m.permissions.issubset(set(permissions)) and all(dep in self.manifests for dep in m.dependencies) and self.health[name].available)
