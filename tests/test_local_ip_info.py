@@ -413,3 +413,21 @@ def test_approved_host_discovery_returns_summary_and_clears_pending_workflow():
     assert pending_id not in orchestrator.pending_approval_workflows
     assert orchestrator.state == JenefarState.AWAKE
 
+
+
+
+def test_generic_network_scan_phrase_routes_to_bounded_discovery_not_llm_refusal():
+    for request in ("scan the network", "network scan", "scan my network"):
+        assert JenefarOrchestrator._is_local_host_discovery_request(request)
+        assert not JenefarOrchestrator._is_ip_info_query(request)
+        plan = Planner().plan(request)
+        assert plan.intent == "network_host_discovery"
+        assert plan.agent == "kali"
+
+
+def test_ambiguous_network_scan_asks_for_range_without_running_a_scan():
+    orchestrator = object.__new__(JenefarOrchestrator)
+    reply = orchestrator._request_local_host_discovery("scan the network")
+
+    assert "exact IPv4 CIDR" in reply
+    assert "koi scan execute nahi hua" in reply
