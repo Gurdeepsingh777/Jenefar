@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any
 
-from jenefar.evaluation.trace import TraceStore
+from jenefar.evaluation.trace import TraceStore, redact_sensitive
 
 
 def build_runtime_snapshot(
@@ -32,8 +32,8 @@ def build_runtime_snapshot(
         "current": {
             "state": str(context.get("state") or "idle"),
             "task_id": str(context.get("task_id") or ""),
-            "task": str(context.get("task") or ""),
-            "agent": str(context.get("agent") or ""),
+            "task": str(redact_sensitive(context.get("task") or "")),
+            "agent": str(redact_sensitive(context.get("agent") or "")),
             "provider": str(context.get("provider") or ""),
             "model_role": str(context.get("model_role") or ""),
             "started_at": context.get("started_at"),
