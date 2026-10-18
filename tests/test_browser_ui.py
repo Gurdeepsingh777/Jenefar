@@ -642,5 +642,14 @@ def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
     assert "rejection_handler=orchestrator._reject_pending_workflow" in run
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert 'const payload=await response.json();' in app
-    assert 'browserSpeakFallback(reply);' in app
+    approval_start = app.index("approveButton.onclick=async()=>{")
+    approval_end = app.index("\n}\n", approval_start)
+    approval_handler = app[approval_start:approval_end]
+    assert 'const resultValue=payload?.result;' in approval_handler
+    assert 'browserSpeakFallback(reply);' not in approval_handler
+    assert 'playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");' in app
+    assert 'function stopBrowserAudio(){' in app
+    assert 'browserAudioGeneration' in app
+    assert 'browserSpeechGeneration' in app
+    assert 'const failPlayback=()=>{' in app
 
