@@ -185,3 +185,36 @@ def test_default_route_fails_over_groq_gemini_to_openrouter_before_local(monkeyp
     assert "Online LLM provider groq/" in output
     assert "quota exhausted" in output
     assert "Online LLM provider gemini/" in output
+
+
+
+def test_gemini_chat_tool_history_preserves_google_thought_signature():
+    from types import SimpleNamespace
+
+    from jenefar.core.llm import LLMClient
+
+    signature = "provider-returned-signature"
+    message = SimpleNamespace(
+        content=None,
+        tool_calls=[
+            SimpleNamespace(
+                id="call_1",
+                function=SimpleNamespace(name="skill_catalog", arguments="{}"),
+            )
+        ],
+    )
+    message.model_dump = lambda **_kwargs: {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "skill_catalog", "arguments": "{}"},
+            "extra_content": {"google": {"thought_signature": signature}},
+        }],
+    }
+
+    serialized = LLMClient._assistant_chat_message(message)
+
+    assert serialized["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == signature
+    assert serialized["tool_calls"][0]["function"]["name"] == "skill_catalog"
