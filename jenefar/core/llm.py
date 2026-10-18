@@ -611,13 +611,17 @@ class LLMClient:
         allow_action_tools: bool = False,
         max_tool_rounds: int = 4,
         model_role: str | None = None,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
+        self._check_cancel(cancel_token)
+        self._remaining_timeout(deadline)
         online = internet_available()
         _, selected_role = self.selected_model(model_role)
         failures: list[str] = []
         runtime_override = ModelRouter.runtime_override()
         runtime_provider = (runtime_override or {}).get("provider", "")
-        provider_order = self.providers.order()
+        provider_order = self.providers.order_for_role(selected_role)
         if runtime_provider in self.providers.CONFIGS:
             provider_order = [runtime_provider] + [
                 name for name in provider_order if name != runtime_provider
@@ -634,16 +638,21 @@ class LLMClient:
                     else self.explicit_model or self.providers.model(provider, selected_role)
                 )
                 try:
+                    started = time.perf_counter()
                     result = self._complete_online(
                         provider, prompt, instructions=instructions,
                         use_web_search=use_web_search, tool_broker=tool_broker,
                         allow_action_tools=allow_action_tools,
                         max_tool_rounds=max_tool_rounds, model=model,
                         model_role=selected_role,
+                        deadline=deadline,
+                        cancel_token=cancel_token,
                     )
+                    self.providers.record_latency(provider, time.perf_counter() - started, success=True)
                     self.providers.reset(provider)
                     return result
                 except Exception as exc:
+                    self.providers.record_latency(provider, time.perf_counter() - started, success=False)
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
                     quota_exhausted = is_quota_exhausted_provider_error(exc)
@@ -704,6 +713,8 @@ class LLMClient:
             )
 
         try:
+            self._check_cancel(cancel_token)
+            self._remaining_timeout(deadline)
             return self._complete_local(
                 prompt,
                 instructions=(
@@ -717,6 +728,8 @@ class LLMClient:
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds,
                 model_role=selected_role,
+                deadline=deadline,
+                cancel_token=cancel_token,
             )
         except Exception as exc:
             local_error = f"{type(exc).__name__}: {exc}"
