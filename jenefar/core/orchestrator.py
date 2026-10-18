@@ -208,6 +208,25 @@ class JenefarOrchestrator:
                 self._avatar_state("speaking", output)
                 return output
 
+            if self._is_local_host_discovery_request(text):
+                output = self._request_local_host_discovery(text)
+                self.session.add("assistant", output)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    output,
+                    importance=0.55,
+                )
+                awaiting = self.state == JenefarState.WAITING_APPROVAL
+                if not awaiting:
+                    self.state = (
+                        JenefarState.SLEEPING
+                        if self.config.single_turn_sleep
+                        else JenefarState.AWAKE
+                    )
+                self._avatar_state("waiting_approval" if awaiting else "speaking", output)
+                return output
+
             if self._is_ip_info_query(text):
                 output = self._local_ip_info_response()
                 self.session.add("assistant", output)
@@ -516,10 +535,214 @@ class JenefarOrchestrator:
         )
 
     @staticmethod
+    def _is_local_host_discovery_request(text: str) -> bool:
+        """Recognize explicit requests to count live hosts in a selected network."""
+        lowered = " ".join(str(text or "").casefold().split())
+        if not lowered:
+            return False
+
+        cidr = bool(re.search(
+            r"(?<![0-9.])(?:[0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}(?![0-9.])",
+            lowered,
+        ))
+        has_range = any(marker in lowered for marker in (
+            "ip range", "ip ki range", "range", "subnet", "cidr",
+            "network range", "local network", "meri ip", "mera ip",
+            "my ip", "my network", "meri range", "my range",
+        ))
+        has_host_goal = any(marker in lowered for marker in (
+            "host", "hosts", "device", "devices", "online", "live",
+            "ping sweep", "host discovery", "kitne", "count", "discover",
+            "scan", "check",
+        ))
+        explicit_goal = any(marker in lowered for marker in (
+            "host discovery", "live hosts", "online hosts", "hosts online",
+            "kitne host", "kitne hosts", "kitne device", "kitne devices",
+            "ping sweep", "check online host", "check live host",
+        ))
+        return explicit_goal or (has_host_goal and (has_range or cidr))
+
+    def _request_local_host_discovery(self, text: str) -> str:
+        """Plan a bounded host-only scan of a clearly selected, authorized IPv4 range."""
+        import ipaddress
+
+        explicit = re.search(
+            r"(?<![0-9.])((?:[0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2})(?![0-9.])",
+            str(text or ""),
+        )
+        interface = "user-specified CIDR"
+        local_address = ""
+        if explicit:
+            try:
+                network = ipaddress.ip_network(explicit.group(1), strict=False)
+            except ValueError:
+                return "Diya gaya CIDR valid nahi hai. Example: 192.168.29.0/24. Koi scan execute nahi hua."
+        else:
+            local_range_reference = any(marker in str(text or "").casefold() for marker in (
+                "meri ip", "mera ip", "my ip", "my network", "meri network",
+                "local network", "my subnet", "meri subnet", "meri range",
+            ))
+            if not local_range_reference:
+                return (
+                    "Host discovery ke liye exact IPv4 CIDR batao (example: 192.168.29.0/24), "
+                    "ya clearly bolo ki current local IP range use karni hai. Abhi koi scan execute nahi hua."
+                )
+            from jenefar.tools.network_info import get_primary_private_ipv4_network
+
+            selected = get_primary_private_ipv4_network()
+            if selected.get("status") != "ok":
+                candidates = selected.get("networks") or []
+                if candidates:
+                    options = "; ".join(
+                        f"{item.get('interface')} {item.get('network')}"
+                        for item in candidates[:6]
+                    )
+                    return (
+                        "Ek se zyada possible local ranges milin, isliye main guess nahi karungi: "
+                        + options
+                        + ". Interface ya exact CIDR choose karo. Koi scan execute nahi hua."
+                    )
+                return (
+                    "Local IP range safely select nahi ho paayi: "
+                    + str(selected.get("error") or selected.get("status") or "unknown error")
+                    + ". Exact CIDR specify karo. Koi scan execute nahi hua."
+                )
+            try:
+                network = ipaddress.ip_network(str(selected["network"]), strict=False)
+            except (KeyError, ValueError):
+                return "Local interface se valid CIDR nahi mila. Exact CIDR specify karo. Koi scan execute nahi hua."
+            interface = str(selected.get("interface") or "active interface")
+            local_address = str(selected.get("address") or "")
+
+        if network.version != 4:
+            return "Ye workflow filhaal IPv4 host discovery support karta hai. Koi scan execute nahi hua."
+        if network.num_addresses > 4096:
+            return (
+                f"Selected range {network} mein {network.num_addresses} addresses hain, jo automatic discovery limit "
+                "4096 se zyada hai. Isse chhote authorized CIDR mein divide karke do. Koi scan execute nahi hua."
+            )
+        target = str(network)
+        plan_text = (
+            "Goal: count hosts responding on the selected IPv4 network. "
+            f"Selected target: {target} (interface: {interface}"
+            + (f", local address: {local_address}" if local_address else "")
+            + "). Plan: verify configured authorization scope; run Nmap host discovery only with "
+            "-sn, numeric targets (-n), conservative timing (-T3), and one retry; report hosts up. "
+            "Do not enumerate ports or services. Wait for explicit user approval before execution."
+        )
+        arguments = {
+            "tool": "nmap",
+            "args": [
+                "-sn", "-n", "-T3", "--max-retries", "1", target,
+            ],
+            "target": target,
+            "timeout": 90,
+            "plan": plan_text,
+        }
+        try:
+            raw = self.tool_broker.invoke("kali_tool_execute", arguments)
+            payload = json.loads(raw)
+        except Exception as exc:
+            return (
+                f"Host-discovery plan target {target} ke liye ready tha, lekin preflight result read nahi hua: "
+                f"{type(exc).__name__}: {exc}. Koi scan execute nahi hua."
+            )
+
+        if not isinstance(payload, dict):
+            return f"Host discovery preflight ne invalid response diya for {target}. Koi scan execute nahi hua."
+        if payload.get("status") == "approval_required":
+            pending_id = str(payload.get("pending_id") or "").strip()
+            user_prompt = str(payload.get("user_prompt") or "").strip()
+            if not pending_id or not user_prompt:
+                return f"Target {target} validate hua, lekin approval request incomplete thi. Koi scan execute nahi hua."
+            workflow = {
+                "task": text,
+                "agent": "network_host_discovery",
+                "response_language": "Hinglish",
+                "task_plan_text": plan_text,
+                "remaining": {pending_id},
+                "results": [],
+                "direct_workflow": "local_host_discovery",
+                "target": target,
+                "interface": interface,
+            }
+            self.pending_approval_workflows[pending_id] = workflow
+            self.state = JenefarState.WAITING_APPROVAL
+            return (
+                f"Task analysis complete. Selected range: {target} via {interface}. "
+                "Execution se pehle approval zaroori hai.\n\n" + user_prompt
+            )
+        if payload.get("status") == "ok":
+            return self._summarize_local_host_discovery(raw, target)
+        error = str(payload.get("error") or "authorization/tool preflight blocked execution")
+        return (
+            f"Plan bana, lekin preflight ne scan rok diya for {target}: {error}. "
+            "Configured authorization scope check karo; koi host scan execute nahi hua."
+        )
+
+    @staticmethod
+    def _summarize_local_host_discovery(raw_result: str, target: str) -> str:
+        """Summarize actual Nmap host-discovery output, never inventing a host count."""
+        try:
+            payload = json.loads(raw_result)
+        except (TypeError, json.JSONDecodeError):
+            return f"{target} ke liye scan result parse nahi ho paaya. Raw execution output unavailable hai."
+
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            error = (
+                str(payload.get("error") or payload.get("message") or "tool execution failed")
+                if isinstance(payload, dict) else "invalid tool response"
+            )
+            return f"{target} ka host discovery execute nahi ho paaya: {error}. Koi verified host count available nahi hai."
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return f"{target} ka tool result invalid tha. Koi verified host count available nahi hai."
+        return_code = result.get("returncode")
+        stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        if return_code != 0:
+            detail = (stderr or stdout or "no diagnostic output").strip()[-700:]
+            return f"{target} par Nmap host discovery fail hua (exit code {return_code}): {detail}"
+
+        done = re.search(
+            r"Nmap done:\\s*([0-9,]+)\\s+IP addresses?\\s+\\(([0-9,]+)\\s+hosts? up\\)",
+            stdout,
+            re.IGNORECASE,
+        )
+        reports = [
+            line.split(" for ", 1)[1].strip()
+            for line in stdout.splitlines()
+            if line.strip().startswith("Nmap scan report for ")
+        ]
+        if done:
+            address_count = int(done.group(1).replace(",", ""))
+            host_count = int(done.group(2).replace(",", ""))
+        elif reports:
+            address_count = network_size = None
+            host_count = len(reports)
+        else:
+            return (
+                f"Nmap ne {target} ke liye successful exit diya, lekin standard host-count summary nahi mili. "
+                "Main host count guess nahi karungi. Output: " + (stdout[-700:].strip() or "empty")
+            )
+
+        summary = (
+            f"Host discovery complete: {host_count} host(s) online/response dete mile, "
+            f"{address_count if address_count is not None else 'unknown'} addresses checked in {target}. "
+            "Command Nmap -sn tha; ports aur services scan nahi kiye gaye."
+        )
+        if reports:
+            summary += "\nReported hosts: " + ", ".join(reports[:30])
+            if len(reports) > 30:
+                summary += f" (aur {len(reports) - 30} hosts)"
+        return summary
+
+    @staticmethod
     def _is_ip_info_query(text: str) -> bool:
         """Recognize a direct request for this computer's IP info, not a scan."""
         lowered = " ".join(str(text or "").casefold().split())
-        if not lowered:
+        if not lowered or JenefarOrchestrator._is_local_host_discovery_request(lowered):
             return False
         # If the user explicitly asks for scanning, preserve the separate security
         # workflow. A plain "check my IP" request must never be promoted into one.
@@ -767,6 +990,29 @@ class JenefarOrchestrator:
             parsed = json.loads(raw_result)
         except json.JSONDecodeError:
             parsed = {"result": raw_result}
+
+        if workflow.get("direct_workflow") == "local_host_discovery":
+            workflow["remaining"].discard(pending_id)
+            self.pending_approval_workflows.pop(pending_id, None)
+            summary = self._summarize_local_host_discovery(
+                raw_result,
+                str(workflow.get("target") or "selected network"),
+            )
+            self.session.add("assistant", summary)
+            self.memory_engine.record_message(
+                self.session.session_id,
+                "assistant",
+                summary,
+                importance=0.65,
+            )
+            self.graph.learn_text(summary)
+            self.state = (
+                JenefarState.SLEEPING
+                if self.config.single_turn_sleep
+                else JenefarState.AWAKE
+            )
+            self._avatar_state("speaking", summary)
+            return summary
 
         tool_name = parsed.get("tool", "unknown")
         workflow["results"].append({
