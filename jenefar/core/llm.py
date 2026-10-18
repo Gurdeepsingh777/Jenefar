@@ -99,6 +99,48 @@ class LLMClient:
         return converted
 
     @staticmethod
+    def _assistant_chat_message(message: Any) -> dict[str, Any]:
+        """Preserve provider-specific fields on tool calls during chat history replay.
+
+        Gemini's OpenAI-compatible endpoint can return thought signatures on
+        tool-call records. Rebuilding those records from only id/name/arguments
+        drops the signature and makes the follow-up function response fail.
+        """
+        for method_name in ("model_dump", "dict"):
+            dumper = getattr(message, method_name, None)
+            if not callable(dumper):
+                continue
+            try:
+                raw = dumper(exclude_none=True)
+            except TypeError:
+                try:
+                    raw = dumper()
+                except Exception:
+                    continue
+            except Exception:
+                continue
+            if isinstance(raw, dict):
+                preserved = dict(raw)
+                preserved["role"] = "assistant"
+                return preserved
+
+        return {
+            "role": "assistant",
+            "content": getattr(message, "content", None),
+            "tool_calls": [
+                {
+                    "id": getattr(call, "id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": getattr(getattr(call, "function", None), "name", ""),
+                        "arguments": getattr(getattr(call, "function", None), "arguments", "{}"),
+                    },
+                }
+                for call in (getattr(message, "tool_calls", None) or [])
+            ],
+        }
+
+    @staticmethod
     def _tool_result(call: Any, output: str) -> dict[str, Any]:
         return {
             "role": "tool",
@@ -304,21 +346,7 @@ class LLMClient:
                     model_role=model_role,
                 )
 
-            assistant_message = {
-                "role": "assistant",
-                "content": getattr(message, "content", None),
-                "tool_calls": [
-                    {
-                        "id": getattr(call, "id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": getattr(getattr(call, "function", None), "name", ""),
-                            "arguments": getattr(getattr(call, "function", None), "arguments", "{}"),
-                        },
-                    }
-                    for call in tool_calls
-                ],
-            }
+            assistant_message = self._assistant_chat_message(message)
             messages.append(assistant_message)
             pending_tools: list[dict[str, str]] = []
 
