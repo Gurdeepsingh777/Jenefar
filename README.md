@@ -1134,3 +1134,12 @@ Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asy
 - Free API provider limits can change; rate-limit and quota errors are surfaced without terminating polling. The bot does not bypass provider authentication or quota requirements.
 - Privacy note: the example uses Gemini's free tier, which Google's pricing page says may use submitted content to improve its products. Avoid sending passwords, API keys, private personal data, or sensitive private-repository code to a free-tier endpoint; choose a provider/plan with suitable data terms for sensitive work. See [Gemini API pricing and data-use terms](https://ai.google.dev/gemini-api/docs/pricing).
 - Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.
+
+
+## Phase 15 — Visual Network Scan Results & Host Follow-ups
+
+Browser host-discovery results open an in-app liquid-glass **Scan Results** window. Each responsive host is displayed as a numbered row with its IPv4 address, UP state, and available latency/vendor information; the IP list is not read aloud or repeated in the general chat/task feed. The window has separate **LIVE HOSTS** and **OPEN PORTS** views and closes automatically when a new instruction starts.
+
+After an authorized host-discovery scan, a direct request such as `scan ports of the second host` or selecting **SCAN PORTS** on a result row resolves the target from the latest live-host list. Jenefar then runs a bounded Nmap TCP connect/service scan of the top 1000 TCP ports for that single host. The request itself explicitly authorizes this follow-up; the tool broker still revalidates the host against `JENEFAR_AUTHORIZED_TARGETS` / `authorized_targets` and blocks out-of-scope targets. The follow-up does not run vulnerability scripts, exploit code, or scan additional hosts. Port findings appear in the same results window and are not spoken aloud.
+
+The initial subnet host-discovery action still requires approval. Port follow-ups are restricted to hosts actually reported by the most recent discovery result; an arbitrary IP not present in that list is rejected.
