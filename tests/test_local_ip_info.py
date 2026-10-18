@@ -205,3 +205,163 @@ def test_browser_audio_is_discarded_if_another_task_starts_during_stt(monkeypatc
     assert result["busy"] is True
     assert result["reason"] == "task_started_during_transcription"
     assert result["accepted"] is False
+
+def test_host_discovery_request_is_not_misclassified_as_ip_information():
+    request = "meri ip ki range ko select kro or check kro ki kitne host online h"
+
+    assert JenefarOrchestrator._is_local_host_discovery_request(request)
+    assert not JenefarOrchestrator._is_ip_info_query(request)
+
+    plan = Planner().plan(request)
+    assert plan.intent == "network_host_discovery"
+    assert plan.agent == "kali"
+
+
+def test_primary_private_ipv4_network_prefers_default_lan_and_ignores_docker(monkeypatch):
+    links = [
+        {
+            "ifname": "wlan0",
+            "operstate": "UP",
+            "addr_info": [{
+                "family": "inet", "local": "192.168.29.165",
+                "prefixlen": 24, "scope": "global",
+            }],
+        },
+        {
+            "ifname": "docker0",
+            "operstate": "UP",
+            "addr_info": [{
+                "family": "inet", "local": "172.17.0.1",
+                "prefixlen": 16, "scope": "global",
+            }],
+        },
+        {
+            "ifname": "br-a2502a6c2ddb",
+            "operstate": "UP",
+            "addr_info": [{
+                "family": "inet", "local": "172.18.0.1",
+                "prefixlen": 16, "scope": "global",
+            }],
+        },
+    ]
+
+    class Result:
+        returncode = 0
+        stdout = ""
+
+    def fake_run(command, **_kwargs):
+        result = Result()
+        if command[1:4] == ["-j", "address", "show"]:
+            result.stdout = json.dumps(links)
+        elif command[1:4] == ["-4", "route", "show"]:
+            result.stdout = "default via 192.168.29.1 dev wlan0 proto dhcp metric 600"
+        else:
+            result.returncode = 1
+        return result
+
+    monkeypatch.setattr(network_info.shutil, "which", lambda _name: "/usr/sbin/ip")
+    monkeypatch.setattr(network_info.subprocess, "run", fake_run)
+
+    result = network_info.get_primary_private_ipv4_network()
+
+    assert result["status"] == "ok"
+    assert result["interface"] == "wlan0"
+    assert result["address"] == "192.168.29.165"
+    assert result["network"] == "192.168.29.0/24"
+    assert result["num_addresses"] == 256
+
+
+def test_host_discovery_request_creates_an_approval_gated_plan(monkeypatch):
+    from jenefar.core.state import JenefarState
+
+    request = "meri ip ki range ko select kro or check kro ki kitne host online h"
+    network_info_result = {
+        "status": "ok",
+        "interface": "wlan0",
+        "address": "192.168.29.165",
+        "network": "192.168.29.0/24",
+        "num_addresses": 256,
+        "prefixlen": 24,
+    }
+
+    class FakeHostBroker:
+        def __init__(self):
+            self.calls = []
+
+        def invoke(self, name, arguments):
+            self.calls.append((name, arguments))
+            return json.dumps({
+                "status": "approval_required",
+                "pending_id": "a" * 32,
+                "tool": "kali_tool_execute",
+                "user_prompt": (
+                    "Purpose/plan: host discovery only\\nCommand: nmap -sn -n -T3 "
+                    "192.168.29.0/24\\nTarget(s): 192.168.29.0/24\\n"
+                    "Authorization scope: PASS\\nExecute? ["
+                    + "a" * 32
+                    + "]"
+                ),
+            })
+
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator.pending_approval_workflows = {}
+    orchestrator.session = _FakeSession()
+    orchestrator.memory_engine = _FakeMemory()
+    orchestrator.graph = _FakeGraph()
+    orchestrator.state = None
+    orchestrator.config = SimpleNamespace(single_turn_sleep=False)
+    orchestrator.tool_broker = FakeHostBroker()
+    orchestrator._avatar_state = lambda *_args, **_kwargs: None
+    orchestrator._direct_window_transfer = lambda _text: None
+    orchestrator._direct_screen_read = lambda _text: None
+
+    monkeypatch.setattr(
+        network_info,
+        "get_primary_private_ipv4_network",
+        lambda: network_info_result,
+    )
+
+    reply = orchestrator.handle(request)
+
+    assert len(orchestrator.tool_broker.calls) == 1
+    name, arguments = orchestrator.tool_broker.calls[0]
+    assert name == "kali_tool_execute"
+    assert arguments["tool"] == "nmap"
+    assert arguments["args"] == ["-sn", "-n", "-T3", "--max-retries", "1", "192.168.29.0/24"]
+    assert arguments["target"] == "192.168.29.0/24"
+    assert orchestrator.state == JenefarState.WAITING_APPROVAL
+    assert "Selected range: 192.168.29.0/24 via wlan0" in reply
+    assert "approval" in reply.lower()
+    assert "a" * 32 in reply
+    workflow = orchestrator.pending_approval_workflows["a" * 32]
+    assert workflow["direct_workflow"] == "local_host_discovery"
+
+
+def test_nmap_host_discovery_summary_uses_real_reported_count():
+    raw = json.dumps({
+        "status": "ok",
+        "result": {
+            "tool": "nmap",
+            "returncode": 0,
+            "stdout": (
+                "Starting Nmap 7.95\\n"
+                "Nmap scan report for 192.168.29.1\\n"
+                "Host is up (0.001s latency).\\n"
+                "Nmap scan report for 192.168.29.165\\n"
+                "Host is up.\\n"
+                "Nmap done: 256 IP addresses (2 hosts up) scanned in 2.51 seconds\\n"
+            ),
+            "stderr": "",
+        },
+    })
+
+    reply = JenefarOrchestrator._summarize_local_host_discovery(
+        raw, "192.168.29.0/24"
+    )
+
+    assert "2 host(s) online" in reply
+    assert "256 addresses checked" in reply
+    assert "192.168.29.1" in reply
+    assert "192.168.29.165" in reply
+    assert "ports aur services scan nahi kiye gaye" in reply
+
