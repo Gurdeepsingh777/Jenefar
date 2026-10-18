@@ -368,11 +368,23 @@ function showApproval(event){
   approveButton.onclick=async()=>{
     overlay.querySelectorAll("button").forEach(button=>button.disabled=true);
     try{
-      await fetch("/realtime/tool",{
+      const response=await fetch("/realtime/tool",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({approve_id:pendingId})
       });
+      const payload=await response.json();
+      const reply=String(payload?.result||"").trim();
+      if(!response.ok) throw new Error(reply||("HTTP "+response.status));
+      if(reply){
+        addActivity({state:"result",text:reply});
+        // A direct approval callback can return a completed result without an
+        // audio event. Speak it in-browser so the mic is re-locked during TTS
+        // and reliably resumes when the utterance ends.
+        browserSpeakFallback(reply);
+      }
+    }catch(error){
+      addActivity({state:"error",text:"Approval execution failed: "+String(error?.message||error)});
     }finally{
       close();
     }
