@@ -343,6 +343,20 @@ class BrowserVoiceBridge:
             "status": "running",
         }
 
+    def approve_pending(self, pending_id: str) -> dict[str, Any]:
+        """Approve an exact pending action and speak its orchestrated result in the browser."""
+        result = self.orchestrator._approve_pending(str(pending_id or "").strip())
+        display = self._display_text(result)
+        task_id = uuid.uuid4().hex[:10]
+        self._publish("result", display, task_id)
+        try:
+            self._speech_queue.put_nowait((task_id, display))
+        except Exception:
+            # If the speech queue is full, preserve visual feedback and let the
+            # browser's speech fallback read the result instead.
+            self._publish("speaking_fallback", display, task_id)
+        return {"status": "ok", "result": display}
+
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
 
