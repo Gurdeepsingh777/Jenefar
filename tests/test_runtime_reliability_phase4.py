@@ -300,3 +300,9 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
     assert "New instruction closes this window automatically" in (WEB / "index.html").read_text(encoding="utf-8")
     assert "if owner is scan_owner" in (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
     assert "self.orchestrator._latest_scan_result = None" in (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    assert '"-Pn", "-n", "-sT", "-sV"' in orchestrator
+    assert '"filtered_port_count": filtered_count' in orchestrator
+    assert '"closed_port_count": closed_count' in orchestrator
+    assert '["PORT","STATE","SERVICE","VERSION / DETAIL"]' in app
+    assert "Host reachability was not confirmed." in app
+    assert "No open or filtered TCP ports were reported." in app
