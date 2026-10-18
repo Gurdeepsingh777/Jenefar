@@ -40,6 +40,7 @@ class LocalLLMClient:
         self.model = self._configured_model(self.model_role)
         self._last_detection_error = ""
         self._runtime_fallback_model = ""
+        self.timeout_seconds = float(self._bounded_int_env("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", 600, 15, 900))
         self._prefer_compact_requests = False
 
     @staticmethod
@@ -632,11 +633,7 @@ class LocalLLMClient:
                 if info.api == "openai":
                     payload["tool_choice"] = "auto"
 
-            try:
-                configured_timeout = float(os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600"))
-            except ValueError:
-                configured_timeout = 600.0
-            configured_timeout = max(15.0, min(900.0, configured_timeout))
+            configured_timeout = self.timeout_seconds
             if remaining is not None:
                 configured_timeout = min(configured_timeout, max(0.5, remaining))
             result, info = self._request_with_timeout_recovery(
