@@ -46,7 +46,9 @@ Safety:
         "reconnaissance", "credential access", "privilege escalation",
         "lateral movement", "forensics", "kali tool", "security tool",
         "tool catalog", "tool help", "installed tool", "installed tools",
-        "new tool", "linux command", "network scanning",
+        "new tool", "linux command", "network scanning", "host discovery",
+        "online hosts", "live hosts", "hosts online", "ip range", "ip ki range",
+        "ping sweep", "subnet range", "kitne host",
     )
 
     @staticmethod
