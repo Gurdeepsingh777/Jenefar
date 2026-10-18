@@ -7,6 +7,8 @@ import threading
 import time
 from pathlib import Path
 
+from jenefar.evaluation.trace import redact_sensitive
+
 @dataclass
 class MemoryRecord:
     memory_id: str
@@ -56,19 +58,22 @@ class MemoryManagerV2:
 
     def upsert(self, content: str, *, kind="semantic", importance=0.5, provenance="runtime", tags=(), memory_id=None) -> MemoryRecord:
         now = time.time()
-        norm = " ".join(str(content).split()).lower()
+        content = str(redact_sensitive(str(content)))
+        provenance = str(redact_sensitive(str(provenance)))
+        tags = tuple(str(redact_sensitive(str(tag))) for tag in tags)
+        norm = " ".join(content.split()).lower()
         if not norm:
             raise ValueError("memory content cannot be empty")
         key = memory_id or hashlib.sha256(norm.encode()).hexdigest()[:20]
         with self._lock:
             rec = self.records.get(key)
             if rec:
-                rec.content = str(content)
+                rec.content = content
                 rec.updated_at = now
                 rec.importance = max(rec.importance, max(0.0, min(1.0, float(importance))))
                 rec.tags = tuple(tags) or rec.tags
             else:
-                rec = MemoryRecord(key, str(content), str(kind), max(0.0, min(1.0, float(importance))), now, now, str(provenance), tuple(tags))
+                rec = MemoryRecord(key, content, str(kind), max(0.0, min(1.0, float(importance))), now, now, str(provenance), tuple(tags))
                 self.records[key] = rec
             self._persist_locked()
             return rec
