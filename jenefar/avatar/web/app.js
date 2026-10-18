@@ -690,6 +690,7 @@ let latestPortScanData=null;
 let scanResultsTaskId="";
 let scanResultsView="hosts";
 let portScanRunning=false;
+let showNetworkPicker=false;
 
 function closeScanResults(){
   if(scanResultsWindow) scanResultsWindow.hidden=true;
@@ -747,6 +748,7 @@ function openScanResults(data,taskId=""){
   if(!data||typeof data!=="object") return;
   if(data.kind==="host_discovery"){
     portScanRunning=false;
+    showNetworkPicker=false;
     latestHostScanData=data;
     latestPortScanData=null;
     scanResultsView="hosts";
@@ -868,6 +870,23 @@ function renderScanResultsList(){
     main.append(scanNode("span","scan-result-big-number",countLabel));
     main.append(scanNode("span","scan-result-summary-label",heading));
     scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",target));
+    const networkChoices=Array.isArray(data?.available_networks)?data.available_networks:[];
+    if(!requiresGuidance&&!scanFailed&&networkChoices.length>1){
+      const pickerToggle=scanNode("button","scan-network-picker-toggle",showNetworkPicker?"HIDE NETWORK OPTIONS":"CHANGE NETWORK / INTERFACE");
+      pickerToggle.type="button";
+      pickerToggle.setAttribute("aria-expanded",String(showNetworkPicker));
+      pickerToggle.addEventListener("click",()=>{
+        showNetworkPicker=!showNetworkPicker;
+        renderScanResultsList();
+      });
+      scanResultsList.appendChild(pickerToggle);
+      if(showNetworkPicker){
+        renderNetworkScopePanel(scanResultsList,{
+          ...data,
+          scope_message:"Choose another detected local interface/range below. Only candidates already inside the configured authorization scope can start a scan."
+        });
+      }
+    }
     if(!hosts.length){
       if(requiresGuidance){
         renderNetworkScopePanel(scanResultsList,data);
