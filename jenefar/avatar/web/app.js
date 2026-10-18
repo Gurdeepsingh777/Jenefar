@@ -711,6 +711,31 @@ function setScanView(view){
   renderScanResultsList();
 }
 
+function appendExactNmapOutput(container,data){
+  if(!container||!data||typeof data!=="object") return;
+  const command=String(data.command||"");
+  const stdout=String(data.stdout||"");
+  const stderr=String(data.stderr||"");
+  if(!command&&!stdout&&!stderr) return;
+  const details=scanNode("details","scan-raw-output");
+  const summary=scanNode("summary","","EXACT NMAP OUTPUT");
+  const body=scanNode("div","scan-raw-body");
+  if(command){
+    body.appendChild(scanNode("div","scan-raw-label","COMMAND"));
+    body.appendChild(scanNode("pre","scan-raw-pre scan-raw-command",command));
+  }
+  if(stdout){
+    body.appendChild(scanNode("div","scan-raw-label","STDOUT"));
+    body.appendChild(scanNode("pre","scan-raw-pre",stdout));
+  }
+  if(stderr){
+    body.appendChild(scanNode("div","scan-raw-label","STDERR"));
+    body.appendChild(scanNode("pre","scan-raw-pre scan-raw-stderr",stderr));
+  }
+  details.append(summary,body);
+  container.appendChild(details);
+}
+
 function openScanResults(data,taskId=""){
   if(!data||typeof data!=="object") return;
   if(data.kind==="host_discovery"){
@@ -758,6 +783,7 @@ function renderScanResultsList(){
       const empty=scanNode("div","scan-result-empty");
       empty.append(scanNode("div","", "No live hosts to display."));
       scanResultsList.appendChild(empty);
+      appendExactNmapOutput(scanResultsList,data);
       return;
     }
     const head=scanNode("div","scan-result-list-head");
@@ -791,6 +817,7 @@ function renderScanResultsList(){
       row.appendChild(action);
       scanResultsList.appendChild(row);
     });
+    appendExactNmapOutput(scanResultsList,data);
     return;
   }
 
@@ -838,6 +865,7 @@ function renderScanResultsList(){
       empty.append(scanNode("span","","Nmap did not return individual open or filtered port rows for "+data.target+"."));
     }
     scanResultsList.appendChild(empty);
+    appendExactNmapOutput(scanResultsList,data);
     return;
   }
   const head=scanNode("div","scan-result-list-head");
@@ -851,6 +879,7 @@ function renderScanResultsList(){
     row.appendChild(scanNode("span","scan-port-version",port.version||"Version not identified"));
     scanResultsList.appendChild(row);
   });
+  appendExactNmapOutput(scanResultsList,data);
 }
 
 document.getElementById("scan-results-close")?.addEventListener("click",closeScanResults);
