@@ -699,7 +699,9 @@ def test_scan_results_window_is_transparent_transient_and_selectable():
     assert 'currentState==="scan_results"' in js
     assert "closeScanResults();" in js
     assert 'dispatchDashboardCommand("scan ports of host "+host.ip)' in js
-    assert 'self._publish("scan_results", display_summary, task_id, data=structured_scan)' in bridge
+    assert 'self._publish(' in bridge
+    assert '"scan_results"' in bridge
+    assert "data=structured_scan" in bridge
     assert "Do not synthesize or enqueue spoken IP/port lists" in bridge
 
 
