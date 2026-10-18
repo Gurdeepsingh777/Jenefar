@@ -403,7 +403,7 @@ function pauseBrowserVoice(){
 
 function resumeBrowserVoice(){
   if(!micEnabled||voiceLocked) return;
-  if(browserSpeechActive||("speechSynthesis" in window && window.speechSynthesis.speaking)) return;
+  if(browserSpeechActive||Boolean(browserAudio&&!browserAudio.ended)||("speechSynthesis" in window && window.speechSynthesis.speaking)) return;
   if(fallbackMode){
     startFallbackMonitor();
     return;
