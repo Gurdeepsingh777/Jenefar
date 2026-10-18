@@ -46,6 +46,8 @@ class BrowserVoiceBridge:
         except (TypeError, ValueError):
             self._ip_echo_window = 24.0
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
+        self._approval_voice_lock = threading.Lock()
+        self._approval_voice_results: dict[str, str] = {}
         self._tts_lock = threading.Lock()
         self._openai_tts_disabled = False
         self._gemini_tts_disabled = False
@@ -363,18 +365,54 @@ class BrowserVoiceBridge:
         }
 
     def approve_pending(self, pending_id: str) -> dict[str, Any]:
-        """Approve an exact pending action and speak its orchestrated result in the browser."""
-        result = self.orchestrator._approve_pending(str(pending_id or "").strip())
-        display = self._display_text(result)
-        task_id = uuid.uuid4().hex[:10]
-        self._publish("result", display, task_id)
-        try:
-            self._speech_queue.put_nowait((task_id, display))
-        except Exception:
-            # If the speech queue is full, preserve visual feedback and let the
-            # browser's speech fallback read the result instead.
-            self._publish("speaking_fallback", display, task_id)
-        return {"status": "ok", "result": display}
+        """Approve once, with the active voice task as the only speech owner."""
+        approval_id = str(pending_id or "").strip()
+        if not approval_id:
+            return {"status": "error", "error": "approval id required"}
+
+        # A spoken "yes" may already be processing on the single voice worker
+        # while the user also clicks the dashboard approval button. In that case,
+        # let the voice task complete the approval and speak its own result.
+        active_task = self._active_task
+        confirmation_parser = getattr(self.orchestrator, "_confirmation_choice", None)
+        if (
+            active_task is not None
+            and not active_task.done()
+            and callable(confirmation_parser)
+            and confirmation_parser(self._last_text) is not None
+        ):
+            return {
+                "status": "ok",
+                "result": "Approval is already being processed from your voice confirmation.",
+                "speech_owner": "voice_confirmation",
+            }
+
+        # Duplicate HTTP approval requests must neither execute the action nor
+        # enqueue a second audio event after the first approval has completed.
+        with self._approval_voice_lock:
+            if approval_id in self._approval_voice_results:
+                return {
+                    "status": "ok",
+                    "result": self._approval_voice_results[approval_id],
+                    "duplicate": True,
+                }
+
+            result = self.orchestrator._approve_pending(approval_id)
+            display = self._display_text(result)
+            task_id = uuid.uuid4().hex[:10]
+            self._publish("result", display, task_id)
+            try:
+                self._speech_queue.put_nowait((task_id, display))
+            except Exception:
+                # If the speech queue is full, preserve visual feedback and let the
+                # browser's speech fallback read the result instead.
+                self._publish("speaking_fallback", display, task_id)
+
+            self._approval_voice_results[approval_id] = display
+            while len(self._approval_voice_results) > 128:
+                oldest_id = next(iter(self._approval_voice_results))
+                self._approval_voice_results.pop(oldest_id, None)
+            return {"status": "ok", "result": display}
 
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
