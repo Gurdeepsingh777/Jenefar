@@ -580,7 +580,9 @@ function apply(event){
   const isRawScannerActivity=currentState==="thinking"&&/^Tool result: kali_tool_execute\s*->/i.test(String(event.text||""));
   if(isScanResults){
     openScanResults(event.data||{},event.task_id||"");
-  }else if(scanResultsTaskId&&["listening","queued","thinking"].includes(currentState)){
+  }else if(scanResultsWindow&&!scanResultsWindow.hidden&&["listening","queued","thinking"].includes(currentState)){
+    // Any fresh instruction owns the result stage, even if a compatibility
+    // publisher omitted task_id on the first structured-scan event.
     closeScanResults();
   }
   updateEmbeddedHud(currentState,isScanResults?(event.data?.summary||event.text||"Scan results ready"):(isRawScannerActivity?"Network scan completed":event.text||""));
