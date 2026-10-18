@@ -521,6 +521,7 @@ def test_port_scan_followup_resolves_second_host_and_limits_scan(monkeypatch):
     assert confirmed is True
     assert arguments["tool"] == "nmap"
     assert arguments["target"] == "192.168.29.35"
+    assert "-Pn" in arguments["args"]
     assert "--top-ports" in arguments["args"]
     assert arguments["args"][arguments["args"].index("--top-ports") + 1] == "1000"
     assert "192.168.29.35" == arguments["args"][-1]
@@ -546,3 +547,68 @@ def test_port_scan_cannot_target_an_ip_outside_recent_live_host_results():
     )
 
     assert "latest live-host results" in result
+
+
+
+def test_port_scan_keeps_filtered_ports_and_summarizes_closed_ports():
+    raw = json.dumps({
+        "status": "ok",
+        "result": {
+            "tool": "nmap",
+            "returncode": 0,
+            "stdout": (
+                "Nmap scan report for 192.168.29.96\\n"
+                "Host is up (0.007s latency).\\n"
+                "PORT     STATE    SERVICE  VERSION\\n"
+                "1095/tcp filtered nicelink\\n"
+                "6059/tcp filtered X11:59\\n"
+                "Not shown: 998 closed tcp ports (conn-refused)\\n"
+                "Nmap done: 1 IP address (1 host up) scanned in 2.28 seconds\\n"
+            ),
+            "stderr": "",
+        },
+    })
+
+    result = JenefarOrchestrator._build_port_scan_result(
+        raw,
+        "192.168.29.96",
+        host_index=2,
+        previous_hosts=[{"index": 2, "ip": "192.168.29.96", "state": "UP"}],
+        host_discovery_target="192.168.29.0/24",
+    )
+
+    assert result is not None
+    assert result["host_status"] == "UP"
+    assert result["open_port_count"] == 0
+    assert result["filtered_port_count"] == 2
+    assert result["closed_port_count"] == 998
+    assert [item["port"] for item in result["ports"]] == [1095, 6059]
+    assert all(item["state"] == "FILTERED" for item in result["ports"])
+    assert "2 filtered" in result["summary"]
+
+
+def test_port_scan_does_not_report_zero_open_ports_when_host_was_not_confirmed():
+    raw = json.dumps({
+        "status": "ok",
+        "result": {
+            "tool": "nmap",
+            "returncode": 0,
+            "stdout": (
+                "Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn\\n"
+                "Nmap done: 1 IP address (0 hosts up) scanned in 1.69 seconds\\n"
+            ),
+            "stderr": "",
+        },
+    })
+
+    result = JenefarOrchestrator._build_port_scan_result(
+        raw,
+        "192.168.29.35",
+        host_index=2,
+        previous_hosts=[{"index": 2, "ip": "192.168.29.35", "state": "UP"}],
+    )
+
+    assert result is not None
+    assert result["host_status"] == "UNREACHABLE"
+    assert result["ports"] == []
+    assert "port results unavailable" in result["summary"]
