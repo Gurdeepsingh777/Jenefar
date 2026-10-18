@@ -386,15 +386,22 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 pending_id = str(body.get("approve_id", "")).strip()
                 if pending_id and self.tool_broker:
                     handler = getattr(self, "approval_handler", None)
+                    owner = getattr(handler, "__self__", None) if handler is not None else None
+                    # The browser voice handler wraps the orchestrator; resolve both
+                    # shapes and clear stale scan state before this specific approval.
+                    scan_owner = getattr(owner, "orchestrator", owner)
+                    if scan_owner is not None and hasattr(scan_owner, "_latest_scan_result"):
+                        scan_owner._latest_scan_result = None
                     result = handler(pending_id) if handler is not None else self.tool_broker.approve(pending_id)
                     payload = {"result": result}
-                    # Direct host discovery/port-scan approvals produce structured
-                    # data on the orchestrator. Return it with the approval response
-                    # as a reliable fallback to the live SSE event.
-                    owner = getattr(handler, "__self__", None) if handler is not None else None
-                    scan_data = getattr(owner, "_latest_scan_result", None)
+                    # Direct host discovery/port-scan approvals return the structured
+                    # scan as a response fallback as well as through the live SSE path.
+                    scan_data = getattr(scan_owner, "_latest_scan_result", None)
                     if isinstance(scan_data, dict) and scan_data.get("kind") in {"host_discovery", "port_scan"}:
-                        payload["structured_scan"] = scan_data
+                        if not isinstance(result, dict) or result.get("structured_scan"):
+                            payload["structured_scan"] = scan_data
+                        elif isinstance(result, str):
+                            payload["structured_scan"] = scan_data
                     self._json(200, payload)
                     return
                 tool_name = str(body.get("name", "")).strip()
