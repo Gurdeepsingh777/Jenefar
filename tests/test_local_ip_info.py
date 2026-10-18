@@ -612,3 +612,34 @@ def test_port_scan_does_not_report_zero_open_ports_when_host_was_not_confirmed()
     assert result["host_status"] == "UNREACHABLE"
     assert result["ports"] == []
     assert "port results unavailable" in result["summary"]
+
+
+
+def test_filtered_only_result_does_not_claim_host_is_up():
+    raw = json.dumps({
+        "status": "ok",
+        "result": {
+            "tool": "nmap",
+            "returncode": 0,
+            "stdout": (
+                "Nmap scan report for 192.168.29.35\\n"
+                "Not shown: 1000 filtered tcp ports (no-response)\\n"
+                "Nmap done: 1 IP address (1 host up) scanned in 12.00 seconds\\n"
+            ),
+            "stderr": "",
+        },
+    })
+
+    result = JenefarOrchestrator._build_port_scan_result(
+        raw,
+        "192.168.29.35",
+        host_index=2,
+        previous_hosts=[{"index": 2, "ip": "192.168.29.35", "state": "UP"}],
+    )
+
+    assert result is not None
+    assert result["host_status"] == "UNKNOWN"
+    assert result["open_port_count"] == 0
+    assert result["filtered_port_count"] == 1000
+    assert result["ports"] == []
+    assert "host reachability not confirmed" in result["summary"]
