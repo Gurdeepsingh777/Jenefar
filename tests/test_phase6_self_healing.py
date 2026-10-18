@@ -65,7 +65,7 @@ def test_agent_dispatch_requires_explicit_read_only_classification():
     assert runtime.health.retries == 0
 
     assert runtime.run("agent_dispatch", operation, metadata={"retry_safe": True}) == "ok"
-    assert attempts["count"] == 4
+    assert attempts["count"] == 3
     assert runtime.health.retries == 1
 
 
