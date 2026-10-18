@@ -341,3 +341,39 @@ def test_network_scope_picker_shows_block_reason_without_false_zero_host_count()
     assert '"networks": candidates' in network_info
     assert ".scan-network-option" in css
     assert ".scan-scope-badge.denied" in css
+
+
+
+def test_browser_tts_includes_local_piper_before_network_edge_fallback():
+    voice = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+    env = (ROOT / ".env.example").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+
+    assert "def _synthesize_local_piper_audio" in voice
+    assert '"--model", str(model_path)' in voice
+    assert '"--output_file", output_path' in voice
+    assert "JENEFAR_LOCAL_TTS_TIMEOUT_SECONDS" in voice
+    assert voice.index("self._synthesize_local_piper_audio(text)") < voice.index("self._synthesize_edge_audio(text)")
+    assert "JENEFAR_LOCAL_TTS_MODEL=" in env
+    assert "configured local Piper" in env
+    assert "configured local Piper -> Edge" in run
+
+
+def test_desktop_health_is_actionable_in_doctor_and_dashboard():
+    desktop = (ROOT / "jenefar" / "automation" / "desktop.py").read_text(encoding="utf-8")
+    headless = (ROOT / "jenefar" / "automation" / "headless.py").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+
+    assert '"input_control": False' in desktop
+    assert '"desktop_ready": False' in headless
+    assert 'if path == "/desktop/status":' in server
+    assert 'fetch("/desktop/status?ts="+Date.now()' in app
+    assert 'id="service-desktop"' in html
+    assert 'id="desktop-status-detail"' in html
+    assert 'status["diagnosis"] = diagnosis' in desktop
+    assert '"desktop diagnosis             "' in run
+    assert ".desktop-diagnostic[data-state="unavailable"]" in css
