@@ -272,7 +272,7 @@ def test_primary_private_ipv4_network_prefers_default_lan_and_ignores_docker(mon
     assert result["num_addresses"] == 256
 
 
-def test_host_discovery_request_creates_an_approval_gated_plan(monkeypatch):
+def test_explicit_local_network_scan_runs_and_records_structured_result(monkeypatch):
     from jenefar.core.state import JenefarState
 
     request = "meri ip ki range ko select kro or check kro ki kitne host online h"
@@ -289,19 +289,27 @@ def test_host_discovery_request_creates_an_approval_gated_plan(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        def invoke(self, name, arguments):
-            self.calls.append((name, arguments))
+        def invoke(self, name, arguments, *, confirmed=False):
+            self.calls.append((name, arguments, confirmed))
             return json.dumps({
-                "status": "approval_required",
-                "pending_id": "a" * 32,
-                "tool": "kali_tool_execute",
-                "user_prompt": (
-                    "Purpose/plan: host discovery only\\nCommand: nmap -sn -n -T3 "
-                    "192.168.29.0/24\\nTarget(s): 192.168.29.0/24\\n"
-                    "Authorization scope: PASS\\nExecute? ["
-                    + "a" * 32
-                    + "]"
-                ),
+                "status": "ok",
+                "result": {
+                    "tool": "nmap",
+                    "path": "/usr/bin/nmap",
+                    "target": "192.168.29.0/24",
+                    "targets": ["192.168.29.0/24"],
+                    "command": "/usr/bin/nmap -sn -n -T3 --max-retries 1 192.168.29.0/24",
+                    "returncode": 0,
+                    "stdout": (
+                        "Starting Nmap 7.95\\n"
+                        "Nmap scan report for 192.168.29.1\\n"
+                        "Host is up (0.001s latency).\\n"
+                        "Nmap scan report for 192.168.29.165\\n"
+                        "Host is up.\\n"
+                        "Nmap done: 256 IP addresses (2 hosts up) scanned in 2.51 seconds\\n"
+                    ),
+                    "stderr": "",
+                },
             })
 
     orchestrator = object.__new__(JenefarOrchestrator)
@@ -325,17 +333,20 @@ def test_host_discovery_request_creates_an_approval_gated_plan(monkeypatch):
     reply = orchestrator.handle(request)
 
     assert len(orchestrator.tool_broker.calls) == 1
-    name, arguments = orchestrator.tool_broker.calls[0]
+    name, arguments, confirmed = orchestrator.tool_broker.calls[0]
     assert name == "kali_tool_execute"
+    assert confirmed is True
     assert arguments["tool"] == "nmap"
     assert arguments["args"] == ["-sn", "-n", "-T3", "--max-retries", "1", "192.168.29.0/24"]
     assert arguments["target"] == "192.168.29.0/24"
-    assert orchestrator.state == JenefarState.WAITING_APPROVAL
-    assert "Selected range: 192.168.29.0/24 via wlan0" in reply
-    assert "approval" in reply.lower()
-    assert "a" * 32 in reply
-    workflow = orchestrator.pending_approval_workflows["a" * 32]
-    assert workflow["direct_workflow"] == "local_host_discovery"
+    assert orchestrator.state == JenefarState.AWAKE
+    assert "2 host(s) online" in reply
+    assert orchestrator._latest_scan_result["kind"] == "host_discovery"
+    assert [host["ip"] for host in orchestrator._latest_host_discovery["hosts"]] == [
+        "192.168.29.1", "192.168.29.165"
+    ]
+    assert orchestrator._latest_scan_result["command"] == arguments["command"] if "command" in arguments else orchestrator._latest_scan_result["command"].endswith("192.168.29.0/24")
+    assert "Nmap scan report for 192.168.29.1" in orchestrator._latest_scan_result["stdout"]
 
 
 def test_nmap_host_discovery_summary_uses_real_reported_count():
@@ -643,3 +654,24 @@ def test_filtered_only_result_does_not_claim_host_is_up():
     assert result["filtered_port_count"] == 1000
     assert result["ports"] == []
     assert "host reachability not confirmed" in result["summary"]
+
+
+
+def test_hinglish_network_scan_variants_route_to_direct_discovery():
+    phrases = (
+        "mere network ko scan karo aur live hosts detect karo",
+        "mere network ko scan karke live host dikhao",
+        "scan my network and detect live hosts",
+        "current network scan karke online hosts check karo",
+    )
+    for phrase in phrases:
+        assert JenefarOrchestrator._is_local_host_discovery_request(phrase), phrase
+        plan = Planner().plan(phrase)
+        assert plan.intent == "network_host_discovery", (phrase, plan.intent)
+        assert plan.agent == "kali", (phrase, plan.agent)
+
+
+def test_port_scan_request_understands_target_number_ordinal_phrasing():
+    assert JenefarOrchestrator._host_ordinal("target number 2 ke ports scan karo") == 2
+    assert JenefarOrchestrator._host_ordinal("number 3 target ke port scan karo") == 3
+    assert JenefarOrchestrator._host_ordinal("second target ke ports scan karo") == 2
