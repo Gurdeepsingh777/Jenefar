@@ -854,9 +854,9 @@ Phase 4 data local data/jenefar_memory.db aur data/events.db me persist hota hai
 
 ## Phase 5 — Runtime Intelligence, Traceability & Diagnostics
 
-Phase 5 adds a structured execution trace around every orchestrator request. Each task gets a trace ID correlated with the session and optional scheduler event, and records planner intent, selected/actual specialist, model role, connectivity, approval-gated tool calls, verification outcome, latency, errors and final status.
+Phase 5 records structured execution traces for ordinary agent dispatches and direct/local runtime routes, including network-discovery/port-scan flow, local IP/time answers, direct screen/window responses and approval confirmations. Each trace carries a unique trace ID, session and optional scheduler event IDs, planner intent and confidence, selected/actual specialist, model role, connectivity, approval-gated and successfully executed tool names, verification outcome, per-request retry count, latency, errors and final status.
 
-Runtime quality evaluation now consumes these structured signals instead of looking only at final text. This produces richer quality records while keeping evaluation observational: it does not rewrite code, weaken approval policy, or auto-execute stored procedures.
+Tool activity records retain tool names/status only; they do not store tool arguments or raw tool results. Runtime quality evaluation consumes the structured signals instead of looking only at final text. Diagnostic persistence is best-effort: a local evaluation/log write problem emits a warning and must not turn completed user work into a runtime failure. Evaluation remains observational: it does not rewrite code, weaken approval policy, or auto-execute stored procedures.
 
 Runtime diagnostics are available from the CLI:
 
@@ -874,7 +874,7 @@ Trace data is local append-only JSONL under `data/execution_traces.jsonl`. It is
 
 ## Phase 6 — Self-Healing Runtime & Reliability
 
-Phase 6 adds bounded runtime recovery for transient failures. Jenefar can retry safe, read-oriented agent dispatches when a timeout, temporary connection failure, rate limit, or transient service error occurs.
+Phase 6 adds bounded runtime recovery for transient failures. Generic agent dispatch is non-retryable by default; the orchestrator explicitly marks only the read-oriented research specialist as eligible for automatic retry. Safe explicit read operations may also use the retry helper. Timeouts, temporary connection failures, rate limits, and transient service errors use capped exponential backoff.
 
 Recovery is deliberately conservative:
 
@@ -883,8 +883,9 @@ Recovery is deliberately conservative:
 - Security specialists (kali, cybersecurity, bugbounty) are never automatically retried.
 - Approval-gated or state-changing operations are never automatically retried.
 - Terminal, file-edit/write/delete, robotics, MQTT/ROS2, desktop-action and connector actions are excluded from automatic retries.
-- Repeated transient failures open a short runtime circuit breaker to prevent retry storms.
-- Runtime traces record the self-healing retry counters.
+- The circuit breaker opens only after repeated failures on retry-eligible transient paths; validation errors and security/non-retryable actions do not trip the global circuit.
+- Runtime traces record per-request and cumulative self-healing retry counters, including failed dispatches.
+- Security specialists, state-changing tools, terminal/desktop/robotics actions, and connector execution are excluded from automatic retry.
 
 Diagnostics:
 
