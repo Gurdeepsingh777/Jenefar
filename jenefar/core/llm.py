@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from jenefar.core.cancellation import CancellationToken
 from jenefar.core.model_router import ModelRouter
 from jenefar.core.provider_pool import (
     ProviderPool,
@@ -48,6 +50,20 @@ class LLMClient:
             return self.local.detect(model_role=self.default_role) is not None
         except Exception:
             return False
+
+    @staticmethod
+    def _check_cancel(cancel_token: CancellationToken | None) -> None:
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
+
+    @staticmethod
+    def _remaining_timeout(deadline: float | None) -> float | None:
+        if deadline is None:
+            return None
+        remaining = float(deadline) - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Jenefar execution budget exhausted")
+        return remaining
 
     def selected_model(self, model_role: str | None = None) -> tuple[str, str]:
         role = (model_role or self.default_role or "fast").strip().lower()
@@ -184,6 +200,8 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         tools: list[dict[str, Any]] = []
@@ -196,6 +214,7 @@ class LLMClient:
         last_response = None
         tool_counts: Counter[str] = Counter()
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            self._check_cancel(cancel_token)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "instructions": instructions,
@@ -204,6 +223,9 @@ class LLMClient:
             }
             if tools:
                 kwargs["tools"] = tools
+            timeout = self._remaining_timeout(deadline)
+            if timeout is not None:
+                kwargs["timeout"] = timeout
             response = client.responses.create(**kwargs)
             last_response = response
             calls = [
@@ -250,6 +272,8 @@ class LLMClient:
                         model,
                         model_role,
                     )
+                self._check_cancel(cancel_token)
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(tool_name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -303,6 +327,8 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         messages: list[dict[str, Any]] = [
@@ -313,6 +339,7 @@ class LLMClient:
         tool_counts: Counter[str] = Counter()
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            self._check_cancel(cancel_token)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
@@ -320,6 +347,9 @@ class LLMClient:
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
+            timeout = self._remaining_timeout(deadline)
+            if timeout is not None:
+                kwargs["timeout"] = timeout
             response = client.chat.completions.create(**kwargs)
             choice = response.choices[0]
             message = choice.message
@@ -366,6 +396,8 @@ class LLMClient:
                         model,
                         model_role,
                     )
+                self._check_cancel(cancel_token)
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -414,6 +446,8 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         if provider == "openai":
             return self._complete_openai_responses(
@@ -421,12 +455,13 @@ class LLMClient:
                 use_web_search=use_web_search, tool_broker=tool_broker,
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds, model=model,
-                model_role=model_role,
+                model_role=model_role, deadline=deadline, cancel_token=cancel_token,
             )
         return self._complete_chat(
             provider, prompt, instructions=instructions,
             tool_broker=tool_broker, allow_action_tools=allow_action_tools,
             max_tool_rounds=max_tool_rounds, model=model, model_role=model_role,
+            deadline=deadline, cancel_token=cancel_token,
         )
 
     @staticmethod
@@ -537,6 +572,8 @@ class LLMClient:
         allow_action_tools: bool,
         max_tool_rounds: int,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         all_tools = (
             tool_broker.schemas(
@@ -546,10 +583,14 @@ class LLMClient:
             if tool_broker is not None else []
         )
         tools = self._select_local_tools(prompt, all_tools)
+        self._check_cancel(cancel_token)
+        self._remaining_timeout(deadline)
         text, pending = self.local.complete(
             prompt=prompt, instructions=instructions, tools=tools,
             tool_broker=tool_broker, max_tool_rounds=max_tool_rounds,
             model_role=model_role,
+            deadline=deadline,
+            cancel_token=cancel_token,
         )
         if pending:
             return LLMResponse(
