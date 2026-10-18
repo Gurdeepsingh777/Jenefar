@@ -831,20 +831,23 @@ async function sendBrowserTranscript(text){
       setMicButton(false, true);
       return;
     }
-    if(result?.accepted){
-      setVoiceInputStatus("Jawaab aa raha hai",true);
-      setMicButton(true, false);
-    }
     if(result?.exit){
       micEnabled=false;
       voiceLocked=true;
       try{recognition?.stop();}catch(_){}
       setVoiceInputStatus("VOICE OFF",false);
       setMicButton(false, false);
-    }else{
-      voiceLocked=false;
-      resumeBrowserVoice();
+      return;
     }
+    if(result?.accepted){
+      setVoiceInputStatus("Jawaab aa raha hai",true);
+      setMicButton(true, true);
+      // Keep the microphone locked while the server thinks and synthesizes TTS.
+      // apply() releases it only after assistant audio/speech has actually ended.
+      return;
+    }
+    voiceLocked=false;
+    resumeBrowserVoice();
   }catch(error){
     addActivity({state:"error",text:"Voice request failed: "+error});
     setVoiceInputStatus("VOICE CONNECTION ERROR",false);
@@ -1040,8 +1043,9 @@ document.querySelectorAll(".nav-item").forEach(btn=>{
 async function dispatchDashboardCommand(command){
   const clean=String(command||"").trim();
   if(!clean) return;
-  // Typed dashboard commands must not depend on the microphone being enabled.
-  // Send them directly to the same browser voice endpoint.
+  // Typed commands can arrive while the mic is enabled. Stop capture before
+  // sending so Jenefar cannot transcribe its own answer as a fresh user task.
+  pauseBrowserVoice();
   const log=document.getElementById("chat-log");
   try{
     const response=await fetch("/voice/text",{
@@ -1051,6 +1055,14 @@ async function dispatchDashboardCommand(command){
     });
     const result=await response.json();
     if(result?.error) throw new Error(result.error);
+    if(result?.exit){
+      micEnabled=false;
+      voiceLocked=true;
+      try{recognition?.stop();}catch(_){}
+      setVoiceInputStatus("VOICE OFF",false);
+      setMicButton(false,false);
+      return result;
+    }
     if(log && result?.accepted){
       const bot=document.createElement("div");
       bot.className="chat-row bot";
@@ -1060,8 +1072,16 @@ async function dispatchDashboardCommand(command){
       log.appendChild(bot);
       log.scrollTop=log.scrollHeight;
     }
+    if(result?.accepted || result?.busy){
+      // Keep capture locked until the corresponding speaking/completed event.
+      return result;
+    }
+    voiceLocked=false;
+    resumeBrowserVoice();
     return result;
   }catch(error){
+    voiceLocked=false;
+    resumeBrowserVoice();
     addActivity({state:"error",text:"Dashboard command failed: "+error});
     return null;
   }
