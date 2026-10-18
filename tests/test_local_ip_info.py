@@ -724,3 +724,136 @@ def test_failed_nmap_runs_preserve_exact_command_stdout_and_stderr():
     assert port_result["host_status"] == "ERROR"
     assert host_result["hosts"] == []
     assert orchestrator._latest_host_discovery["hosts"] == []
+
+
+
+def test_primary_network_resolution_retains_interface_candidates(monkeypatch):
+    links = [
+        {
+            "ifname": "wlan0",
+            "operstate": "UP",
+            "addr_info": [
+                {"family": "inet", "local": "172.30.187.23", "prefixlen": 24, "scope": "global"}
+            ],
+        },
+        {
+            "ifname": "eth0",
+            "operstate": "UP",
+            "addr_info": [
+                {"family": "inet", "local": "192.168.50.12", "prefixlen": 24, "scope": "global"}
+            ],
+        },
+        {
+            "ifname": "docker0",
+            "operstate": "UP",
+            "addr_info": [
+                {"family": "inet", "local": "172.17.0.1", "prefixlen": 16, "scope": "global"}
+            ],
+        },
+    ]
+
+    class Process:
+        def __init__(self, stdout):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    monkeypatch.setattr(network_info.shutil, "which", lambda _name: "/usr/sbin/ip")
+
+    def fake_run(args, **_kwargs):
+        if args[1:4] == ["-j", "address", "show"]:
+            return Process(json.dumps(links))
+        if args[1:5] == ["-4", "route", "show", "default"]:
+            return Process("default via 172.30.187.1 dev wlan0 proto dhcp")
+        raise AssertionError(f"Unexpected interface command: {args}")
+
+    monkeypatch.setattr(network_info.subprocess, "run", fake_run)
+
+    result = network_info.get_primary_private_ipv4_network()
+
+    assert result["status"] == "ok"
+    assert result["interface"] == "wlan0"
+    assert result["network"] == "172.30.187.0/24"
+    assert result["default_interface"] == "wlan0"
+    assert {item["interface"] for item in result["networks"]} == {"wlan0", "eth0"}
+    assert "docker0" not in {item["interface"] for item in result["networks"]}
+
+
+def test_unauthorized_host_discovery_publishes_guidance_without_running_nmap():
+    from jenefar.execution.scope import ScopePolicy
+
+    class NeverRunBroker:
+        scope = ScopePolicy(["192.168.29.0/24"])
+
+        def invoke(self, *_args, **_kwargs):
+            raise AssertionError("Unauthorized target must be blocked before tool execution.")
+
+    class CaptureAvatar:
+        def __init__(self):
+            self.events = []
+
+        def publish(self, state, text, *, data=None):
+            self.events.append((state, text, data))
+
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator.scope = ScopePolicy(["192.168.29.0/24"])
+    orchestrator.tool_broker = NeverRunBroker()
+    orchestrator.avatar = CaptureAvatar()
+
+    reply = orchestrator._request_local_host_discovery(
+        "scan 172.30.187.0/24 and show live hosts"
+    )
+
+    result = orchestrator._latest_scan_result
+    assert "No Nmap command was executed" in reply
+    assert result["kind"] == "host_discovery"
+    assert result["scan_status"] == "blocked"
+    assert result["host_count"] is None
+    assert result["hosts"] == []
+    assert result["command"] == ""
+    assert result["available_networks"][0]["network"] == "172.30.187.0/24"
+    assert result["available_networks"][0]["authorized"] is False
+    assert result["authorized_targets"] == ["192.168.29.0/24"]
+    assert orchestrator._latest_host_discovery["hosts"] == []
+    assert orchestrator.avatar.events[0][0] == "scan_results"
+
+
+def test_ambiguous_local_networks_publish_explicit_selection_options(monkeypatch):
+    from jenefar.execution.scope import ScopePolicy
+
+    class NeverRunBroker:
+        scope = ScopePolicy(["192.168.50.0/24"])
+
+        def invoke(self, *_args, **_kwargs):
+            raise AssertionError("Ambiguous interface selection must not start a scan.")
+
+    class CaptureAvatar:
+        def __init__(self):
+            self.events = []
+
+        def publish(self, state, text, *, data=None):
+            self.events.append((state, text, data))
+
+    monkeypatch.setattr(network_info, "get_primary_private_ipv4_network", lambda: {
+        "status": "ambiguous",
+        "default_interface": "",
+        "networks": [
+            {"interface": "wlan0", "address": "172.30.187.23", "network": "172.30.187.0/24", "prefixlen": 24, "num_addresses": 256},
+            {"interface": "eth0", "address": "192.168.50.12", "network": "192.168.50.0/24", "prefixlen": 24, "num_addresses": 256},
+        ],
+    })
+
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator.scope = ScopePolicy(["192.168.50.0/24"])
+    orchestrator.tool_broker = NeverRunBroker()
+    orchestrator.avatar = CaptureAvatar()
+
+    reply = orchestrator._request_local_host_discovery("scan my network")
+
+    result = orchestrator._latest_scan_result
+    assert "Multiple local IPv4 networks detected" in reply
+    assert result["scan_status"] == "selection_required"
+    assert [(item["interface"], item["authorized"]) for item in result["available_networks"]] == [
+        ("wlan0", False), ("eth0", True)
+    ]
+    assert orchestrator.avatar.events[0][0] == "scan_results"
