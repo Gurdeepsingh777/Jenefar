@@ -433,3 +433,44 @@ def test_local_whisper_reports_capture_diagnostics_after_both_passes_fail(monkey
     assert "vad_filter=True" in message
     assert "vad_filter=False" in message
     assert "microphone/input level" in message
+
+
+
+def test_browser_stt_uses_local_whisper_after_openai_and_gemini_quota_fail(monkeypatch):
+    import asyncio
+    from jenefar.voice.provider import ProviderVoiceRuntime
+    from jenefar.core.provider_pool import ProviderPool
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,gemini")
+
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    runtime._audio_pool = ProviderPool()
+    calls = []
+
+    async def fail_openai(_audio):
+        calls.append("openai")
+        error = RuntimeError("429 insufficient_quota credit_balance_exhausted")
+        error.status_code = 429
+        raise error
+
+    async def fail_gemini(_audio):
+        calls.append("gemini")
+        error = RuntimeError("Gemini STT HTTP 429: quota exceeded")
+        error.status_code = 429
+        raise error
+
+    async def local_whisper(_audio):
+        calls.append("local")
+        return "Jenefar mera browser kholo"
+
+    monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_openai", staticmethod(fail_openai))
+    monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_gemini", staticmethod(fail_gemini))
+    monkeypatch.setattr(runtime, "_transcribe_local", local_whisper)
+
+    result = asyncio.run(runtime.transcribe_pcm(b"\x00\x00" * 16000))
+
+    assert result == "Jenefar mera browser kholo"
+    assert calls == ["openai", "gemini", "local"]
