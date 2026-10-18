@@ -374,3 +374,62 @@ def test_llm_client_has_repeated_tool_loop_guard():
     )
     assert result.provider == "openrouter"
     assert "repeated tool loop" in result.text.lower()
+
+
+
+def test_local_whisper_retries_without_vad_when_filtered_pass_is_empty(monkeypatch):
+    import asyncio
+    import io
+    import threading
+    from types import SimpleNamespace
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    runtime._local_stt_inference_lock = threading.Lock()
+    calls = []
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            calls.append({"vad_filter": kwargs["vad_filter"], "beam_size": kwargs["beam_size"]})
+            audio.read()
+            if kwargs["vad_filter"]:
+                return iter(()), None
+            return iter([SimpleNamespace(text="  Hello Jenefar  ")]), None
+
+    monkeypatch.setattr(runtime, "_get_local_stt_model", lambda: FakeModel())
+    result = asyncio.run(runtime._transcribe_local(io.BytesIO(b"wav-audio")))
+
+    assert result == "Hello Jenefar"
+    assert calls == [
+        {"vad_filter": True, "beam_size": 1},
+        {"vad_filter": False, "beam_size": 3},
+    ]
+
+
+def test_local_whisper_reports_capture_diagnostics_after_both_passes_fail(monkeypatch):
+    import asyncio
+    import io
+    import threading
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    runtime._local_stt_inference_lock = threading.Lock()
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            audio.read()
+            return iter(()), None
+
+    monkeypatch.setattr(runtime, "_get_local_stt_model", lambda: FakeModel())
+
+    try:
+        asyncio.run(runtime._transcribe_local(io.BytesIO(b"wav-audio")))
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("empty local STT results must be reported")
+
+    assert "no transcript was produced" in message
+    assert "vad_filter=True" in message
+    assert "vad_filter=False" in message
+    assert "microphone/input level" in message
