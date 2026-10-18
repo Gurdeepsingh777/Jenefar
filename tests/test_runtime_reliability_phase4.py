@@ -317,7 +317,7 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
     assert 'data?.scan_status==="error"' in app
     assert 'hostStatus==="ERROR"?"SCAN FAILED"' in app
     assert 'scanResultsWindow&&!scanResultsWindow.hidden&&["listening","queued","thinking"].includes(currentState)' in app
-    assert "Nmap did not complete successfully." in app
+    assert "Host discovery did not complete." in app
     assert "REACHABILITY UNKNOWN · " in app
     assert "filtered-only output does not" in orchestrator
 
