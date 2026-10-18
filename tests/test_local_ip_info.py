@@ -7,6 +7,7 @@ from jenefar.tools import network_info
 
 
 def test_check_my_ip_is_a_direct_ip_info_request_not_a_scan():
+    assert not JenefarOrchestrator._is_local_host_discovery_request("check my ip")
     assert JenefarOrchestrator._is_ip_info_query("check my ip")
     assert JenefarOrchestrator._is_ip_info_query("What's my public IP address?")
     assert JenefarOrchestrator._is_ip_info_query("mera ip batao")
