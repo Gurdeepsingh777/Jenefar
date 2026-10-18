@@ -33,12 +33,18 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     voice_audio_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # Browser tabs can close or cancel an in-flight fetch. The client
+            # is already gone, so attempting to send a second error response
+            # only creates another BrokenPipeError and noisy server traceback.
+            return
 
     def _json(self, status: int, payload: dict) -> None:
         self._send(
