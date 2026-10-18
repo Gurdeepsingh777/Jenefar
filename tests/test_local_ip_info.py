@@ -301,12 +301,12 @@ def test_explicit_local_network_scan_runs_and_records_structured_result(monkeypa
                     "command": "/usr/bin/nmap -sn -n -T3 --max-retries 1 192.168.29.0/24",
                     "returncode": 0,
                     "stdout": (
-                        "Starting Nmap 7.95\\n"
-                        "Nmap scan report for 192.168.29.1\\n"
-                        "Host is up (0.001s latency).\\n"
-                        "Nmap scan report for 192.168.29.165\\n"
-                        "Host is up.\\n"
-                        "Nmap done: 256 IP addresses (2 hosts up) scanned in 2.51 seconds\\n"
+                        "Starting Nmap 7.95\n"
+                        "Nmap scan report for 192.168.29.1\n"
+                        "Host is up (0.001s latency).\n"
+                        "Nmap scan report for 192.168.29.165\n"
+                        "Host is up.\n"
+                        "Nmap done: 256 IP addresses (2 hosts up) scanned in 2.51 seconds\n"
                     ),
                     "stderr": "",
                 },
@@ -345,7 +345,7 @@ def test_explicit_local_network_scan_runs_and_records_structured_result(monkeypa
     assert [host["ip"] for host in orchestrator._latest_host_discovery["hosts"]] == [
         "192.168.29.1", "192.168.29.165"
     ]
-    assert orchestrator._latest_scan_result["command"] == arguments["command"] if "command" in arguments else orchestrator._latest_scan_result["command"].endswith("192.168.29.0/24")
+    assert orchestrator._latest_scan_result["command"] == "/usr/bin/nmap -sn -n -T3 --max-retries 1 192.168.29.0/24"
     assert "Nmap scan report for 192.168.29.1" in orchestrator._latest_scan_result["stdout"]
 
 
