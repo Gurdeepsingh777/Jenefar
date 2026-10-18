@@ -1883,6 +1883,8 @@ class JenefarOrchestrator:
                 return self._approval_result_cache[approval_id]
 
             result = self._approve_pending_once(approval_id)
+            if self.state != JenefarState.WAITING_APPROVAL:
+                self._finish_waiting_runtime_task(state="completed", reason="Pending approval resolved")
             # Do not cache a transient invalid/expired-ID response. Successful
             # approvals and the associated workflow summary are idempotent.
             if "Unknown or expired pending tool call." not in result:
