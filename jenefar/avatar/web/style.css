@@ -1340,7 +1340,7 @@ body.vrm-loaded #photo-avatar{display:none}
   top:clamp(92px,12vh,126px)!important;bottom:clamp(78px,10vh,104px)!important;
   display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;min-width:0;min-height:280px;overflow:hidden;
   border:1px solid rgba(122,220,255,.34);border-radius:24px;color:#e8f8ff;
-  background:radial-gradient(ellipse at 14% 0%,rgba(72,171,255,.16),transparent 42%),radial-gradient(ellipse at 92% 100%,rgba(95,87,255,.14),transparent 38%),linear-gradient(138deg,rgba(7,22,41,.80),rgba(4,12,27,.66) 48%,rgba(7,18,38,.78));
+  background:radial-gradient(ellipse at 14% 0%,rgba(72,171,255,.16),transparent 42%),radial-gradient(ellipse at 92% 100%,rgba(95,87,255,.14),transparent 38%),linear-gradient(138deg,rgba(7,22,41,.56),rgba(4,12,27,.40) 48%,rgba(7,18,38,.54));
   -webkit-backdrop-filter:blur(30px) saturate(1.72);backdrop-filter:blur(30px) saturate(1.72);
   box-shadow:0 28px 100px rgba(0,0,0,.42),inset 0 1px 0 rgba(220,249,255,.14),0 0 42px rgba(45,170,255,.10);
   isolation:isolate;animation:scan-window-arrive .24s cubic-bezier(.2,.8,.2,1) both;
