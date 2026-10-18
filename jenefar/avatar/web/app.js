@@ -641,7 +641,7 @@ function stopFallbackMonitor(releaseStream=false){
   }
 }
 
-async function resumeVoiceIfAssistantIdle(){
+function resumeVoiceIfAssistantIdle(){
   const taskInProgress=["listening","queued","thinking","result","waiting_approval"].includes(currentState);
   const audioPlaying=browserSpeechActive
     || Boolean(browserAudio&&!browserAudio.ended)
