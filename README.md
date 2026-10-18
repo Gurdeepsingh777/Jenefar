@@ -932,7 +932,7 @@ Yeh runtime track current host-discovery/port-scan flow, local-model fallback, e
 - **18 Vision grounding:** visual-element ranking and confidence threshold before an action target is selected.
 - **19 Browser/computer agent:** bounded observe → act → verify adapter loop and optional Playwright adapter.
 - **20 Recovery foundation:** task-level retry/rollback hooks combine with Phase 6 provider/runtime self-healing.
-- **21 Observability:** counters, latency histograms, token/cost accounting primitives, provider samples and live trace summaries.
+- **21 Observability:** counters, latency histograms, token/cost accounting primitives, provider samples and live trace summaries. The launcher starts a loopback-only WebSocket (`ws://127.0.0.1:8765`) for live CPU/RAM/GPU telemetry; unsupported GPU sensors are reported as unavailable instead of fabricated.
 - **22 UI integration:** structured JSON status/history routes and dashboard panel—not business logic embedded in the browser.
 - **23 Evaluation:** reproducible benchmark cases and latency/pass-rate summaries.
 - **24 Readiness:** provider/local LLM configuration, explicit approval secret and remote auth/TLS checks.
@@ -1192,7 +1192,7 @@ Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asy
 - Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.
 
 
-## Phase 15 — Visual Network Scan Results & Host Follow-ups
+## Existing Feature — Visual Network Scan Results & Host Follow-ups (separate from Runtime Phase 15: Memory 2.0)
 
 Browser host-discovery results open an in-app liquid-glass **Scan Results** window. Each responsive host is displayed as a numbered row with its IPv4 address, UP state, and available latency/vendor information; the IP list is not read aloud or repeated in the general chat/task feed. The window has separate **LIVE HOSTS** and **OPEN PORTS** views and closes automatically when a new instruction starts.
 
