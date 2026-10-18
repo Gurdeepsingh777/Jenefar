@@ -797,13 +797,21 @@ function renderScanResultsList(){
   const data=latestPortScanData;
   if(scanResultsTitle) scanResultsTitle.textContent="PORT SCAN";
   if(scanResultsSubtitle) scanResultsSubtitle.textContent=data
-    ? "Open ports and detected service information. Closed ports are hidden."
+    ? "Open and filtered ports are listed; closed TCP ports are counted in the summary."
     : "Select a live host in the LIVE HOSTS tab to run a focused port scan.";
   const ports=Array.isArray(data?.ports)?data.ports:[];
   const main=scanNode("div","scan-result-summary-main");
-  main.append(scanNode("span","scan-result-big-number",data?.open_port_count??ports.length));
-  main.append(scanNode("span","scan-result-summary-label","OPEN PORTS"));
-  scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",data?.target||"TCP · Top 1000"));
+  const hostStatus=String(data?.host_status||"UP");
+  const openCount=Number(data?.open_port_count??ports.filter(port=>String(port.state||"").toUpperCase()==="OPEN").length);
+  const filteredCount=Number(data?.filtered_port_count??ports.filter(port=>["FILTERED","OPEN|FILTERED"].includes(String(port.state||"").toUpperCase())).length);
+  const closedCount=data?.closed_port_count;
+  main.append(scanNode("span","scan-result-big-number",hostStatus==="UP"?openCount:"—"));
+  const resultLabel=hostStatus!=="UP"?"HOST NOT CONFIRMED":filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
+  main.append(scanNode("span","scan-result-summary-label",resultLabel));
+  const summaryDetails=[data?.target||"TCP · Top 1000"];
+  if(hostStatus!=="UP") summaryDetails.push(hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
+  else if(closedCount!==null&&closedCount!==undefined) summaryDetails.push(closedCount+" CLOSED");
+  scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",summaryDetails.join(" · ")));
   if(!data){
     const empty=scanNode("div","scan-result-empty");
     empty.append(scanNode("b","","No port scan has run yet."));
@@ -811,16 +819,24 @@ function renderScanResultsList(){
     scanResultsList.appendChild(empty);
     return;
   }
-  const head=scanNode("div","scan-result-list-head");
-  ["PORT","PROTOCOL","SERVICE","VERSION / DETAIL"].forEach(label=>head.appendChild(scanNode("span","",label)));
-  scanResultsList.appendChild(head);
   if(!ports.length){
     const empty=scanNode("div","scan-result-empty");
-    empty.append(scanNode("b","","No open TCP ports found."));
-    empty.append(scanNode("span","","Nmap checked the top 1000 TCP ports on "+data.target+"."));
+    if(hostStatus!=="UP"){
+      empty.append(scanNode("b","","Host reachability was not confirmed."));
+      empty.append(scanNode("span","","This is not the same as a verified result of zero open ports. Try a fresh host discovery before interpreting the port status."));
+    }else if(closedCount!==null&&closedCount!==undefined){
+      empty.append(scanNode("b","","No open or filtered TCP ports were reported."));
+      empty.append(scanNode("span","","Nmap reported "+closedCount+" closed TCP ports among the top 1000 checked on "+data.target+"."));
+    }else{
+      empty.append(scanNode("b","","No open or filtered TCP ports were reported."));
+      empty.append(scanNode("span","","Nmap did not return individual open or filtered port rows for "+data.target+"."));
+    }
     scanResultsList.appendChild(empty);
     return;
   }
+  const head=scanNode("div","scan-result-list-head");
+  ["PORT","STATE","SERVICE","VERSION / DETAIL"].forEach(label=>head.appendChild(scanNode("span","",label)));
+  scanResultsList.appendChild(head);
   ports.forEach(port=>{
     const row=scanNode("article","scan-port-row");
     row.appendChild(scanNode("span","scan-port-number",String(port.port)+"/"+String(port.protocol||"tcp")));
