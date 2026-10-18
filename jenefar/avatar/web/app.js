@@ -832,12 +832,12 @@ function renderScanResultsList(){
   const openCount=Number(data?.open_port_count??ports.filter(port=>String(port.state||"").toUpperCase()==="OPEN").length);
   const filteredCount=Number(data?.filtered_port_count??ports.filter(port=>["FILTERED","OPEN|FILTERED"].includes(String(port.state||"").toUpperCase())).length);
   const closedCount=data?.closed_port_count;
-  main.append(scanNode("span","scan-result-big-number",hostStatus==="UP"?openCount:"—"));
-  const resultLabel=hostStatus==="UNREACHABLE"?"HOST UNREACHABLE":hostStatus==="UNKNOWN"?(filteredCount?"REACHABILITY UNKNOWN · "+filteredCount+" FILTERED":"HOST NOT CONFIRMED"):filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
+  main.append(scanNode("span","scan-result-big-number",data?(hostStatus==="UP"?openCount:"—"):"—"));
+  const resultLabel=!data?"NO SCAN YET":hostStatus==="UNREACHABLE"?"HOST UNREACHABLE":hostStatus==="UNKNOWN"?(filteredCount?"REACHABILITY UNKNOWN · "+filteredCount+" FILTERED":"HOST NOT CONFIRMED"):filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
   main.append(scanNode("span","scan-result-summary-label",resultLabel));
-  const summaryDetails=[data?.target||"TCP · Top 1000"];
-  if(hostStatus!=="UP") summaryDetails.push(hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
-  else if(closedCount!==null&&closedCount!==undefined) summaryDetails.push(closedCount+" CLOSED");
+  const summaryDetails=[data?.target||"No target selected"];
+  if(data&&hostStatus!=="UP") summaryDetails.push(hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
+  else if(data&&closedCount!==null&&closedCount!==undefined) summaryDetails.push(closedCount+" CLOSED");
   scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",summaryDetails.join(" · ")));
   if(!data){
     const empty=scanNode("div","scan-result-empty");
