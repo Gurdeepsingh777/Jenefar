@@ -1052,25 +1052,32 @@ class JenefarOrchestrator:
         )
         reported_count = int(count_match.group(1).replace(",", "")) if count_match else None
         host_count = len(hosts)
+        parse_complete = bool(count_match or hosts)
+        completed_at = __import__("datetime").datetime.now().astimezone().isoformat()
         result_data = {
             "kind": "host_discovery",
-            "title": "LIVE HOSTS",
+            "title": "LIVE HOSTS" if parse_complete else "SCAN INCOMPLETE",
+            "scan_status": "ok" if parse_complete else "error",
             "target": str(target),
-            "summary": f"{host_count} live host(s) found in {target}",
-            "host_count": host_count,
+            "summary": (
+                f"{host_count} live host(s) found in {target}"
+                if parse_complete
+                else "Nmap returned no parseable host-count summary; inspect exact output"
+            ),
+            "host_count": host_count if parse_complete else None,
             "address_count": reported_count,
-            "hosts": hosts,
+            "hosts": hosts if parse_complete else [],
             "own_ip": str(local_address or ""),
             "command": str(result.get("command") or ""),
             "returncode": result.get("returncode"),
             "stdout": stdout,
             "stderr": str(result.get("stderr") or ""),
-            "completed_at": __import__("datetime").datetime.now().astimezone().isoformat(),
+            "completed_at": completed_at,
             "scan_type": "Nmap host discovery (-sn)",
         }
         self._latest_host_discovery = {
             "target": str(target),
-            "hosts": hosts,
+            "hosts": result_data["hosts"],
             "own_ip": str(local_address or ""),
             "completed_at": result_data["completed_at"],
         }
