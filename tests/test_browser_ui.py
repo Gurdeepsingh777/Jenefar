@@ -681,3 +681,44 @@ def test_browser_voice_events_ignore_sse_replay_of_same_speech():
     assert "if(!speechEventWasAlreadyHandled(event)){" in js
     assert 'if(event.text&&!speechEventWasAlreadyHandled(event)){' in js
     assert "while(playedSpeechEventOrder.length>128)" in js
+
+
+
+def test_scan_results_window_is_transparent_transient_and_selectable():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
+
+    assert 'id="scan-results-window"' in html
+    assert 'data-scan-view="hosts"' in html
+    assert 'data-scan-view="ports"' in html
+    assert "backdrop-filter:blur(30px) saturate(1.72)" in css
+    assert "#scan-results-window[hidden]{display:none!important}" in css
+    assert "function openScanResults(data,taskId" in js
+    assert 'currentState==="scan_results"' in js
+    assert "closeScanResults();" in js
+    assert 'dispatchDashboardCommand("scan ports of host "+host.ip)' in js
+    assert 'self._publish("scan_results", display_summary, task_id, data=structured_scan)' in bridge
+    assert "Do not synthesize or enqueue spoken IP/port lists" in bridge
+
+
+def test_scan_result_events_carry_structured_data_without_speech():
+    from jenefar.avatar.controller import AvatarController
+
+    controller = AvatarController()
+    subscriber = controller.subscribe()
+    subscriber.get_nowait()
+    result = {
+        "kind": "host_discovery",
+        "summary": "2 live hosts found",
+        "hosts": [{"index": 1, "ip": "192.168.29.1", "state": "UP"}],
+    }
+
+    controller.publish("scan_results", result["summary"], task_id="scan-task", data=result)
+    event = subscriber.get_nowait()
+
+    assert event["state"] == "scan_results"
+    assert event["data"]["kind"] == "host_discovery"
+    assert event["data"]["hosts"][0]["ip"] == "192.168.29.1"
+    assert event["audio_b64"] == ""
