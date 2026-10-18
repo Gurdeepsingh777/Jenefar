@@ -684,7 +684,9 @@ class JenefarOrchestrator:
         arguments = {
             "tool": "nmap",
             "args": [
-                "-n", "-sT", "-sV", "-T3", "--max-retries", "1",
+                # This host was just reported live; skip Nmap's separate ping
+                # discovery so ICMP-filtering devices still receive a port probe.
+                "-Pn", "-n", "-sT", "-sV", "-T3", "--max-retries", "1",
                 "--top-ports", "1000", selected_ip,
             ],
             "target": selected_ip,
@@ -1007,43 +1009,84 @@ class JenefarOrchestrator:
         if not result or result.get("returncode") != 0:
             return None
 
-        ports: list[dict] = []
         stdout = str(result.get("stdout") or "")
+        ports: list[dict] = []
         port_pattern = re.compile(
-            r"^\s*(\d{1,5})/(tcp|udp)\s+(open|closed|filtered|open\|filtered)\s+"
-            r"([A-Za-z0-9._+-]+)(?:\s+(.*?))?\s*$",
+            r"^\\s*(\\d{1,5})/(tcp|udp)\\s+(open|closed|filtered|open\\|filtered)\\s+"
+            r"([A-Za-z0-9._+-]+)(?:\\s+(.*?))?\\s*$",
             re.IGNORECASE,
         )
         for line in stdout.splitlines():
             match = port_pattern.match(line)
             if not match:
                 continue
-            if match.group(3).casefold() != "open":
+            state = match.group(3).upper()
+            # Keep open and filtered states. Closed ports are counted from
+            # Nmap's aggregate line instead of listing hundreds of closed rows.
+            if state == "CLOSED":
                 continue
             ports.append({
                 "port": int(match.group(1)),
                 "protocol": match.group(2).lower(),
-                "state": match.group(3).upper(),
+                "state": state,
                 "service": match.group(4),
                 "version": str(match.group(5) or "").strip(),
             })
         ports.sort(key=lambda item: (item["protocol"], item["port"]))
-        count = len(ports)
-        summary = f"{target} • {count} open TCP port(s)"
+
+        open_count = sum(1 for item in ports if item["state"] == "OPEN")
+        filtered_count = sum(
+            1 for item in ports if item["state"] in {"FILTERED", "OPEN|FILTERED"}
+        )
+        closed_match = re.search(
+            r"Not shown:\\s*([0-9,]+)\\s+closed\\s+tcp\\s+ports?",
+            stdout,
+            re.IGNORECASE,
+        )
+        closed_count = (
+            int(closed_match.group(1).replace(",", "")) if closed_match else None
+        )
+        host_reported = bool(re.search(
+            r"^Nmap scan report for ",
+            stdout,
+            re.IGNORECASE | re.MULTILINE,
+        ))
+        host_down = bool(re.search(
+            r"Host seems down|\\b0 hosts up\\b",
+            stdout,
+            re.IGNORECASE,
+        ))
+        host_status = "UP" if host_reported and not host_down else (
+            "UNREACHABLE" if host_down else "UNKNOWN"
+        )
+
+        if host_status != "UP":
+            ports = []
+            open_count = 0
+            filtered_count = 0
+            summary = f"{target} • host reachability not confirmed; port results unavailable"
+        else:
+            summary = f"{target} • {open_count} open TCP port(s)"
+            if filtered_count:
+                summary += f", {filtered_count} filtered"
+
         return {
             "kind": "port_scan",
             "title": "PORT SCAN",
             "target": str(target),
             "host_index": int(host_index),
             "summary": summary,
-            "open_port_count": count,
+            "host_status": host_status,
+            "open_port_count": open_count,
+            "filtered_port_count": filtered_count,
+            "closed_port_count": closed_count,
             "port_scope": "Top 1000 TCP ports",
             "ports": ports,
             "hosts": previous_hosts,
             "host_discovery_target": str(host_discovery_target or ""),
             "own_ip": str(own_ip or ""),
             "completed_at": completed_at,
-            "scan_type": "Nmap TCP connect + service detection",
+            "scan_type": "Nmap TCP connect + service detection (-Pn)",
         }
 
     @staticmethod
