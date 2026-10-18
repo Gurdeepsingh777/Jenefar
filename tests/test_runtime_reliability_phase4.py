@@ -320,3 +320,22 @@ def test_structured_scan_results_are_published_and_not_spoken_as_host_lists():
     assert "Nmap did not complete successfully." in app
     assert "REACHABILITY UNKNOWN · " in app
     assert "filtered-only output does not" in orchestrator
+
+
+
+def test_network_scope_picker_shows_block_reason_without_false_zero_host_count():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    orchestrator = (ROOT / "jenefar" / "core" / "orchestrator.py").read_text(encoding="utf-8")
+    network_info = (ROOT / "jenefar" / "tools" / "network_info.py").read_text(encoding="utf-8")
+
+    assert 'const scanBlocked=data?.scan_status==="blocked";' in app
+    assert 'const scanSelectionRequired=data?.scan_status==="selection_required";' in app
+    assert "renderNetworkScopePanel(scanResultsList,data)" in app
+    assert 'option.authorized===true' in app
+    assert 'dispatchDashboardCommand("scan network "+network)' in app
+    assert "CURRENT AUTHORIZED TARGETS" in app
+    assert "No scan was executed" in orchestrator
+    assert '"networks": candidates' in network_info
+    assert ".scan-network-option" in css
+    assert ".scan-scope-badge.denied" in css
