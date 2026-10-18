@@ -724,6 +724,10 @@ function appendExactNmapOutput(container,data){
     body.appendChild(scanNode("div","scan-raw-label","COMMAND"));
     body.appendChild(scanNode("pre","scan-raw-pre scan-raw-command",command));
   }
+  if(data.returncode!==undefined&&data.returncode!==null){
+    body.appendChild(scanNode("div","scan-raw-label","EXIT CODE"));
+    body.appendChild(scanNode("pre","scan-raw-pre",String(data.returncode)));
+  }
   if(stdout){
     body.appendChild(scanNode("div","scan-raw-label","STDOUT"));
     body.appendChild(scanNode("pre","scan-raw-pre",stdout));
@@ -769,19 +773,26 @@ function renderScanResultsList(){
   scanResultsList.replaceChildren();
   if(scanResultsView==="hosts"){
     const data=latestHostScanData;
-    if(scanResultsTitle) scanResultsTitle.textContent="LIVE HOSTS";
-    if(scanResultsSubtitle) scanResultsSubtitle.textContent=data
-      ? "Each row is a host that responded to discovery."
+    const scanFailed=data?.scan_status==="error";
+    if(scanResultsTitle) scanResultsTitle.textContent=scanFailed?"SCAN FAILED":"LIVE HOSTS";
+    if(scanResultsSubtitle) scanResultsSubtitle.textContent=scanFailed
+      ? "Nmap did not complete successfully. Expand EXACT NMAP OUTPUT to inspect the command and error."
+      : data ? "Each row is a host that responded to discovery."
       : "No saved host-discovery result yet.";
     const hosts=Array.isArray(data?.hosts)?data.hosts:[];
     const target=String(data?.target||"");
     const main=scanNode("div","scan-result-summary-main");
-    main.append(scanNode("span","scan-result-big-number",data?.host_count??hosts.length));
-    main.append(scanNode("span","scan-result-summary-label","LIVE HOSTS"));
+    main.append(scanNode("span","scan-result-big-number",scanFailed?"—":(data?.host_count??hosts.length)));
+    main.append(scanNode("span","scan-result-summary-label",scanFailed?"SCAN FAILED":"LIVE HOSTS"));
     scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",target));
     if(!hosts.length){
       const empty=scanNode("div","scan-result-empty");
-      empty.append(scanNode("div","", "No live hosts to display."));
+      if(scanFailed){
+        empty.append(scanNode("b","","Host discovery did not complete."));
+        empty.append(scanNode("span","","No live-host count is being claimed because Nmap returned a non-zero exit code."));
+      }else{
+        empty.append(scanNode("div","", "No live hosts to display."));
+      }
       scanResultsList.appendChild(empty);
       appendExactNmapOutput(scanResultsList,data);
       return;
@@ -833,10 +844,10 @@ function renderScanResultsList(){
   const filteredCount=Number(data?.filtered_port_count??ports.filter(port=>["FILTERED","OPEN|FILTERED"].includes(String(port.state||"").toUpperCase())).length);
   const closedCount=data?.closed_port_count;
   main.append(scanNode("span","scan-result-big-number",data?(hostStatus==="UP"?openCount:"—"):"—"));
-  const resultLabel=!data?"NO SCAN YET":hostStatus==="UNREACHABLE"?"HOST UNREACHABLE":hostStatus==="UNKNOWN"?(filteredCount?"REACHABILITY UNKNOWN · "+filteredCount+" FILTERED":"HOST NOT CONFIRMED"):filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
+  const resultLabel=!data?"NO SCAN YET":hostStatus==="ERROR"?"SCAN FAILED":hostStatus==="UNREACHABLE"?"HOST UNREACHABLE":hostStatus==="UNKNOWN"?(filteredCount?"REACHABILITY UNKNOWN · "+filteredCount+" FILTERED":"HOST NOT CONFIRMED"):filteredCount?(openCount+" OPEN · "+filteredCount+" FILTERED"):"OPEN PORTS";
   main.append(scanNode("span","scan-result-summary-label",resultLabel));
   const summaryDetails=[data?.target||"No target selected"];
-  if(data&&hostStatus!=="UP") summaryDetails.push(hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
+  if(data&&hostStatus!=="UP") summaryDetails.push(hostStatus==="ERROR"?("EXIT "+data.returncode):hostStatus==="UNREACHABLE"?"UNREACHABLE":"STATUS UNKNOWN");
   else if(data&&closedCount!==null&&closedCount!==undefined) summaryDetails.push(closedCount+" CLOSED");
   scanResultsSummary.replaceChildren(main,scanNode("div","scan-result-summary-target",summaryDetails.join(" · ")));
   if(!data){
@@ -848,7 +859,10 @@ function renderScanResultsList(){
   }
   if(!ports.length){
     const empty=scanNode("div","scan-result-empty");
-    if(hostStatus==="UNREACHABLE"){
+    if(hostStatus==="ERROR"){
+      empty.append(scanNode("b","","Nmap scan failed (exit code "+data.returncode+")."));
+      empty.append(scanNode("span","","The command output is preserved below. No port findings are inferred from a failed run."));
+    }else if(hostStatus==="UNREACHABLE"){
       empty.append(scanNode("b","","Host reachability was not confirmed."));
       empty.append(scanNode("span","","This is not the same as a verified result of zero open ports. Try a fresh host discovery before interpreting the port status."));
     }else if(hostStatus==="UNKNOWN"&&filteredCount>0){
