@@ -73,3 +73,24 @@ def test_gpu_cache_returns_a_copy():
     result = sampler.get()
     assert result == sampler._latest
     assert result is not sampler._latest
+
+
+
+def test_current_hud_is_wired_to_live_telemetry():
+    from pathlib import Path
+
+    html = Path("jenefar/avatar/web/index.html").read_text(encoding="utf-8")
+    app = Path("jenefar/avatar/web/app.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "metric-cpu", "metric-cpu-value", "metric-cpu-detail",
+        "metric-ram", "metric-ram-value", "metric-ram-detail",
+        "metric-gpu", "metric-gpu-value", "metric-gpu-detail",
+        "metrics-updated",
+    ):
+        assert f'id="{element_id}"' in html, f"HUD is missing {element_id}"
+
+    assert "new WebSocket(socketUrl())" in app
+    assert '":8765"' in app
+    assert "function updateTelemetry(data)" in app
+    assert "setupLiveSystemTelemetry" in app
