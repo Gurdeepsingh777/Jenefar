@@ -599,3 +599,33 @@ def test_browser_mic_stays_locked_until_assistant_finishes_responding():
     dashboard_handler = js[dashboard_start:dashboard_end]
     assert dashboard_handler.index("pauseBrowserVoice();") < dashboard_handler.index('fetch("/voice/text"')
     assert "Keep capture locked until the corresponding speaking/completed event." in dashboard_handler
+
+def test_browser_mic_stays_locked_when_server_reports_busy():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function transcribeCapturedAudio(blob,durationMs){")
+    end = js.index("function startFallbackMonitor(){", start)
+    handler = js[start:end]
+    busy = handler.index("if(result?.busy){")
+    busy_end = handler.index("\n    }", busy)
+    busy_block = handler[busy:busy_end]
+    assert "voiceLocked=false" not in busy_block
+    assert "resumeBrowserVoice()" not in busy_block
+    assert "setMicButton(true,true)" in busy_block
+    assert "active task's speaking/completed event will unlock it" in busy_block
+
+
+def test_avatar_server_silently_handles_closed_browser_socket():
+    from jenefar.avatar.server import _AvatarHandler
+
+    handler = object.__new__(_AvatarHandler)
+    handler.send_response = lambda _status: None
+    handler.send_header = lambda *_args: None
+    handler.end_headers = lambda: None
+
+    class DisconnectedWriter:
+        def write(self, _body):
+            raise BrokenPipeError("browser closed the connection")
+
+    handler.wfile = DisconnectedWriter()
+    handler._send(200, "application/json; charset=utf-8", b"{}")
+
