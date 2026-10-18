@@ -17,6 +17,8 @@ def test_security_boundaries(tmp_path):
     assert safe_path(root/"x", [root]).parent == root
     with pytest.raises(PermissionError): safe_path(tmp_path/"x", [root])
     with pytest.raises(PermissionError): validate_url("http://127.0.0.1")
+    with pytest.raises(PermissionError): validate_url("http://localhost.")
+    with pytest.raises(ValueError): validate_url("https://user:pass@example.com")
     assert "[REDACTED]" in redact("api_key=supersecret")
     a=ApprovalManager("test-secret",ttl_seconds=30); token=a.issue("delete", "t1")
     assert a.verify(token,"delete","t1") and not a.verify(token,"other","t1")
