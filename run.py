@@ -851,6 +851,8 @@ def main() -> int:
     avatar_server = None
     browser_voice = None
     orchestrator = None
+    monitoring_server = None
+    monitoring_server_owned = False
 
     if args.avatar:
         import webbrowser
