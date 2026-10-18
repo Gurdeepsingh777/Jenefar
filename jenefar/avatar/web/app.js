@@ -585,12 +585,12 @@ function apply(event){
   if(currentState==="waiting_approval") showApproval(event);
   if(currentState==="speaking"){
     pauseBrowserVoice();
-    if(event.audio_b64){
+    if(event.audio_b64&&!speechEventWasAlreadyHandled(event)){
       playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
     }
   }else if(currentState==="speaking_fallback"){
     pauseBrowserVoice();
-    if(event.text) browserSpeakFallback(event.text);
+    if(event.text&&!speechEventWasAlreadyHandled(event)) browserSpeakFallback(event.text);
   }else if(currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
     resumeBrowserVoice();
@@ -669,6 +669,28 @@ let browserSpeechActive=false;
 let browserAudio=null;
 let browserAudioGeneration=0;
 let browserSpeechGeneration=0;
+const playedSpeechEventKeys=new Set();
+const playedSpeechEventOrder=[];
+function speechEventWasAlreadyHandled(event){
+  const state=String(event?.state||"");
+  if(state!=="speaking"&&state!=="speaking_fallback") return false;
+  const taskId=String(event?.task_id||"");
+  const text=String(event?.text||"");
+  const audio=String(event?.audio_b64||"");
+  // EventSource reconnects replay the controller's current event. Use a stable
+  // task/content key so that replay doesn't restart an utterance mid-speech.
+  const payloadKey=audio
+    ? "audio:"+String(event?.audio_mime||"")+"|"+audio.length+"|"+audio.slice(0,48)+"|"+audio.slice(-24)
+    : "text:"+text;
+  const key=state+"|"+taskId+"|"+payloadKey;
+  if(playedSpeechEventKeys.has(key)) return true;
+  playedSpeechEventKeys.add(key);
+  playedSpeechEventOrder.push(key);
+  while(playedSpeechEventOrder.length>128){
+    playedSpeechEventKeys.delete(playedSpeechEventOrder.shift());
+  }
+  return false;
+}
 let fallbackMode=false;
 let fallbackStream=null;
 let fallbackContext=null;
