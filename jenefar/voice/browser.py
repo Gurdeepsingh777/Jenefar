@@ -48,6 +48,7 @@ class BrowserVoiceBridge:
         self._speech_queue: Queue[tuple[str, str]] = Queue(maxsize=8)
         self._tts_lock = threading.Lock()
         self._openai_tts_disabled = False
+        self._gemini_tts_disabled = False
         self._speech_thread = threading.Thread(
             target=self._speech_loop,
             name="jenefar-speech-queue",
@@ -146,7 +147,7 @@ class BrowserVoiceBridge:
     def _synthesize_gemini_audio(self, text: str) -> tuple[str, str]:
         """Expressive Google Gemini TTS fallback, independent of chat-model quota."""
         key = self._direct_gemini_tts_key()
-        if not key:
+        if not key or self._gemini_tts_disabled:
             return "", ""
         import httpx
 
@@ -199,6 +200,16 @@ class BrowserVoiceBridge:
             print(f"[JENEFAR] Browser TTS: expressive Gemini {model} / {voice}.")
             return str(audio_data), str(mime)
         except Exception as exc:
+            error_text = str(exc).casefold()
+            if any(marker in error_text for marker in (
+                "429", "resource_exhausted", "rate limit", "too many requests",
+                "quota", "no credits remaining", "insufficient_quota",
+            )):
+                self._gemini_tts_disabled = True
+                print(
+                    "[JENEFAR] Gemini TTS quota/rate limit reached; "
+                    "skipping further Gemini TTS attempts this run."
+                )
             print(
                 "[JENEFAR] Expressive Gemini TTS unavailable; "
                 f"trying the next voice fallback: {type(exc).__name__}: {exc}"
@@ -217,7 +228,15 @@ class BrowserVoiceBridge:
             try:
                 asyncio.run(communicate.save(output_path))
                 with open(output_path, "rb") as handle:
-                    encoded = base64.b64encode(handle.read()).decode("ascii")
+                    audio_data = handle.read()
+                if not audio_data:
+                    raise RuntimeError("Edge TTS returned an empty audio file.")
+                encoded = base64.b64encode(audio_data).decode("ascii")
+                print(
+                    "[JENEFAR] Browser TTS: Edge "
+                    + str(voice)
+                    + "."
+                )
                 return encoded, "audio/mpeg"
             finally:
                 try:
