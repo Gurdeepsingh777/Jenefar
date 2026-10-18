@@ -92,6 +92,8 @@ class Planner:
             "host discovery", "live hosts", "online hosts", "hosts online",
             "kitne host", "kitne hosts", "kitne device", "kitne devices",
             "ping sweep", "check online host", "check live host",
+            "scan my network", "scan the network", "scan local network",
+            "scan network", "network scan", "check the network",
         ))
         if explicit_discovery or (has_cidr and any(term in t for term in host_terms)) or (
             any(term in t for term in range_terms) and any(term in t for term in host_terms)
