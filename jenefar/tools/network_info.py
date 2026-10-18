@@ -2,12 +2,136 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import shutil
 import socket
 import subprocess
 import urllib.error
 import urllib.request
 from typing import Any
+
+
+def get_primary_private_ipv4_network() -> dict[str, Any]:
+    """Resolve one bounded private IPv4 network from the active LAN interface.
+
+    Virtual/container interfaces are excluded. If multiple plausible physical
+    networks exist without a default-route interface to disambiguate them, ask
+    the caller to choose rather than guessing a subnet.
+    """
+    ip_command = shutil.which("ip")
+    if not ip_command:
+        return {
+            "status": "error",
+            "error": "The 'ip' utility is unavailable; provide an explicit IPv4 CIDR.",
+        }
+
+    try:
+        links_result = subprocess.run(
+            [ip_command, "-j", "address", "show", "up"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"status": "error", "error": f"Unable to inspect active interfaces: {type(exc).__name__}"}
+    if links_result.returncode != 0:
+        return {"status": "error", "error": "The active interface query failed; provide an explicit IPv4 CIDR."}
+
+    try:
+        links = json.loads(links_result.stdout or "[]")
+    except json.JSONDecodeError:
+        return {"status": "error", "error": "The active interface result was invalid; provide an explicit IPv4 CIDR."}
+    if not isinstance(links, list):
+        return {"status": "error", "error": "The active interface result was invalid; provide an explicit IPv4 CIDR."}
+
+    default_interface = ""
+    try:
+        route_result = subprocess.run(
+            [ip_command, "-4", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if route_result.returncode == 0:
+            match = re.search(r"(?:^|\\s)dev\\s+(\\S+)", route_result.stdout or "")
+            if match:
+                default_interface = match.group(1)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    virtual_prefixes = (
+        "docker", "br-", "veth", "virbr", "cni", "flannel", "podman",
+        "tun", "tap", "wg", "tailscale", "zt", "lo",
+    )
+    candidates: list[dict[str, Any]] = []
+    oversized: list[dict[str, str]] = []
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        interface = str(link.get("ifname") or "").strip()
+        if not interface or interface.casefold().startswith(virtual_prefixes):
+            continue
+        for record in link.get("addr_info") or []:
+            if not isinstance(record, dict) or record.get("family") != "inet":
+                continue
+            address = str(record.get("local") or "").strip()
+            try:
+                parsed = ipaddress.ip_address(address)
+                prefixlen = int(record.get("prefixlen"))
+                if parsed.version != 4 or not parsed.is_private or prefixlen < 0 or prefixlen > 32:
+                    continue
+                iface = ipaddress.ip_interface(f"{address}/{prefixlen}")
+            except (ValueError, TypeError):
+                continue
+            network = iface.network
+            if network.num_addresses > 4096:
+                oversized.append({"interface": interface, "network": str(network)})
+                continue
+            if network.num_addresses < 4:
+                continue
+            if network.is_loopback or network.is_link_local:
+                continue
+            item = {
+                "interface": interface,
+                "address": str(parsed),
+                "network": str(network),
+                "prefixlen": prefixlen,
+                "num_addresses": network.num_addresses,
+            }
+            if item not in candidates:
+                candidates.append(item)
+
+    if not candidates:
+        if oversized:
+            ranges = ", ".join(f"{item['interface']}={item['network']}" for item in oversized[:4])
+            return {
+                "status": "too_large",
+                "error": f"The detected local network is too broad for automatic discovery ({ranges}). Supply a narrower CIDR explicitly.",
+                "networks": oversized[:4],
+            }
+        return {
+            "status": "error",
+            "error": "No bounded private IPv4 subnet was found on an active physical interface. Provide the exact IPv4 CIDR.",
+        }
+
+    if default_interface:
+        preferred = [item for item in candidates if item["interface"] == default_interface]
+        if len(preferred) == 1:
+            chosen = preferred[0]
+        elif len(preferred) > 1:
+            return {"status": "ambiguous", "networks": preferred, "default_interface": default_interface}
+        elif len(candidates) == 1:
+            chosen = candidates[0]
+        else:
+            return {"status": "ambiguous", "networks": candidates, "default_interface": default_interface}
+    elif len(candidates) == 1:
+        chosen = candidates[0]
+    else:
+        return {"status": "ambiguous", "networks": candidates}
+
+    return {"status": "ok", **chosen}
 
 
 def get_network_ip_info() -> dict[str, Any]:
