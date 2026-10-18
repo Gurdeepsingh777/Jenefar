@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import base64
+import threading
+from concurrent.futures import Future
+from queue import Queue
 
 from jenefar.voice.browser import BrowserVoiceBridge
 
@@ -116,3 +119,62 @@ def test_gemini_tts_quota_error_disables_repeated_calls_until_restart(monkeypatc
     assert bridge._gemini_tts_disabled is True
     assert bridge._synthesize_gemini_audio("Hello again") == ("", "")
     assert len(calls) == 1
+
+
+
+def test_dashboard_approval_defers_to_an_active_spoken_confirmation():
+    bridge = BrowserVoiceBridge.__new__(BrowserVoiceBridge)
+    bridge._active_task = Future()
+    bridge._last_text = "yes"
+
+    class Orchestrator:
+        @staticmethod
+        def _confirmation_choice(text):
+            return "yes" if text.strip().lower() == "yes" else None
+
+        @staticmethod
+        def _approve_pending(_pending_id):
+            raise AssertionError("dashboard must not race the active voice approval")
+
+    bridge.orchestrator = Orchestrator()
+
+    result = bridge.approve_pending("pending-1")
+
+    assert result["status"] == "ok"
+    assert result["speech_owner"] == "voice_confirmation"
+
+
+def test_duplicate_dashboard_approval_queues_speech_only_once():
+    bridge = BrowserVoiceBridge.__new__(BrowserVoiceBridge)
+    bridge._active_task = None
+    bridge._last_text = ""
+    bridge._approval_voice_lock = threading.Lock()
+    bridge._approval_voice_results = {}
+    bridge._speech_queue = Queue(maxsize=8)
+    published = []
+    bridge._publish = lambda *args, **kwargs: published.append((args, kwargs))
+
+    class Orchestrator:
+        def __init__(self):
+            self.approve_calls = 0
+
+        @staticmethod
+        def _confirmation_choice(_text):
+            return None
+
+        def _approve_pending(self, pending_id):
+            assert pending_id == "pending-1"
+            self.approve_calls += 1
+            return "Host discovery complete: 4 hosts online."
+
+    orchestrator = Orchestrator()
+    bridge.orchestrator = orchestrator
+
+    first = bridge.approve_pending("pending-1")
+    second = bridge.approve_pending("pending-1")
+
+    assert first["result"] == second["result"]
+    assert second["duplicate"] is True
+    assert orchestrator.approve_calls == 1
+    assert bridge._speech_queue.qsize() == 1
+    assert len(published) == 1
