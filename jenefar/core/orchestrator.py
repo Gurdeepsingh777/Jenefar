@@ -1089,7 +1089,7 @@ class JenefarOrchestrator:
         own_ip: str = "",
     ) -> dict | None:
         result = JenefarOrchestrator._nmap_payload(raw_result)
-        if not result or result.get("returncode") != 0:
+        if not result:
             return None
 
         stdout = str(result.get("stdout") or "")
