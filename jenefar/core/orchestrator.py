@@ -706,7 +706,7 @@ class JenefarOrchestrator:
             return f"{target} par Nmap host discovery fail hua (exit code {return_code}): {detail}"
 
         done = re.search(
-            r"Nmap done: *([0-9,]+) +IP addresses? +[(]([0-9,]+) +hosts? up[)]",
+            r"Nmap done: *([0-9,]+) +IP address(?:es)? +[(]([0-9,]+) +hosts? up[)]",
             stdout,
             re.IGNORECASE,
         )
