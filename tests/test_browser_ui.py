@@ -636,7 +636,9 @@ def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
     run = (ROOT / "run.py").read_text(encoding="utf-8")
     assert 'handler = getattr(self, "approval_handler", None)' in server
     assert 'handler = getattr(self, "rejection_handler", None)' in server
-    assert "approval_handler=orchestrator._approve_pending" in run
+    assert "approval_handler=(" in run
+    assert "browser_voice.approve_pending" in run
+    assert "else orchestrator._approve_pending" in run
     assert "rejection_handler=orchestrator._reject_pending_workflow" in run
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert 'const payload=await response.json();' in app
