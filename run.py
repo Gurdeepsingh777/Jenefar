@@ -856,6 +856,7 @@ def main() -> int:
         import webbrowser
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.monitoring.server import start_monitoring_server
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
@@ -887,6 +888,20 @@ def main() -> int:
             runtime_cancel_handler=orchestrator.cancel_active_task,
         )
         avatar_server.start()
+
+        monitoring_server = None
+        monitoring_server_owned = False
+        # CLI microphone-only sessions do not need the browser telemetry server.
+        if not args.voice_continuous:
+            try:
+                monitoring_server = start_monitoring_server()
+                monitoring_server_owned = monitoring_server.running
+            except Exception as exc:
+                print(
+                    "[JENEFAR] Monitoring server unavailable: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
         print(
             "[JENEFAR] VRM source: "
@@ -955,6 +970,8 @@ def main() -> int:
     finally:
         if browser_voice is not None:
             browser_voice.shutdown()
+        if monitoring_server is not None and monitoring_server_owned:
+            monitoring_server.stop()
         if avatar_server is not None:
             avatar_server.stop()
 
