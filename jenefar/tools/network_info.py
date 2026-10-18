@@ -131,7 +131,14 @@ def get_primary_private_ipv4_network() -> dict[str, Any]:
     else:
         return {"status": "ambiguous", "networks": candidates}
 
-    return {"status": "ok", **chosen}
+    return {
+        "status": "ok",
+        **chosen,
+        # Preserve every viable physical-interface candidate so the UI can
+        # offer an explicit choice when authorization blocks the default LAN.
+        "networks": candidates,
+        "default_interface": default_interface,
+    }
 
 
 def get_network_ip_info() -> dict[str, Any]:
