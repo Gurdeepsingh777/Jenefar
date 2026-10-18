@@ -112,6 +112,25 @@ class SelfHealingRuntime:
             "circuit_open_until": health.circuit_open_until,
         }
 
+    def health_snapshot(self) -> dict[str, int | float | bool | str | None]:
+        """Expose a stable health snapshot for the operations UI."""
+        health = self.health
+        return {
+            "calls": health.calls,
+            "successes": health.successes,
+            "failures": health.failures,
+            "success_rate": health.success_rate,
+            "retries": health.retries,
+            "transient_failures": health.transient_failures,
+            "non_retryable_failures": health.non_retryable_failures,
+            "consecutive_failures": health.consecutive_failures,
+            "last_error": health.last_error,
+            "last_failure_at": health.last_failure_at,
+            "last_success_at": health.last_success_at,
+            "circuit_open": health.circuit_open,
+            "circuit_open_until": health.circuit_open_until,
+        }
+
     def _record_failure(
         self,
         operation_name: str,
