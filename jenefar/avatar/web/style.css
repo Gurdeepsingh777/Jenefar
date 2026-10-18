@@ -1488,3 +1488,23 @@ body.vrm-loaded #photo-avatar{display:none}
   .runtime-ops-hint{display:none}
   .runtime-history-list{max-height:150px}
 }
+
+
+/* Live resource rings: actual values arrive from the local monitoring socket. */
+.ring-meter[role="progressbar"]{
+  position:relative;
+  border:0;
+  background:conic-gradient(var(--meter-color,#3de9ff) var(--meter-value,0%),rgba(255,255,255,.07) 0);
+}
+.ring-meter[role="progressbar"]::before{
+  content:"";
+  position:absolute;
+  inset:5px;
+  border-radius:50%;
+  background:#080713;
+}
+.ring-meter[role="progressbar"]>span{position:relative;z-index:1}
+#metric-cpu{--meter-color:#3de9ff}
+#metric-ram{--meter-color:#627bff}
+#metric-gpu{--meter-color:#a574ff}
+#metric-gpu.meter-unavailable{background:rgba(255,255,255,.025);opacity:.7}
