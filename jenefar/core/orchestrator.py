@@ -678,7 +678,7 @@ class JenefarOrchestrator:
         plan = (
             "User explicitly requested a port scan of one host from Jenefar's most recent authorized local host-discovery results. "
             f"Selected live host #{selected_index}: {selected_ip}. Re-check JENEFAR_AUTHORIZED_TARGETS scope, then run only "
-            "Nmap TCP connect scan with service identification over the top 1000 TCP ports, -n, -T3, one retry, and a 120-second timeout. "
+            "Nmap TCP connect scan with service identification over the top 1000 TCP ports, -Pn (skip ping discovery for the recently live host), -n, -T3, one retry, and a 120-second timeout. "
             "No subnet scan, UDP scan, vulnerability scripts, exploitation, or additional targets."
         )
         arguments = {
@@ -1046,21 +1046,28 @@ class JenefarOrchestrator:
         closed_count = (
             int(closed_match.group(1).replace(",", "")) if closed_match else None
         )
-        host_reported = bool(re.search(
-            r"^Nmap scan report for ",
+        filtered_summary_match = re.search(
+            r"Not shown:\s*([0-9,]+)\s+filtered\s+tcp\s+ports?",
             stdout,
-            re.IGNORECASE | re.MULTILINE,
-        ))
+            re.IGNORECASE,
+        )
+        if filtered_count == 0 and filtered_summary_match:
+            filtered_count = int(filtered_summary_match.group(1).replace(",", ""))
+
         host_down = bool(re.search(
             r"Host seems down|\b0 hosts up\b",
             stdout,
             re.IGNORECASE,
         ))
-        host_status = "UP" if host_reported and not host_down else (
-            "UNREACHABLE" if host_down else "UNKNOWN"
+        # -Pn deliberately skips ping discovery, so a report header alone does
+        # not prove that the host responded. An open port or reported closed
+        # TCP ports provide response evidence; filtered-only output does not.
+        confirmed_response = open_count > 0 or (closed_count is not None and closed_count > 0)
+        host_status = "UNREACHABLE" if host_down else (
+            "UP" if confirmed_response else "UNKNOWN"
         )
 
-        if host_status != "UP":
+        if host_status == "UNREACHABLE":
             ports = []
             open_count = 0
             filtered_count = 0
@@ -1069,6 +1076,8 @@ class JenefarOrchestrator:
             summary = f"{target} • {open_count} open TCP port(s)"
             if filtered_count:
                 summary += f", {filtered_count} filtered"
+            if host_status == "UNKNOWN":
+                summary += "; host reachability not confirmed"
 
         return {
             "kind": "port_scan",
