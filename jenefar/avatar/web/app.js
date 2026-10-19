@@ -123,7 +123,7 @@ function resize(){
   width=window.innerWidth;height=window.innerHeight;
   canvas.width=width*dpr;canvas.height=height*dpr;
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  particles=Array.from({length:Math.min(220,Math.floor(width/6))},()=>seedParticle());
+  particles=Array.from({length:Math.min(110,Math.max(36,Math.floor(width/14)))},()=>seedParticle());
 }
 function seedParticle(){
   const angle=Math.random()*Math.PI*2;
@@ -143,8 +143,14 @@ function palette(state){
   return [133,147,255];
 }
 
+let lastParticleFrameAt=0;
+const particleFrameInterval=1000/30;
 function draw(t){
   if(!ctx){requestAnimationFrame(draw);return;}
+  // Keep the decorative canvas at 30 FPS; VRM animation and input handling
+  // remain independent, while this effect no longer consumes a full 60 FPS.
+  if(t-lastParticleFrameAt<particleFrameInterval){requestAnimationFrame(draw);return;}
+  lastParticleFrameAt=t;
   ctx.clearRect(0,0,width,height);
   const workWidth=width*.66;
   const centerX=workWidth/2,centerY=height*.46;
@@ -1909,80 +1915,6 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
   resumeBrowserVoice();
 });
 
-
-/* Actual host telemetry: values are sampled by the local backend, never simulated. */
-function formatMetricBytes(value){
-  const bytes=Number(value);
-  if(!Number.isFinite(bytes)||bytes<0) return "N/A";
-  const units=["B","KB","MB","GB","TB"];
-  let size=bytes, unit=0;
-  while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
-  return size.toFixed(unit===0?0:1)+" "+units[unit];
-}
-function setMetricRing(name,value,detail){
-  const ring=document.getElementById("metric-"+name);
-  const valueEl=document.getElementById("metric-"+name+"-value");
-  const detailEl=document.getElementById("metric-"+name+"-detail");
-  const n=Number(value);
-  const valid=value!==null&&value!==undefined&&value!==""&&Number.isFinite(n)&&n>=0;
-  if(ring){
-    ring.classList.toggle("meter-unavailable",!valid);
-    ring.style.setProperty("--meter-value",valid?String(Math.min(100,n)):"0");
-    ring.title=valid?name.toUpperCase()+" usage: "+n+"%":String(detail||"Sensor unavailable");
-    if(valid){
-      ring.setAttribute("aria-valuenow",String(Math.round(n)));
-      ring.setAttribute("role","progressbar");
-      ring.setAttribute("aria-label",name.toUpperCase()+" usage "+n+" percent");
-    }else{
-      ring.removeAttribute("aria-valuenow");
-      ring.setAttribute("role","img");
-      ring.setAttribute("aria-label",name.toUpperCase()+" telemetry unavailable");
-    }
-  }
-  if(valueEl) valueEl.textContent=valid?Math.round(n)+"%":"N/A";
-  if(detailEl) detailEl.textContent=detail|| (valid?"Live sample":"Sensor unavailable");
-}
-function showMetricsUnavailable(message){
-  setMetricRing("cpu",null,message);
-  setMetricRing("ram",null,message);
-  setMetricRing("gpu",null,message);
-  const updated=document.getElementById("metrics-updated");
-  if(updated) updated.textContent="LIVE TELEMETRY UNAVAILABLE";
-}
-async function refreshSystemMetrics(){
-  try{
-    const response=await fetch("/system/metrics?ts="+Date.now(),{cache:"no-store"});
-    const data=await response.json();
-    if(!response.ok||!data?.available) throw new Error(data?.error||"System metrics endpoint unavailable");
-    const cpu=data.cpu||{};
-    const ram=data.ram||{};
-    const process=data.process||{};
-    const gpu=data.gpu||{};
-    setMetricRing("cpu",cpu.usage_percent,
-      cpu.logical_cores?String(cpu.logical_cores)+" logical cores":"System CPU");
-    setMetricRing("ram",ram.usage_percent,
-      formatMetricBytes(ram.used_bytes)+" / "+formatMetricBytes(ram.total_bytes));
-    if(gpu.available&&Number.isFinite(Number(gpu.usage_percent))){
-      const vram=Number.isFinite(Number(gpu.memory_used_mb))&&Number.isFinite(Number(gpu.memory_total_mb))
-        ?Math.round(Number(gpu.memory_used_mb))+" / "+Math.round(Number(gpu.memory_total_mb))+" MB VRAM"
-        :"GPU detected";
-      setMetricRing("gpu",gpu.usage_percent,vram);
-    }else{
-      setMetricRing("gpu",null,gpu.reason||"No supported GPU telemetry");
-    }
-    const updated=document.getElementById("metrics-updated");
-    if(updated){
-      const stamp=data.sampled_at?new Date(data.sampled_at):new Date();
-      updated.textContent="LIVE · "+stamp.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})
-        +(Number.isFinite(Number(process.memory_percent))?" · JENEFAR RAM "+Number(process.memory_percent).toFixed(1)+"%":"");
-      updated.title="System values sampled by the local backend at "+stamp.toISOString();
-    }
-  }catch(error){
-    showMetricsUnavailable(String(error?.message||error));
-  }
-}
-refreshSystemMetrics();
-setInterval(refreshSystemMetrics,1500);
 
 /* Browser model controls apply to the live runtime for subsequent responses. */
 const modelPanel=document.getElementById("model-panel");
