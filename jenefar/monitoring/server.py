@@ -14,13 +14,13 @@ from .system_monitor import get_system_stats
 
 HOST = "127.0.0.1"
 PORT = 8765
-UPDATE_INTERVAL = 1.0
+UPDATE_INTERVAL = 1.5
 
 CLIENTS: set = set()
 
 
 async def send_stats(stop_event: asyncio.Event | None = None) -> None:
-    """Collect and broadcast real system telemetry once per second."""
+    """Collect and broadcast real system telemetry on a low-overhead interval."""
     while stop_event is None or not stop_event.is_set():
         started = time.monotonic()
 
