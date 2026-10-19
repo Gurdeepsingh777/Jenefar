@@ -542,6 +542,10 @@ class ProviderVoiceRuntime:
 
                 transcript = str(transcript or "").strip()
                 if transcript:
+                    print(
+                        f"[JENEFAR] Browser STT succeeded via {provider} "
+                        f"({len(transcript)} characters)."
+                    )
                     return transcript
 
                 # A successful HTTP response can still contain no recognized
@@ -568,7 +572,14 @@ class ProviderVoiceRuntime:
             # Keep the transcriber contract normalized across cloud and local
             # providers; whitespace-only or padded output must not be forwarded
             # as a successful command transcript.
-            return str(await self._transcribe_local(audio) or "").strip()
+            local_transcript = str(await self._transcribe_local(audio) or "").strip()
+            if not local_transcript:
+                raise RuntimeError("Local Whisper returned an empty transcript.")
+            print(
+                "[JENEFAR] Local Whisper transcription succeeded "
+                f"({len(local_transcript)} characters)."
+            )
+            return local_transcript
         except Exception as local_error:
             local_detail = f"{type(local_error).__name__}: {local_error}"
             if last_error is not None:
