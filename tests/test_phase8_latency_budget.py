@@ -85,11 +85,30 @@ def test_unpinned_local_model_selection_prefers_smaller_installed_model(monkeypa
     assert selected == "qwen3:1.7b"
 
 
-def test_explicit_local_model_selection_is_preserved(monkeypatch):
+def test_explicit_local_model_selection_is_preserved_when_ram_is_sufficient(monkeypatch):
+    import psutil
+    from types import SimpleNamespace
+
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_MODEL", "qwen3.8:27b")
     monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL_FAST", raising=False)
+    monkeypatch.setattr(psutil, "virtual_memory", lambda: SimpleNamespace(available=64 * 1024**3))
     client = LocalLLMClient()
     assert client._select_installed_model(
         ["qwen3:8b", "qwen3.8:27b"],
         "Ollama",
     ) == "qwen3.8:27b"
+
+
+def test_explicit_oversized_model_is_overridden_under_memory_pressure(monkeypatch):
+    import psutil
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_MODEL", "qwen3.8:27b")
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL_FAST", raising=False)
+    monkeypatch.setattr(psutil, "virtual_memory", lambda: SimpleNamespace(available=2 * 1024**3))
+    client = LocalLLMClient()
+    selected = client._select_installed_model(
+        ["qwen3.8:27b", "qwen3:8b", "qwen3:1.7b"],
+        "Ollama",
+    )
+    assert selected == "qwen3:1.7b"
