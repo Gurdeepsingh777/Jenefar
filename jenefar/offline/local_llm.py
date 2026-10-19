@@ -728,37 +728,62 @@ class LocalLLMClient:
             compact_payload: dict[str, Any],
             current: LocalModelInfo,
         ) -> tuple[dict[str, Any], LocalModelInfo] | None:
-            smaller = self._find_smaller_ollama_model(current)
-            if smaller is None:
-                return None
-            fallback_payload = dict(compact_payload)
-            fallback_payload["model"] = smaller.model
-            print(
-                f"[JENEFAR] Local model {current.model} timed out; switching to "
-                f"already-installed smaller model {smaller.model} within the remaining task budget."
-            )
-            try:
-                result, selected = request_with_budget(smaller, fallback_payload, retry_cap)
-            except RuntimeError as exc:
-                if not self._is_timeout_error(exc):
-                    raise
-                recommended = self._recommended_smaller_model_tag(smaller.model)
-                setup_hint = (
-                    f" Install it with 'ollama pull {recommended}', then set "
-                    f"JENEFAR_LOCAL_LLM_FALLBACK_MODEL={recommended} in .env."
-                    if recommended else
-                    " Choose a model smaller than the configured fallback."
-                )
-                raise RuntimeError(
-                    f"Both local model '{current.model}' and smaller installed model "
-                    f"'{smaller.model}' timed out within the task budget."
-                    f"{setup_hint} Smaller-model error: {exc}"
-                ) from exc
-            self._runtime_fallback_model = selected.model
-            self.model = selected.model
-            self._prefer_compact_requests = True
-            return result, selected
+            # Walk down the installed model sizes instead of stopping after the
+            # first smaller model times out (e.g. 27B -> 8B -> 4B -> 1.7B).
+            # A candidate's timeout is bounded to leave time for the next smaller
+            # candidate within this task's remaining budget.
+            candidate_source = current
+            attempted = [current.model]
+            last_error: Exception | None = None
 
+            while True:
+                smaller = self._find_smaller_ollama_model(candidate_source)
+                if smaller is None or smaller.model in attempted:
+                    break
+
+                attempted.append(smaller.model)
+                remaining = remaining_budget()
+                if remaining < 5.0:
+                    break
+
+                fallback_payload = dict(compact_payload)
+                fallback_payload["model"] = smaller.model
+                candidate_timeout = min(float(retry_cap), max(5.0, remaining * 0.60))
+                print(
+                    f"[JENEFAR] Local model {candidate_source.model} timed out; trying "
+                    f"smaller installed model {smaller.model} "
+                    f"(timeout up to {min(remaining, candidate_timeout):.0f}s, "
+                    f"{remaining:.0f}s remains)."
+                )
+                try:
+                    result, selected = request_with_budget(
+                        smaller, fallback_payload, candidate_timeout
+                    )
+                except Exception as exc:
+                    if not self._is_timeout_error(exc):
+                        raise
+                    last_error = exc
+                    unload_timed_out_model(smaller)
+                    candidate_source = smaller
+                    continue
+
+                self._runtime_fallback_model = selected.model
+                self.model = selected.model
+                self._prefer_compact_requests = True
+                return result, selected
+
+            recommended = self._recommended_smaller_model_tag(candidate_source.model)
+            hint = (
+                f" Install a smaller model with 'ollama pull {recommended}' and set "
+                f"JENEFAR_LOCAL_LLM_FALLBACK_MODEL={recommended} in .env."
+                if recommended else
+                " Install or select a smaller chat model supported by your local server."
+            )
+            detail = f" Last local error: {last_error}" if last_error else ""
+            raise RuntimeError(
+                "Every usable smaller local model timed out or no smaller model was installed; "
+                f"tried: {', '.join(attempted)}.{hint}{detail}"
+            )
         # Give a slow primary model part of the available budget, not all of it.
         # That leaves time to unload it and attempt a smaller, already-installed
         # model before the orchestrator's deadline expires.
