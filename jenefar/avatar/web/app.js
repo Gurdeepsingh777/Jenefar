@@ -1223,12 +1223,25 @@ async function transcribeCapturedAudio(blob,durationMs){
     fallbackSubmitting=false;
     const errorText=String(error?.message||error);
     const providerUnavailable=/Speech-to-text unavailable|No speech-to-text provider is configured|No currently available STT provider|All configured STT providers failed|Browser microphone audio transcription is unavailable|HTTP 503/i.test(errorText);
-    if(providerUnavailable&&fallbackMode&&voiceSupported&&recognition){
+    // Native Chromium speech recognition is a secondary path when server-side
+    // audio decoding/transcription cannot run (for example, ffmpeg is missing).
+    // Previously these errors did not match providerUnavailable, so the UI kept
+    // recording and failed every utterance without ever trying the browser STT.
+    const audioPipelineUnavailable=/ffmpeg|could not decode microphone audio|audio conversion (?:failed|timed out)|microphone audio upload was incomplete/i.test(errorText);
+    if((providerUnavailable||audioPipelineUnavailable)&&fallbackMode&&voiceSupported&&recognition){
       stopFallbackMonitor(true);
       fallbackMode=false;
       voiceLocked=false;
-      addActivity({state:"error",text:"Server STT is unavailable; switching to browser speech recognition: "+errorText});
-      setVoiceInputStatus("SERVER STT UNAVAILABLE — TRYING BROWSER SPEECH",true);
+      const fallbackMessage=audioPipelineUnavailable
+        ? "Browser audio pipeline is unavailable; switching to browser speech recognition: "
+        : "Server STT is unavailable; switching to browser speech recognition: ";
+      addActivity({state:"error",text:fallbackMessage+errorText});
+      setVoiceInputStatus(
+        audioPipelineUnavailable
+          ? "SERVER AUDIO FAILED — TRYING BROWSER SPEECH"
+          : "SERVER STT UNAVAILABLE — TRYING BROWSER SPEECH",
+        true
+      );
       setMicButton(true,true);
       resumeBrowserVoice();
       return;
