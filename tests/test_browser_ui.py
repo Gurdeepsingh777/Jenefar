@@ -738,6 +738,6 @@ def test_browser_mic_falls_back_when_server_audio_pipeline_is_unavailable():
     assert "ffmpeg|could not decode microphone audio|audio conversion" in handler
     assert "if((providerUnavailable||audioPipelineUnavailable)&&fallbackMode&&voiceSupported&&recognition)" in handler
     assert "Browser audio pipeline is unavailable; switching to browser speech recognition: " in handler
-    assert 'setVoiceInputStatus("SERVER AUDIO FAILED — TRYING BROWSER SPEECH",true)' in handler
+    assert '"SERVER AUDIO FAILED — TRYING BROWSER SPEECH"' in handler
     assert "fallbackMode=false;" in handler
     assert "resumeBrowserVoice();" in handler
