@@ -52,7 +52,10 @@ class BaseLLMAgent(BaseAgent):
             "pichli baar", "pichhle session", "pichle session", "pehle wali",
             "jo maine", "maine pehle", "yaad hai", "remember when",
         )
-        return any(marker in value for marker in markers)
+        words = set(value.split())
+        return any(marker in value for marker in markers) or bool(
+            words.intersection({"ye", "yeh", "ise", "isko", "usko"})
+        )
 
     @staticmethod
     def _asks_for_saved_memory(task: str) -> bool:
@@ -313,10 +316,12 @@ class BaseLLMAgent(BaseAgent):
                 "retrying once with the current request only."
             )
             deadline = context.metadata.get("deadline_monotonic")
-            remaining = (
-                float(deadline) - time.monotonic()
-                if deadline is not None else 30.0
+            repair_deadline = (
+                float(deadline)
+                if deadline is not None
+                else time.monotonic() + 30.0
             )
+            remaining = repair_deadline - time.monotonic()
             try:
                 if remaining < 8.0:
                     raise TimeoutError("Not enough task budget remains for a safe answer repair.")
@@ -339,7 +344,7 @@ class BaseLLMAgent(BaseAgent):
                     tool_broker=None,
                     max_tool_rounds=1,
                     model_role=role,
-                    deadline=deadline,
+                    deadline=repair_deadline,
                     cancel_token=context.metadata.get("cancel_token"),
                 )
                 if repaired_pending or self._is_internal_narration(repaired_text):
