@@ -756,6 +756,12 @@ class BrowserVoiceBridge:
                     audio_mime=audio_mime,
                 )
                 if not audio_b64:
+                    print(
+                        "[JENEFAR] No generated TTS audio is available; "
+                        "requesting browser-native SpeechSynthesis fallback. "
+                        "If there is no sound, check the OS Sound Output device "
+                        "(do not leave 'Dummy Output' selected)."
+                    )
                     self._publish("speaking_fallback", display_reply, task_id)
             else:
                 self._publish("completed", "", task_id)
@@ -774,6 +780,10 @@ class BrowserVoiceBridge:
                 audio_mime=audio_mime,
             )
             if not audio_b64:
+                print(
+                    "[JENEFAR] Error speech has no generated audio; "
+                    "requesting browser-native SpeechSynthesis fallback."
+                )
                 self._publish("speaking_fallback", error_text, task_id)
         finally:
             if voice_session is not None:
