@@ -123,11 +123,11 @@ class JenefarOrchestrator:
         agent_name = str(agent or "agent").strip().lower().replace("-", "_")
         agent_key = f"JENEFAR_AGENT_TIMEOUT_{agent_name.upper()}"
         role_key = f"JENEFAR_AGENT_TIMEOUT_{role.upper()}"
-        raw = os.getenv(agent_key, os.getenv(role_key, os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "60")))
+        raw = os.getenv(agent_key, os.getenv(role_key, os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "180")))
         try:
             value = float(raw)
         except (TypeError, ValueError):
-            value = 60.0
+            value = 180.0
         return min(max(value, 10.0), 300.0)
 
     @staticmethod
