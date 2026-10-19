@@ -474,3 +474,15 @@ def test_browser_stt_uses_local_whisper_after_openai_and_gemini_quota_fail(monke
 
     assert result == "Jenefar mera browser kholo"
     assert calls == ["openai", "gemini", "local"]
+
+
+
+def test_local_whisper_uses_smaller_cached_alias_candidates():
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    candidates = ProviderVoiceRuntime._local_stt_model_candidates("small")
+    assert candidates == ["small", "base", "tiny"]
+    assert ProviderVoiceRuntime._local_stt_model_candidates("base") == ["base", "tiny"]
+    assert ProviderVoiceRuntime._local_stt_model_candidates(
+        "/tmp/custom-whisper", explicit_path=True
+    ) == ["/tmp/custom-whisper"]
