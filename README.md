@@ -148,15 +148,14 @@ Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai. Gr
 
 ### Offline browser-microphone STT fallback
 
-Agar OpenAI/Gemini credits ya quota khatam ho jaaye aur Groq key configured na ho, local Whisper use karne ke liye:
+Cloud STT credits/quota khatam ho jaaye to microphone ko offline chalane ke liye one-time setup run karo:
 
 ```bash
 source .venv/bin/activate
-python -m pip install faster-whisper
-python -c 'from faster_whisper import WhisperModel; WhisperModel("small", device="cpu", compute_type="int8")'
+python run.py --setup-voice
 ```
 
-Second command `small` Whisper model ko ek baar download karke local cache me rakhega; iske liye initial setup waqt internet chahiye. Uske baad Jenefar cloud STT fail hone par cached model ko offline use kar sakta hai. Default setting `JENEFAR_LOCAL_STT_MODEL=small` aur automatic language detection hai. Optional settings `.env.example` me listed hain. Agar package installation Python 3.14 par native dependency ki wajah se fail ho, to Python 3.12/3.13 ke separate virtual environment me try karo.
+Yeh command active virtual environment me minimal `requirements-voice.txt` dependency install karta hai aur multilingual `base` Whisper model cache karta hai. Initial setup ke liye internet chahiye; uske baad browser microphone STT local cache use karta hai, kisi hosted STT credit ki zaroorat nahi hoti. Agar `.env` me larger `small` model configured hai lekin woh cache nahi hua, runtime cached `base` ya `tiny` model par fall back karega. Manual model directories ke liye `JENEFAR_LOCAL_STT_MODEL_PATH` configure kar sakte ho.
 
 ## Avatar aur realtime voice
 
