@@ -528,7 +528,10 @@ class ProviderVoiceRuntime:
         # Always attempt local speech recognition last. It is cache-only, so it
         # never attempts a model download while the user is speaking.
         try:
-            return await self._transcribe_local(audio)
+            # Keep the transcriber contract normalized across cloud and local
+            # providers; whitespace-only or padded output must not be forwarded
+            # as a successful command transcript.
+            return str(await self._transcribe_local(audio) or "").strip()
         except Exception as local_error:
             local_detail = f"{type(local_error).__name__}: {local_error}"
             if last_error is not None:
