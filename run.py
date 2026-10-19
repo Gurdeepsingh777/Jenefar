@@ -211,14 +211,16 @@ def doctor() -> int:
         local_stt_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
         local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip() or "small"
         local_stt_path_ok = not local_stt_path or Path(local_stt_path).expanduser().is_dir()
-        print(
-            "  local Whisper STT             "
-            + (
-                f"PACKAGE READY ({local_stt_model}; cache checked only during use)"
-                if whisper_installed and local_stt_path_ok
-                else "NOT READY (install faster-whisper and cache the model before going offline)"
+        if not whisper_installed:
+            whisper_status = "NOT INSTALLED (run: python run.py --setup-voice)"
+        elif not local_stt_path_ok:
+            whisper_status = f"CONFIGURED MODEL PATH MISSING ({local_stt_path}; run: python run.py --setup-voice after fixing the path)"
+        else:
+            whisper_status = (
+                f"PACKAGE READY ({local_stt_model}; cache is verified on first use; "
+                "run python run.py --setup-voice once while online to pre-cache base)"
             )
-        )
+        print(f"  local Whisper STT             {whisper_status}")
         piper_path = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
         piper_ready = bool(shutil.which("piper") and piper_path and Path(piper_path).expanduser().is_file())
         print(
@@ -718,6 +720,16 @@ def main() -> int:
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
+        if importlib.util.find_spec("faster_whisper") is None:
+            print(
+                "[JENEFAR] Offline microphone STT is not installed. Run "
+                "'python run.py --setup-voice' once while online."
+            )
+        else:
+            print(
+                "[JENEFAR] Offline Whisper package is available; if no model is cached, "
+                "run 'python run.py --setup-voice' once while online."
+            )
 
         # Start telemetry only after diagnostics succeed; the following try/finally
         # owns shutdown and prevents a failed startup path from leaking a thread.
