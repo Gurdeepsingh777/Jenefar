@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--discover-tools-all", action="store_true", help="list all executable commands currently discoverable on PATH, not just security-related Kali tools")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--setup-vision", action="store_true", help="install the default local Ollama vision model (no hosted API required)")
+    parser.add_argument("--setup-voice", action="store_true", help="install/cache a local Whisper model for offline microphone transcription")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
     parser.add_argument("--index-dir", metavar="PATH", help="index supported text/code files under a directory")
     parser.add_argument("--index-document", metavar="PATH", help="extract PDF/DOCX/text content and index it")
@@ -334,6 +335,92 @@ def setup_vision() -> int:
     print(f"[JENEFAR] Local vision model ready: {model}")
     return 0
 
+def setup_voice() -> int:
+    """Install the lightweight STT dependency and cache a multilingual offline model."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from jenefar.core.config import load_config
+
+    load_config()
+    model_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
+    device = os.getenv("JENEFAR_LOCAL_STT_DEVICE", "cpu").strip().lower() or "cpu"
+    compute_type = os.getenv(
+        "JENEFAR_LOCAL_STT_COMPUTE_TYPE",
+        "int8" if device == "cpu" else "float16",
+    ).strip() or ("int8" if device == "cpu" else "float16")
+
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        requirements = Path(__file__).resolve().parent / "requirements-voice.txt"
+        print("[JENEFAR] faster-whisper is missing; installing the voice-only dependency set.")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
+            check=False,
+        )
+        if result.returncode:
+            print(
+                "[JENEFAR] Voice dependency installation failed. "
+                "Use the Python interpreter from the active .venv and retry."
+            )
+            return int(result.returncode or 1)
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
+            print(f"[JENEFAR] faster-whisper installation did not complete: {exc}")
+            return 1
+
+    if model_path:
+        selected = Path(model_path).expanduser()
+        if not selected.is_dir():
+            print(
+                "[JENEFAR] JENEFAR_LOCAL_STT_MODEL_PATH is set but does not point "
+                f"to a model directory: {selected}"
+            )
+            return 2
+        model_spec = str(selected)
+        local_files_only = True
+    else:
+        # Base is much lighter than small/medium and is sufficient for short
+        # Hindi/Hinglish commands. Runtime STT will try this cached model if a
+        # user's configured larger alias is absent from the cache.
+        model_spec = (
+            os.getenv("JENEFAR_LOCAL_STT_SETUP_MODEL", "base").strip() or "base"
+        )
+        local_files_only = False
+
+    print(
+        f"[JENEFAR] Preparing local Whisper model '{model_spec}' "
+        f"({device}/{compute_type}). This is a one-time setup and may download model files."
+    )
+    try:
+        model = WhisperModel(
+            model_spec,
+            device=device,
+            compute_type=compute_type,
+            local_files_only=local_files_only,
+        )
+        del model
+    except Exception as exc:
+        print(
+            f"[JENEFAR] Could not prepare local Whisper model: {type(exc).__name__}: {exc}"
+        )
+        print(
+            "[JENEFAR] Check internet access for the first setup, or verify "
+            "JENEFAR_LOCAL_STT_MODEL_PATH if using a manually downloaded model."
+        )
+        return 1
+
+    print(
+        f"[JENEFAR] Offline voice model ready: {model_spec}. "
+        "Restart Jenefar; later microphone transcription uses only the local cache."
+    )
+    return 0
+
+
 def github_command(args: argparse.Namespace) -> int:
     from jenefar.coding.repository import RepositoryAnalyzer
 
@@ -430,6 +517,9 @@ def main() -> int:
 
     if args.doctor:
         return doctor()
+
+    if args.setup_voice:
+        return setup_voice()
 
     if args.llm_smoke_test:
         import os
