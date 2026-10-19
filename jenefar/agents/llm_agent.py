@@ -49,7 +49,7 @@ class BaseLLMAgent(BaseAgent):
             "ye", "ise", "isko", "usko", "that issue", "same issue", "same as before",
             "previous conversation", "previous session", "last session", "last time",
             "earlier", "as discussed", "continue from", "continue the previous",
-            "pichli baar", "pichhle session", "pichle session", "pehle wali",
+            "pichli baar", "pichhli conversation", "pichhle session", "pichle session", "pehle wali",
             "jo maine", "maine pehle", "yaad hai", "remember when",
         )
         words = set(value.split())
@@ -62,7 +62,7 @@ class BaseLLMAgent(BaseAgent):
         value = str(task or "").casefold()
         markers = (
             "remember", "recall", "saved memory", "saved note", "memory search",
-            "previous conversation", "last session", "what did we discuss",
+            "previous conversation", "pichhli conversation", "last session", "what did we discuss",
             "yaad rakho", "yaad hai", "meri memory", "pichli baat",
         )
         return any(marker in value for marker in markers)
