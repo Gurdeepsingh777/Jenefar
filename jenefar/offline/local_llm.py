@@ -682,7 +682,7 @@ class LocalLLMClient:
             "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 18, 5, 45
         )
         retry_cap = self._bounded_int_env(
-            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 30, 5, 300
+            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 60, 5, 300
         )
         started_at = time.monotonic()
         total_budget = max(0.0, float(configured_timeout))
@@ -746,7 +746,6 @@ class LocalLLMClient:
         # model before the orchestrator's deadline expires.
         primary_timeout = min(
             float(primary_cap),
-            18.0,
             total_budget * 0.35 if total_budget >= 10.0 else total_budget,
         )
         compact_payload = self._compact_retry_payload(payload, info)
