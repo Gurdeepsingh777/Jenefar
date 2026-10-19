@@ -248,7 +248,7 @@ def test_local_timeout_switches_promptly_to_smaller_installed_model(monkeypatch)
     assert answer == "Recovered with Qwen 8B"
     assert pending == []
     assert [item[0] for item in attempts] == ["qwen3.8:27b", "qwen3:8b"]
-    assert attempts[0][2] == 120
+    assert attempts[0][2] == 18.0
     assert attempts[1][2] == 180
     assert attempts[1][1]["options"]["num_ctx"] == 2048
     assert attempts[1][1]["options"]["num_predict"] == 192
