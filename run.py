@@ -347,6 +347,30 @@ def setup_voice() -> int:
     from jenefar.core.config import load_config
 
     load_config()
+    project_root = Path(__file__).resolve().parent
+    # Kali/Debian's externally-managed system Python must never be modified by
+    # pip. Require the project's venv before attempting dependency installation.
+    if sys.prefix == sys.base_prefix:
+        venv_python = project_root / ".venv" / "bin" / "python"
+        print(
+            "[JENEFAR] Voice setup needs the project's virtual environment; "
+            "the system Python is externally managed and will not be modified."
+        )
+        if venv_python.is_file():
+            print("Run these commands, then retry setup:")
+            print("  source .venv/bin/activate")
+            print("  python -m pip install -r requirements.txt")
+            print("  python run.py --setup-voice")
+        else:
+            print("Run these commands from the Jenefar project root:")
+            print("  python3 -m venv .venv")
+            print("  source .venv/bin/activate")
+            print("  python -m pip install --upgrade pip")
+            print("  python -m pip install -r requirements.txt")
+            print("  python run.py --setup-voice")
+        print("After setup, always launch with: .venv/bin/python run.py")
+        return 2
+
     model_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
     device = os.getenv("JENEFAR_LOCAL_STT_DEVICE", "cpu").strip().lower() or "cpu"
     compute_type = os.getenv(
