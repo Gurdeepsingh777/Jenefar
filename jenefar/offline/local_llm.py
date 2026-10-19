@@ -128,63 +128,25 @@ class LocalLLMClient:
         return values
 
     def _select_installed_model(self, names: list[str], api: str) -> str:
-        # After a timeout fallback works, remember it for the rest of this client
-        # lifetime. Otherwise every new prompt would waste another primary timeout
-        # on the already-slow large model.
+        """Select a chat model that fits the runtime's latency/memory budget.
+
+        On CPU-only hosts a large model can be technically detectable while still
+        being unusable for interactive voice/chat. Default to at most 8B parameters;
+        explicitly opt in to larger models with JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL=1.
+        """
         if self._runtime_fallback_model and self._runtime_fallback_model in names:
             return self._runtime_fallback_model
+
         configured = self.model
-        if configured and configured in names:
-            # Respect explicit model pins when there is enough available RAM.
-            # A large pinned model is not viable on a memory-starved host, though;
-            # prefer an already-installed smaller model before it drives the OS
-            # into swap or leaves no budget for command execution.
-            configured_size = self._model_parameter_billions(configured)
-            if configured_size is not None and api.casefold() == "ollama":
-                try:
-                    import psutil
-                    available_gib = float(psutil.virtual_memory().available) / (1024 ** 3)
-                except Exception:
-                    available_gib = float("inf")
-                required_gib = max(3.0, configured_size * 0.65)
-                if available_gib < required_gib:
-                    candidates = []
-                    for name in names:
-                        size = self._model_parameter_billions(name)
-                        if size is None or size >= configured_size:
-                            continue
-                        if any(marker in name.casefold() for marker in (
-                            "vision", "-vl:", "embed", "rerank", "whisper", "audio",
-                        )):
-                            continue
-                        candidates.append((size, name))
-                    if candidates:
-                        capacity = max(0.0, available_gib / 0.65)
-                        fitting = [item for item in candidates if item[0] <= capacity]
-                        selected = max(fitting, key=lambda item: (item[0], item[1].casefold()))[1] if fitting else min(candidates, key=lambda item: (item[0], item[1].casefold()))[1]
-                        print(
-                            f"[JENEFAR] Local model '{configured}' needs roughly "
-                            f"{required_gib:.1f} GiB available RAM; only {available_gib:.1f} GiB "
-                            f"is free. Using smaller installed model '{selected}' for this run."
-                        )
-                        return selected
-            return configured
-        if configured and names:
-            # Avoid repeatedly using a stale model ID that the local server does
-            # not have. Prefer a measured-size chat model instead of trusting the
-            # arbitrary order returned by /api/tags.
-            print(
-                f"[JENEFAR] Configured local model '{configured}' is not listed by the "
-                f"{api} server; selecting a suitable installed model. "
-                "Set JENEFAR_LOCAL_LLM_MODEL to pin a different installed model."
-            )
+        allow_large = os.getenv(
+            "JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL", "0"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            max_params = float(os.getenv("JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS", "8").strip())
+        except (TypeError, ValueError):
+            max_params = 8.0
+        max_params = min(128.0, max(1.0, max_params))
 
-        if not names:
-            return configured
-
-        # When no model is pinned, Ollama often returns the largest/last-used
-        # model first. Prefer the smallest known-size chat model to reduce RAM
-        # pressure and avoid a 27B model exhausting Jenefar's task deadline.
         chat_names = [
             name for name in names
             if not any(marker in name.casefold() for marker in (
@@ -196,21 +158,99 @@ class LocalLLMClient:
             for name in chat_names
             if (size := self._model_parameter_billions(name)) is not None
         ]
-        if sized:
-            sized.sort(key=lambda item: (item[0], item[1].casefold()))
-            selected = sized[0][1]
-            if not configured:
-                print(
-                    f"[JENEFAR] No local chat model pinned; selecting the smallest "
-                    f"installed model '{selected}' to reduce memory use and response time."
+
+        if not names:
+            return configured
+
+        configured_size = self._model_parameter_billions(configured) if configured else None
+        available_gib: float | None = None
+        if api.casefold() == "ollama":
+            try:
+                import psutil
+                available_gib = float(psutil.virtual_memory().available) / (1024 ** 3)
+            except Exception:
+                pass
+
+        oversized_pin = (
+            configured in names
+            and configured_size is not None
+            and configured_size > max_params
+            and api.casefold() == "ollama"
+            and not allow_large
+        )
+        memory_pressure_pin = (
+            configured in names
+            and configured_size is not None
+            and api.casefold() == "ollama"
+            and available_gib is not None
+            and available_gib < max(3.0, configured_size * 0.65)
+        )
+
+        if configured in names and not oversized_pin and not memory_pressure_pin:
+            return configured
+
+        if oversized_pin or memory_pressure_pin:
+            candidates = [
+                (size, name) for size, name in sized
+                if configured_size is not None
+                and size < configured_size
+                and (allow_large or size <= max_params)
+            ]
+            if available_gib is not None and available_gib > 0:
+                fitting = [
+                    item for item in candidates
+                    if item[0] * 0.65 <= available_gib
+                ]
+                if fitting:
+                    candidates = fitting
+            if candidates:
+                # Prefer the largest model below the configured cap that fits
+                # the current machine, preserving quality without retrying 27B.
+                selected_size, selected = max(candidates, key=lambda item: (item[0], item[1].casefold()))
+                reason = (
+                    f"exceeds the {max_params:g}B interactive model cap"
+                    if oversized_pin else
+                    f"needs roughly {max(3.0, configured_size * 0.65):.1f} GiB RAM"
                 )
-            return selected
-        selected = chat_names[0]
-        if not configured:
+                ram_note = (
+                    f"; available RAM is {available_gib:.1f} GiB"
+                    if available_gib is not None else ""
+                )
+                print(
+                    f"[JENEFAR] Local model '{configured}' {reason}{ram_note}; "
+                    f"using installed {selected_size:g}B model '{selected}'. "
+                    "Set JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL=1 to opt in to larger models."
+                )
+                return selected
+
+        if configured and configured not in names:
             print(
-                f"[JENEFAR] Model sizes were unavailable; using installed model '{selected}'. "
-                "Set JENEFAR_LOCAL_LLM_MODEL to pin a model explicitly."
+                f"[JENEFAR] Configured local model '{configured}' is not listed by the "
+                f"{api} server; selecting an installed chat model. "
+                "Set JENEFAR_LOCAL_LLM_MODEL to pin a different installed model."
             )
+
+        if sized:
+            if api.casefold() == "ollama" and available_gib is not None and available_gib > 0:
+                fitting = [item for item in sized if item[0] * 0.65 <= available_gib]
+                if fitting:
+                    sized = fitting
+            if not allow_large:
+                capped = [item for item in sized if item[0] <= max_params]
+                if capped:
+                    sized = capped
+            selected_size, selected = min(sized, key=lambda item: (item[0], item[1].casefold()))
+            print(
+                f"[JENEFAR] Selecting installed {selected_size:g}B local chat model "
+                f"'{selected}' for interactive latency and memory use."
+            )
+            return selected
+
+        selected = chat_names[0]
+        print(
+            f"[JENEFAR] Could not read parameter sizes from the local model names; "
+            f"using installed model '{selected}'."
+        )
         return selected
 
     def _detect_ollama(self) -> LocalModelInfo | None:
