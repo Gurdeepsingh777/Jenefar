@@ -724,3 +724,20 @@ def test_scan_result_events_carry_structured_data_without_speech():
     assert event["data"]["kind"] == "host_discovery"
     assert event["data"]["hosts"][0]["ip"] == "192.168.29.1"
     assert event["audio_b64"] == ""
+
+def test_browser_mic_falls_back_when_server_audio_pipeline_is_unavailable():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function transcribeCapturedAudio(blob,durationMs){")
+    end = js.index("function startFallbackMonitor(){", start)
+    handler = js[start:end]
+
+    # ffmpeg/decode errors are infrastructure failures, not user speech errors.
+    # If the browser exposes SpeechRecognition, stop the failing recorder path
+    # and switch to native browser recognition instead of retrying forever.
+    assert "const audioPipelineUnavailable=" in handler
+    assert "ffmpeg|could not decode microphone audio|audio conversion" in handler
+    assert "if((providerUnavailable||audioPipelineUnavailable)&&fallbackMode&&voiceSupported&&recognition)" in handler
+    assert "Browser audio pipeline is unavailable; switching to browser speech recognition: " in handler
+    assert 'setVoiceInputStatus("SERVER AUDIO FAILED — TRYING BROWSER SPEECH",true)' in handler
+    assert "fallbackMode=false;" in handler
+    assert "resumeBrowserVoice();" in handler
