@@ -170,6 +170,7 @@ class BaseLLMAgent(BaseAgent):
         )
 
     def run(self, context: AgentContext) -> AgentResult:
+        history = context.metadata.get("history", [])
         retrieved = context.metadata.get("retrieved_memory", [])
 
         graph = context.metadata.get("knowledge_graph", [])
