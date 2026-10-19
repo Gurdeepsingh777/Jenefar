@@ -1,0 +1,3 @@
+# Minimal dependency for offline microphone transcription.
+# Run `python run.py --setup-voice` once while online to install this and cache the base model.
+faster-whisper>=1.1.0
