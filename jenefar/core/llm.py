@@ -797,12 +797,28 @@ class LLMClient:
             )
             lowered = local_error.casefold()
             if "timed out" in lowered or "timeout" in lowered:
+                current_local_model = str(getattr(self.local, "model", "") or "")
+                smaller_tag = LocalLLMClient._recommended_smaller_model_tag(
+                    current_local_model
+                )
+                if smaller_tag:
+                    local_hint = (
+                        f" Installed model '{current_local_model}' bhi slow hai; "
+                        f"smaller model install karein: 'ollama pull {smaller_tag}'. "
+                        f".env mein JENEFAR_LOCAL_LLM_FALLBACK_MODEL={smaller_tag} set kar sakte hain."
+                    )
+                else:
+                    local_hint = (
+                        " Ollama library se apne installed model se chhota chat model install "
+                        "karke JENEFAR_LOCAL_LLM_FALLBACK_MODEL mein uska exact tag set karein."
+                    )
                 message = (
                     "Cloud AI providers se response nahi mila aur local model bhi timeout ho gaya. "
-                    "Jenefar ab ek compact retry aur, available ho to, installed smaller Ollama model "
-                    "try karta hai. Agar yeh message phir aaye to ek baar 'ollama pull qwen3:8b' "
-                    "chalayein; yeh local model hai aur API credits use nahi karta. "
-                    "Terminal mein har cloud provider ki asli error bhi ab dikh jayegi."
+                    "Jenefar ne compact retry aur available smaller-model fallback try kiya. "
+                    + local_hint
+                    + " Timeout values .env mein JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS aur "
+                    "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS se tune ki ja sakti hain. "
+                    "Terminal mein provider errors ki detail maujood hai."
                 )
             elif "empty answer" in lowered or "returned an empty" in lowered:
                 message = (
