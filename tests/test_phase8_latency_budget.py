@@ -71,3 +71,25 @@ def test_local_llm_budget_is_bounded_by_remaining_deadline(monkeypatch):
     client = LocalLLMClient()
     assert client.timeout_seconds == 45.0
     assert client.timeout_seconds >= 5.0
+
+
+
+def test_unpinned_local_model_selection_prefers_smaller_installed_model(monkeypatch):
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL", raising=False)
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL_FAST", raising=False)
+    client = LocalLLMClient()
+    selected = client._select_installed_model(
+        ["qwen3.8:27b", "qwen3:8b", "qwen3:1.7b"],
+        "Ollama",
+    )
+    assert selected == "qwen3:1.7b"
+
+
+def test_explicit_local_model_selection_is_preserved(monkeypatch):
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_MODEL", "qwen3.8:27b")
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL_FAST", raising=False)
+    client = LocalLLMClient()
+    assert client._select_installed_model(
+        ["qwen3:8b", "qwen3.8:27b"],
+        "Ollama",
+    ) == "qwen3.8:27b"
