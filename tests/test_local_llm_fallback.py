@@ -366,3 +366,40 @@ def test_timeout_failure_recommends_a_model_smaller_than_qwen_8b():
     assert LocalLLMClient._recommended_smaller_model_tag("qwen3:8b") == "qwen3:4b"
     assert LocalLLMClient._recommended_smaller_model_tag("qwen3:4b") == "qwen3:1.7b"
     assert LocalLLMClient._recommended_smaller_model_tag("qwen3:1.7b") == "qwen3:0.6b"
+
+def test_local_timeout_walks_down_multiple_installed_models(monkeypatch):
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "40")
+    client = LocalLLMClient()
+    client.timeout_seconds = 100.0
+    model27 = LocalModelInfo("http://127.0.0.1:11434", "qwen3.8:27b", "ollama")
+    model8 = LocalModelInfo("http://127.0.0.1:11434", "qwen3:8b", "ollama")
+    model4 = LocalModelInfo("http://127.0.0.1:11434", "qwen3:4b", "ollama")
+    monkeypatch.setattr(client, "detect", lambda model_role=None: model27)
+    monkeypatch.setattr(client, "_unload_ollama_model", lambda *args, **kwargs: True)
+
+    def find_next(info):
+        return {
+            "qwen3.8:27b": model8,
+            "qwen3:8b": model4,
+        }.get(info.model)
+
+    monkeypatch.setattr(client, "_find_smaller_ollama_model", find_next)
+    attempts = []
+
+    def fake_request(info, payload, *, timeout):
+        attempts.append((info.model, timeout))
+        if info.model in {"qwen3.8:27b", "qwen3:8b"}:
+            raise RuntimeError("Could not reach local LLM endpoint: timed out")
+        return {"message": {"role": "assistant", "content": "Recovered with Qwen 4B"}}, info
+
+    monkeypatch.setattr(client, "_request_chat_with_fallback", fake_request)
+    answer, pending = client.complete(
+        prompt="Answer briefly.",
+        instructions="Be concise.",
+    )
+    assert answer == "Recovered with Qwen 4B"
+    assert pending == []
+    assert [model for model, _timeout in attempts] == [
+        "qwen3.8:27b", "qwen3:8b", "qwen3:4b"
+    ]
