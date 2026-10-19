@@ -741,3 +741,36 @@ def test_browser_mic_falls_back_when_server_audio_pipeline_is_unavailable():
     assert '"SERVER AUDIO FAILED — TRYING BROWSER SPEECH"' in handler
     assert "fallbackMode=false;" in handler
     assert "resumeBrowserVoice();" in handler
+
+def test_cloud_stt_empty_transcript_falls_back_to_local_whisper(monkeypatch):
+    import asyncio
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    runtime = ProviderVoiceRuntime(orchestrator=object())
+    monkeypatch.setattr(runtime, "_provider_order", lambda: ["openai"])
+    monkeypatch.setattr(runtime._audio_pool, "available", lambda _provider: True)
+
+    async def empty_cloud_transcript(_audio):
+        return "  "
+
+    async def local_transcript(_audio):
+        return " open browser "
+
+    monkeypatch.setattr(runtime, "_transcribe_openai", empty_cloud_transcript)
+    monkeypatch.setattr(runtime, "_transcribe_local", local_transcript)
+
+    transcript = asyncio.run(runtime.transcribe_pcm(b"\\x00" * 3200))
+    assert transcript == "open browser"
+
+
+def test_empty_server_transcript_switches_to_browser_speech_recognition():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function transcribeCapturedAudio(blob,durationMs){")
+    end = js.index("function startFallbackMonitor(){", start)
+    handler = js[start:end]
+
+    assert 'result?.reason==="empty_transcript"' in handler
+    assert "if(fallbackMode&&voiceSupported&&recognition)" in handler
+    assert "stopFallbackMonitor(true);" in handler
+    assert "fallbackMode=false;" in handler
+    assert '"SERVER STT HEARD NO WORDS — SWITCHING TO BROWSER SPEECH"' in handler
