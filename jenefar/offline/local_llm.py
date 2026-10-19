@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -10,6 +11,10 @@ from urllib.parse import urlsplit, urlunsplit
 from typing import Any
 
 from jenefar.core.model_router import ModelRouter
+
+
+_ACTIVE_OLLAMA_MODELS: set[tuple[str, str]] = set()
+_ACTIVE_OLLAMA_MODELS_LOCK = threading.Lock()
 
 
 @dataclass
@@ -133,13 +138,47 @@ class LocalLLMClient:
             return configured
         if configured and names:
             # Avoid repeatedly using a stale model ID that the local server does
-            # not have. Prefer an installed model and log the selection clearly.
+            # not have. Prefer a measured-size chat model instead of trusting the
+            # arbitrary order returned by /api/tags.
             print(
                 f"[JENEFAR] Configured local model '{configured}' is not listed by the "
-                f"{api} server; using installed model '{names[0]}'. "
+                f"{api} server; selecting a suitable installed model. "
                 "Set JENEFAR_LOCAL_LLM_MODEL to pin a different installed model."
             )
-        return names[0] if names else configured
+
+        if not names:
+            return configured
+
+        # When no model is pinned, Ollama often returns the largest/last-used
+        # model first. Prefer the smallest known-size chat model to reduce RAM
+        # pressure and avoid a 27B model exhausting Jenefar's task deadline.
+        chat_names = [
+            name for name in names
+            if not any(marker in name.casefold() for marker in (
+                "vision", "-vl:", "embed", "rerank", "whisper", "audio",
+            ))
+        ] or list(names)
+        sized = [
+            (size, name)
+            for name in chat_names
+            if (size := self._model_parameter_billions(name)) is not None
+        ]
+        if sized:
+            sized.sort(key=lambda item: (item[0], item[1].casefold()))
+            selected = sized[0][1]
+            if not configured:
+                print(
+                    f"[JENEFAR] No local chat model pinned; selecting the smallest "
+                    f"installed model '{selected}' to reduce memory use and response time."
+                )
+            return selected
+        selected = chat_names[0]
+        if not configured:
+            print(
+                f"[JENEFAR] Model sizes were unavailable; using installed model '{selected}'. "
+                "Set JENEFAR_LOCAL_LLM_MODEL to pin a model explicitly."
+            )
+        return selected
 
     def _detect_ollama(self) -> LocalModelInfo | None:
         last_error = ""
@@ -241,10 +280,10 @@ class LocalLLMClient:
         think_value = os.getenv("JENEFAR_LOCAL_LLM_THINK", "false").strip().lower()
         return {
             "think": think_value in {"1", "true", "yes", "on"},
-            "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m",
+            "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "30s").strip() or "30s",
             "options": {
-                "num_ctx": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 4096, 2048, 65536),
-                "num_predict": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 384, 128, 8192),
+                "num_ctx": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 2048, 2048, 65536),
+                "num_predict": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 192, 128, 8192),
                 "temperature": 0.2,
             },
         }
@@ -344,7 +383,7 @@ class LocalLLMClient:
         if info.api == "ollama":
             compact.update({
                 "think": False,
-                "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m").strip() or "10m",
+                "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "30s").strip() or "30s",
             })
             options = dict(compact.get("options") or {})
             options["num_ctx"] = min(2048, int(options.get("num_ctx", 2048)))
@@ -411,6 +450,62 @@ class LocalLLMClient:
         ))
         return not model_missing
 
+    @classmethod
+    def _remember_ollama_model(cls, info: LocalModelInfo) -> None:
+        if info.api != "ollama" or not info.model:
+            return
+        origin = cls._origin(info.base_url)
+        with _ACTIVE_OLLAMA_MODELS_LOCK:
+            _ACTIVE_OLLAMA_MODELS.add((origin, info.model))
+
+    @classmethod
+    def _unload_ollama_model(
+        cls, origin: str, model: str, *, timeout: float = 1.5
+    ) -> bool:
+        """Ask Ollama to release one model without stopping its shared service."""
+        if not origin or not model:
+            return False
+        url = f"{cls._origin(origin)}/api/generate"
+        payload = json.dumps({
+            "model": model,
+            "prompt": "",
+            "stream": False,
+            "keep_alive": 0,
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            method="POST",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=max(0.5, timeout)) as response:
+                response.read(2048)
+        except Exception as exc:
+            print(
+                f"[JENEFAR] Could not unload local model {model}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return False
+        with _ACTIVE_OLLAMA_MODELS_LOCK:
+            _ACTIVE_OLLAMA_MODELS.discard((cls._origin(origin), model))
+        print(f"[JENEFAR] Released local model from Ollama memory: {model}.")
+        return True
+
+    @classmethod
+    def release_runtime_models(cls) -> dict[str, Any]:
+        """Release only Ollama models this Jenefar process has actually used."""
+        with _ACTIVE_OLLAMA_MODELS_LOCK:
+            models = sorted(_ACTIVE_OLLAMA_MODELS)
+        released = []
+        failed = []
+        for origin, model in models:
+            if cls._unload_ollama_model(origin, model, timeout=2.0):
+                released.append(model)
+            else:
+                failed.append(model)
+        return {"attempted": len(models), "released": released, "failed": failed}
+
     def _request_chat_with_fallback(
         self,
         info: LocalModelInfo,
@@ -419,6 +514,7 @@ class LocalLLMClient:
         timeout: float,
     ) -> tuple[dict[str, Any], LocalModelInfo]:
         """Try the detected chat endpoint, then the alternate local protocol on route 404."""
+        self._remember_ollama_model(info)
         endpoint = (
             f"{info.base_url}/api/chat"
             if info.api == "ollama"
@@ -480,55 +576,86 @@ class LocalLLMClient:
         *,
         configured_timeout: float,
     ) -> tuple[dict[str, Any], LocalModelInfo]:
-        """Bound local inference time and recover once without downloading models."""
+        """Recover from slow local models without exceeding the task's time budget."""
         primary_cap = self._bounded_int_env(
-            "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 120, 30, 300
+            "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 25, 5, 300
         )
         retry_cap = self._bounded_int_env(
-            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 180, 30, 300
+            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 30, 5, 300
         )
-        primary_timeout = min(configured_timeout, float(primary_cap))
-        retry_timeout = min(configured_timeout, float(retry_cap))
+        started_at = time.monotonic()
+        total_budget = max(0.0, float(configured_timeout))
 
-        def try_smaller(compact_payload: dict[str, Any], current: LocalModelInfo):
+        def remaining_budget() -> float:
+            return max(0.0, total_budget - (time.monotonic() - started_at))
+
+        def request_with_budget(
+            current: LocalModelInfo,
+            request_payload: dict[str, Any],
+            cap: float,
+        ) -> tuple[dict[str, Any], LocalModelInfo]:
+            remaining = remaining_budget()
+            if remaining < 0.5:
+                raise TimeoutError(
+                    "Local model recovery stopped because Jenefar's remaining task budget was exhausted."
+                )
+            return self._request_chat_with_fallback(
+                current,
+                request_payload,
+                timeout=max(0.5, min(remaining, cap)),
+            )
+
+        def unload_timed_out_model(current: LocalModelInfo) -> None:
+            if current.api == "ollama":
+                self._unload_ollama_model(
+                    self._origin(current.base_url), current.model, timeout=1.0
+                )
+
+        def try_smaller(
+            compact_payload: dict[str, Any],
+            current: LocalModelInfo,
+        ) -> tuple[dict[str, Any], LocalModelInfo] | None:
             smaller = self._find_smaller_ollama_model(current)
             if smaller is None:
                 return None
             fallback_payload = dict(compact_payload)
             fallback_payload["model"] = smaller.model
             print(
-                f"[JENEFAR] Local model {current.model} timed out; switching immediately "
-                f"to already-installed smaller model {smaller.model}."
+                f"[JENEFAR] Local model {current.model} timed out; switching to "
+                f"already-installed smaller model {smaller.model} within the remaining task budget."
             )
             try:
-                result, selected = self._request_chat_with_fallback(
-                    smaller, fallback_payload, timeout=retry_timeout
-                )
+                result, selected = request_with_budget(smaller, fallback_payload, retry_cap)
             except RuntimeError as exc:
                 if not self._is_timeout_error(exc):
                     raise
                 raise RuntimeError(
                     f"Both local model '{current.model}' and smaller installed model "
-                    f"'{smaller.model}' timed out. Install/select a local model suited to "
-                    "this machine, or test Ollama directly. No paid API credits are needed "
-                    f"for local inference. Smaller-model error: {exc}"
+                    f"'{smaller.model}' timed out within the task budget. "
+                    "Choose a smaller installed model or increase available RAM. "
+                    f"Smaller-model error: {exc}"
                 ) from exc
             self._runtime_fallback_model = selected.model
             self.model = selected.model
             self._prefer_compact_requests = True
             return result, selected
 
-        # Once a primary request times out, keep future rounds/prompts lightweight
-        # instead of repeatedly waiting on the full-size request path.
+        # Give a slow primary model part of the available budget, not all of it.
+        # That leaves time to unload it and attempt a smaller, already-installed
+        # model before the orchestrator's deadline expires.
+        primary_timeout = min(
+            float(primary_cap),
+            total_budget * 0.55 if total_budget >= 10.0 else total_budget,
+        )
+        compact_payload = self._compact_retry_payload(payload, info)
+
         if self._prefer_compact_requests:
-            compact_payload = self._compact_retry_payload(payload, info)
             try:
-                return self._request_chat_with_fallback(
-                    info, compact_payload, timeout=retry_timeout
-                )
+                return request_with_budget(info, compact_payload, retry_cap)
             except RuntimeError as exc:
                 if not self._is_timeout_error(exc):
                     raise
+                unload_timed_out_model(info)
                 smaller_result = try_smaller(compact_payload, info)
                 if smaller_result is not None:
                     return smaller_result
@@ -539,33 +666,39 @@ class LocalLLMClient:
                     else "Configure a smaller model in the local server and set its model ID in Jenefar. "
                 )
                 raise RuntimeError(
-                    f"Compact local request to '{info.model}' also timed out after "
-                    f"{retry_timeout:g}s. {suggestion} "
+                    f"Compact local request to '{info.model}' timed out. {suggestion}"
                     f"Local request error: {exc}"
                 ) from exc
 
         try:
-            return self._request_chat_with_fallback(
-                info, payload, timeout=primary_timeout
-            )
+            return request_with_budget(info, payload, primary_timeout)
         except RuntimeError as primary_error:
             if not self._is_timeout_error(primary_error):
                 raise
+
             self._prefer_compact_requests = True
+            unload_timed_out_model(info)
+            # Refresh the payload using the compact limits before trying another
+            # model; this lowers context and RAM pressure after a timeout.
             compact_payload = self._compact_retry_payload(payload, info)
             smaller_result = try_smaller(compact_payload, info)
             if smaller_result is not None:
                 return smaller_result
 
+            remaining = remaining_budget()
+            if remaining < 0.5:
+                raise TimeoutError(
+                    f"Local model '{info.model}' timed out and no execution budget remains for a retry."
+                ) from primary_error
+
             print(
                 f"[JENEFAR] Local model {info.model} timed out after "
                 f"{primary_timeout:g}s; retrying once with compact context "
-                f"(timeout={retry_timeout:g}s, tools={'kept' if compact_payload.get('tools') else 'not needed'})."
+                f"(remaining budget={remaining:.1f}s, "
+                f"tools={'kept' if compact_payload.get('tools') else 'not needed'})."
             )
             try:
-                return self._request_chat_with_fallback(
-                    info, compact_payload, timeout=retry_timeout
-                )
+                return request_with_budget(info, compact_payload, retry_cap)
             except RuntimeError as retry_error:
                 if not self._is_timeout_error(retry_error):
                     raise
@@ -576,9 +709,9 @@ class LocalLLMClient:
                     else "Configure a smaller model in the local server and set its model ID in Jenefar. "
                 )
                 raise RuntimeError(
-                    f"Local model '{info.model}' timed out on normal and compact requests "
-                    f"({primary_timeout:g}s + {retry_timeout:g}s); no smaller installed "
-                    f"model could be selected. {suggestion} Compact retry error: {retry_error}"
+                    f"Local model '{info.model}' timed out on normal and compact requests within "
+                    f"the {total_budget:g}s local inference budget. {suggestion} "
+                    f"Compact retry error: {retry_error}"
                 ) from retry_error
 
     def complete(
