@@ -255,9 +255,10 @@ class ProviderVoiceRuntime:
                 from faster_whisper import WhisperModel
             except ImportError as exc:
                 raise RuntimeError(
-                    "Local Whisper STT is not installed. Run "
+                    "Local Whisper STT is not installed. Recommended: run "
                     "'python run.py --setup-voice' in the active .venv while online; "
-                    "the setup command installs faster-whisper and caches a small offline model."
+                    "this installs faster-whisper and caches a base offline model. "
+                    "Manual alternative: 'python -m pip install faster-whisper'."
                 ) from exc
 
             if explicit_path and not Path(model_spec).is_dir():
