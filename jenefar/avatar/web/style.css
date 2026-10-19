@@ -1465,9 +1465,11 @@ body.vrm-loaded #photo-avatar{display:none}
 .runtime-ops>summary::-webkit-details-marker{display:none}
 .runtime-ops-hint{font-size:7px;font-weight:650;letter-spacing:.07em;color:rgba(176,210,238,.56)}
 .runtime-ops-status{margin-top:8px;padding:8px 9px;min-height:18px;border:1px solid rgba(103,213,255,.14);border-radius:8px;background:rgba(4,28,53,.55);font-size:9px;line-height:1.5;color:rgba(219,240,255,.88);overflow-wrap:anywhere}
-.runtime-ops-actions{display:flex;gap:7px;margin-top:7px}
+.runtime-ops-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
 .runtime-ops-actions button{min-width:0;flex:1;padding:7px 8px;border:1px solid rgba(100,194,255,.2);border-radius:7px;background:rgba(12,75,116,.24);color:#b9eaff;font-size:7px;font-weight:850;letter-spacing:.08em;cursor:pointer}
 .runtime-ops-actions button:disabled{opacity:.4;cursor:not-allowed}
+#runtime-ops-shutdown{flex:1 0 100%;border-color:rgba(255,111,132,.36);background:rgba(100,20,38,.3);color:#ffb5c1}
+#runtime-ops-shutdown:hover:not(:disabled){background:rgba(145,26,53,.45);border-color:rgba(255,111,132,.62)}
 .runtime-ops-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.7fr);gap:7px;margin-top:7px}
 .runtime-ops-filters input,.runtime-ops-filters select{width:100%;min-width:0;box-sizing:border-box;border:1px solid rgba(122,197,255,.17);border-radius:7px;padding:7px 8px;background:rgba(5,24,45,.75);color:#d9f0ff;font-size:9px;outline:none}
 .runtime-ops-filters input:focus,.runtime-ops-filters select:focus{border-color:rgba(100,219,255,.5)}
