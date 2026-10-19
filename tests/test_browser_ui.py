@@ -540,8 +540,12 @@ def test_dashboard_uses_live_telemetry_and_has_model_controls():
     assert 'id="model-settings-button"' in html
     assert 'id="model-choice"' in html
     assert 'id="model-id-input"' in html
-    assert 'fetch("/system/metrics?ts="+Date.now()' in app
-    assert "setInterval(refreshSystemMetrics,1500)" in app
+    # Metrics rings must have a single writer. The loopback WebSocket is
+    # authoritative; a second REST polling loop made the rings flicker.
+    assert 'fetch("/system/metrics?ts="+Date.now()' not in app
+    assert "setInterval(refreshSystemMetrics,1500)" not in app
+    assert 'new WebSocket(socketUrl())' in app
+    assert "function updateTelemetry(data)" in app
     assert 'path == "/system/metrics"' in server
     assert 'path == "/model/status"' in server
     assert 'path == "/model/select"' in server
