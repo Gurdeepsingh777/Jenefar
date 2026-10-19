@@ -682,7 +682,7 @@ class LocalLLMClient:
             "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 18, 5, 45
         )
         retry_cap = self._bounded_int_env(
-            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 30, 5, 90
+            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 30, 5, 300
         )
         started_at = time.monotonic()
         total_budget = max(0.0, float(configured_timeout))
