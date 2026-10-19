@@ -221,9 +221,26 @@ class ProviderVoiceRuntime:
         model = os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip()
         return str(Path(path).expanduser()) if path else (model or "small")
 
+    @staticmethod
+    def _local_stt_model_candidates(model_spec: str, *, explicit_path: bool = False) -> list[str]:
+        """Try the configured Whisper alias, then smaller aliases that may be cached."""
+        if explicit_path:
+            return [model_spec]
+        ranks = {"tiny": 0, "base": 1, "small": 2, "medium": 3, "large": 4}
+        configured = str(model_spec or "base").strip()
+        if configured not in ranks:
+            return [configured]
+        smaller = [
+            name for name, rank in ranks.items()
+            if rank < ranks[configured]
+        ]
+        smaller.sort(key=lambda name: ranks[name], reverse=True)
+        return list(dict.fromkeys([configured, *smaller]))
+
     def _get_local_stt_model(self):
-        """Load faster-whisper in cache-only mode; never download during mic use."""
+        """Load cache-only Whisper, falling back to a smaller cached model."""
         model_spec = self._local_stt_model_spec()
+        explicit_path = bool(os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip())
         device = os.getenv("JENEFAR_LOCAL_STT_DEVICE", "cpu").strip().lower() or "cpu"
         default_compute = "int8" if device == "cpu" else "float16"
         compute_type = os.getenv(
@@ -239,37 +256,56 @@ class ProviderVoiceRuntime:
             except ImportError as exc:
                 raise RuntimeError(
                     "Local Whisper STT is not installed. Run "
-                    "'python -m pip install faster-whisper' in the active .venv, "
-                    "then download the model once as described in README/.env.example."
+                    "'python run.py --setup-voice' in the active .venv while online; "
+                    "the setup command installs faster-whisper and caches a small offline model."
                 ) from exc
 
-            if os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip() and not Path(model_spec).is_dir():
+            if explicit_path and not Path(model_spec).is_dir():
                 raise RuntimeError(
                     f"JENEFAR_LOCAL_STT_MODEL_PATH does not point to a model directory: {model_spec}"
                 )
 
-            try:
-                model = WhisperModel(
-                    model_spec,
-                    device=device,
-                    compute_type=compute_type,
-                    local_files_only=True,
-                )
-            except Exception as exc:
+            candidates = self._local_stt_model_candidates(
+                model_spec,
+                explicit_path=explicit_path,
+            )
+            failures: list[str] = []
+            model = None
+            selected_model = ""
+            for candidate in candidates:
+                try:
+                    model = WhisperModel(
+                        candidate,
+                        device=device,
+                        compute_type=compute_type,
+                        local_files_only=True,
+                    )
+                    selected_model = candidate
+                    break
+                except Exception as exc:
+                    failures.append(f"{candidate}: {type(exc).__name__}: {exc}")
+
+            if model is None:
+                detail = "; ".join(failures[-3:])
                 raise RuntimeError(
-                    f"Local Whisper STT model '{model_spec}' is not available in the local cache. "
-                    "While online, run "
-                    f"python -c \"from faster_whisper import WhisperModel; "
-                    f"WhisperModel('{model_spec}', device='{device}', compute_type='{compute_type}')\" "
-                    "once to cache the model. Mic transcription itself stays offline."
-                ) from exc
+                    "No usable local Whisper model was found in the cache. "
+                    f"Tried: {', '.join(candidates)}. "
+                    "While online, run 'python run.py --setup-voice' once to cache the "
+                    "base multilingual model; microphone transcription then works offline. "
+                    + detail
+                )
 
             self._local_stt_model = model
             self._local_stt_signature = signature
             print(
-                f"[JENEFAR] Local Whisper STT ready: {model_spec} "
+                f"[JENEFAR] Local Whisper STT ready: {selected_model} "
                 f"({device}/{compute_type}, cache-only)."
             )
+            if selected_model != model_spec:
+                print(
+                    f"[JENEFAR] Configured Whisper model '{model_spec}' was not cached; "
+                    f"using smaller cached model '{selected_model}'."
+                )
             return model
 
     async def _transcribe_local(self, audio) -> str:
