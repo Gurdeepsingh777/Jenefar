@@ -78,3 +78,49 @@ def test_explicit_memory_query_receives_only_bounded_saved_context():
     assert prompt.endswith(
         "CURRENT_REQUEST>\n" + task + "\n</CURRENT_REQUEST>"
     )
+
+def test_local_internal_narration_is_repaired_without_replaying_tools(monkeypatch):
+    from jenefar.core.agent import AgentContext
+    from jenefar.core.llm import LLMResponse
+
+    class DemoAgent(BaseLLMAgent):
+        name = "context-test"
+        system_prompt = "Be concise."
+        model_role = "fast"
+
+    agent = DemoAgent()
+    captured = {}
+
+    def first_response(*_args, **_kwargs):
+        return LLMResponse(
+            text=(
+                "Okay, let me try to figure out what the user needs here. "
+                "The user has been interacting with the assistant about old tasks."
+            ),
+            provider="local",
+            model="qwen3:4b",
+            model_role="fast",
+        )
+
+    def repair_response(**kwargs):
+        captured.update(kwargs)
+        return "Is request ka seedha jawab.", []
+
+    monkeypatch.setattr(agent.llm, "complete", first_response)
+    monkeypatch.setattr(agent.llm.local, "complete", repair_response)
+    result = agent.run(
+        AgentContext(
+            task="Is local audio output working?",
+            metadata={"response_language": "hinglish", "history": []},
+        )
+    )
+
+    assert result.content == "Is request ka seedha jawab."
+    assert result.metadata["provider"] == "local"
+    assert captured["tools"] == []
+    assert captured["tool_broker"] is None
+    assert captured["max_tool_rounds"] == 1
+    assert captured["prompt"].endswith(
+        "</CURRENT_REQUEST>"
+    )
+    assert "old tasks" not in captured["prompt"]
