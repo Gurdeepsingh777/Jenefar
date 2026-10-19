@@ -1185,11 +1185,22 @@ async function transcribeCapturedAudio(blob,durationMs){
     if(!response.ok||result?.error) throw new Error(result?.error||("HTTP "+response.status));
     if(result?.ignored){
       fallbackSubmitting=false;
-      voiceLocked=false;
       if(result?.reason==="empty_transcript"){
-        setVoiceInputStatus("NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL",false);
         addActivity({state:"error",text:"Audio was captured but speech-to-text returned an empty transcript."});
+        // A blank server transcript should not trap the user in the same
+        // server-side STT path. Switch to native recognition when available.
+        if(fallbackMode&&voiceSupported&&recognition){
+          stopFallbackMonitor(true);
+          fallbackMode=false;
+          voiceLocked=false;
+          setVoiceInputStatus("SERVER STT HEARD NO WORDS — SWITCHING TO BROWSER SPEECH",true);
+          setMicButton(true,true);
+          resumeBrowserVoice();
+          return;
+        }
+        setVoiceInputStatus("NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL",false);
       }else{
+        voiceLocked=false;
         setVoiceInputStatus("MIC ON — LISTENING FOR SPEECH",true);
       }
       setMicButton(true,false);
