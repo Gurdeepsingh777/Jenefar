@@ -820,5 +820,5 @@ def test_offline_voice_setup_command_is_available():
 def test_voice_ui_shows_local_whisper_setup_hint_for_cache_miss():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert "No usable local Whisper model was found in the cache" in js
-    assert "python run\\\\.py --setup-voice" in js
+    assert "python run.py --setup-voice" in js
     assert "VOICE MODEL MISSING — RUN python run.py --setup-voice" in js
