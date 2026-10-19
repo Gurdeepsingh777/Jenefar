@@ -486,3 +486,26 @@ def test_local_whisper_uses_smaller_cached_alias_candidates():
     assert ProviderVoiceRuntime._local_stt_model_candidates(
         "/tmp/custom-whisper", explicit_path=True
     ) == ["/tmp/custom-whisper"]
+
+
+def test_browser_audio_diagnostics_do_not_log_recognized_words():
+    from pathlib import Path
+
+    bridge = Path("jenefar/voice/browser.py").read_text(encoding="utf-8")
+    provider = Path("jenefar/voice/provider.py").read_text(encoding="utf-8")
+    assert "Browser microphone upload received" in bridge
+    assert "Browser microphone PCM:" in bridge
+    assert "signal is near silence" in bridge
+    assert "Browser microphone command transcribed successfully" in bridge
+    assert "Browser STT succeeded via" in provider
+    assert "Local Whisper transcription succeeded" in provider
+    # Diagnostics log transcript length only, not the actual private transcript.
+    assert "print(f\"[JENEFAR] Browser microphone command: {transcript}\"" not in bridge
+
+
+def test_tts_logs_browser_native_fallback_when_generated_audio_is_unavailable():
+    from pathlib import Path
+
+    bridge = Path("jenefar/voice/browser.py").read_text(encoding="utf-8")
+    assert "requesting browser-native SpeechSynthesis fallback" in bridge
+    assert "do not leave 'Dummy Output' selected" in bridge
