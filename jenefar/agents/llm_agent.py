@@ -345,7 +345,6 @@ class BaseLLMAgent(BaseAgent):
                 if repaired_pending or self._is_internal_narration(repaired_text):
                     raise RuntimeError("Local model repeated non-answer narration.")
                 response.text = str(repaired_text).strip()
-                response.provider = "local_repaired"
                 response.model = self.llm.local.model
                 response.pending_tools = []
             except Exception as exc:
@@ -357,7 +356,7 @@ class BaseLLMAgent(BaseAgent):
                     "Maaf kijiye, local model current request ka relevant jawab generate nahi kar paya. "
                     "Uska unrelated internal narration hide kar diya hai. Ek chhota, clear command dobara bhejein."
                 )
-                response.provider = "local_unavailable"
+                response.provider = "offline_unavailable"
                 response.pending_tools = []
 
         return AgentResult(
