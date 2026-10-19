@@ -218,7 +218,7 @@ class ProviderVoiceRuntime:
     def _local_stt_model_spec() -> str:
         """Return a Whisper model path or a Hugging Face cache model alias."""
         path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
-        model = os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip()
+        model = os.getenv("JENEFAR_LOCAL_STT_MODEL", "base").strip()
         return str(Path(path).expanduser()) if path else (model or "small")
 
     @staticmethod
