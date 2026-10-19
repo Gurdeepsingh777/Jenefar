@@ -601,6 +601,40 @@ class LLMClient:
             text, "local", model=self.local.model, model_role=model_role,
         )
 
+    @staticmethod
+    def _online_request_deadline(
+        deadline: float | None,
+        *,
+        now: float | None = None,
+    ) -> float | None:
+        """Bound cloud attempts so local fallback always gets reserved task time."""
+        if deadline is None:
+            return None
+        moment = time.monotonic() if now is None else float(now)
+        remaining = float(deadline) - moment
+        if remaining <= 0:
+            return float(deadline)
+
+        def env_seconds(name: str, default: float, lower: float, upper: float) -> float:
+            try:
+                value = float(os.getenv(name, str(default)).strip())
+            except (TypeError, ValueError):
+                value = default
+            return min(upper, max(lower, value))
+
+        local_reserve = env_seconds(
+            "JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", 45.0, 5.0, 120.0
+        )
+        online_budget = env_seconds(
+            "JENEFAR_ONLINE_LLM_BUDGET_SECONDS", 20.0, 3.0, 120.0
+        )
+        # If the task has less than the configured reserve left, skip cloud calls
+        # entirely and let local fallback use the remaining bounded task deadline.
+        cloud_cutoff = float(deadline) - local_reserve
+        if cloud_cutoff <= moment:
+            return moment
+        return min(cloud_cutoff, moment + online_budget)
+
     def complete(
         self,
         prompt: str,
@@ -627,8 +661,30 @@ class LLMClient:
                 name for name in provider_order if name != runtime_provider
             ]
 
-        if online:
+        online_deadline = self._online_request_deadline(deadline)
+        online_window_open = (
+            online
+            and (
+                deadline is None
+                or (online_deadline is not None and online_deadline - time.monotonic() > 0.5)
+            )
+        )
+        if online and not online_window_open:
+            failures.append("cloud LLM window skipped to preserve the local fallback budget")
+            print(
+                "[JENEFAR] Skipping cloud LLM attempts because the task budget is low; "
+                "preserving remaining time for local fallback."
+            )
+
+        if online_window_open:
             for provider in provider_order:
+                if online_deadline is not None and online_deadline - time.monotonic() <= 0.5:
+                    failures.append("cloud LLM window ended; local fallback time was reserved")
+                    print(
+                        "[JENEFAR] Cloud LLM time window ended; switching to local fallback "
+                        "with the reserved task budget."
+                    )
+                    break
                 if not self.providers.available(provider):
                     continue
                 runtime_model = (runtime_override or {}).get("model", "")
@@ -645,7 +701,7 @@ class LLMClient:
                         allow_action_tools=allow_action_tools,
                         max_tool_rounds=max_tool_rounds, model=model,
                         model_role=selected_role,
-                        deadline=deadline,
+                        deadline=online_deadline,
                         cancel_token=cancel_token,
                     )
                     self.providers.record_latency(provider, time.perf_counter() - started, success=True)
