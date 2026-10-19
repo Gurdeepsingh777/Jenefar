@@ -8,6 +8,8 @@ from jenefar.offline.local_llm import LocalLLMClient, LocalModelInfo
 def test_auto_detect_uses_native_ollama_api_and_installed_model(monkeypatch):
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_API", "auto")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    # This test validates request formatting, not the user's opt-in thinking mode.
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_THINK", "false")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_MODEL", "gemini-4-argon")
     monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL_FAST", raising=False)
 
