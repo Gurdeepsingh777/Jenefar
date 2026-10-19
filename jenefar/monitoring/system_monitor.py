@@ -9,7 +9,7 @@ from .gpu_sampler import GPU_SAMPLER
 
 def get_cpu() -> float:
     """Return system-wide CPU utilisation as a percentage."""
-    return round(psutil.cpu_percent(interval=0.2), 1)
+    return round(psutil.cpu_percent(interval=0.08), 1)
 
 
 def get_ram() -> dict:
