@@ -538,8 +538,26 @@ def memory_command(args: argparse.Namespace) -> int:
 
     return 1
 
+def _reexec_in_project_venv_if_available() -> bool:
+    """Prefer the repo's venv automatically when a system Python launches Jenefar."""
+    import os
+    import sys
+    from pathlib import Path
+
+    if sys.prefix != sys.base_prefix:
+        return False
+    project_root = Path(__file__).resolve().parent
+    venv_python = project_root / ".venv" / "bin" / "python"
+    if not venv_python.is_file() or not os.access(venv_python, os.X_OK):
+        return False
+    print("[JENEFAR] Re-launching with the project virtual environment (.venv).", flush=True)
+    os.execv(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]])
+    return True
+
+
 def main() -> int:
     args = build_parser().parse_args()
+    _reexec_in_project_venv_if_available()
 
     if args.doctor:
         return doctor()
