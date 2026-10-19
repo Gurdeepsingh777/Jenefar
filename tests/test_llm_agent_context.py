@@ -25,7 +25,7 @@ def test_task_prompt_puts_current_request_last_and_filters_internal_old_replies(
     )
 
     assert prompt.endswith(
-        "CURRENT_REQUEST>\n" + task + "\n</CURRENT_REQUEST>"
+        "<CURRENT_REQUEST>\n" + task + "\n</CURRENT_REQUEST>"
     )
     assert prompt.count(task) == 1
     assert "The user has been interacting with the assistant" not in prompt
@@ -48,7 +48,7 @@ def test_plain_request_does_not_receive_stale_chat_history_or_memory():
     )
 
     assert prompt.endswith(
-        "CURRENT_REQUEST>\n2 + 2 kitna hota hai?\n</CURRENT_REQUEST>"
+        "<CURRENT_REQUEST>\n2 + 2 kitna hota hai?\n</CURRENT_REQUEST>"
     )
     assert "192.168.29.0/24" not in prompt
     assert "Recent context" not in prompt
@@ -76,7 +76,7 @@ def test_explicit_memory_query_receives_only_bounded_saved_context():
     assert "SAVED PROCEDURES" in prompt
     assert "MEMORY RELATIONS" in prompt
     assert prompt.endswith(
-        "CURRENT_REQUEST>\n" + task + "\n</CURRENT_REQUEST>"
+        "<CURRENT_REQUEST>\n" + task + "\n</CURRENT_REQUEST>"
     )
 
 def test_local_internal_narration_is_repaired_without_replaying_tools(monkeypatch):
