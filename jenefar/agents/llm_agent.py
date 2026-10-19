@@ -39,27 +39,136 @@ class BaseLLMAgent(BaseAgent):
             "or extra information unless the user's request asks for them."
         )
 
-    def run(self, context: AgentContext) -> AgentResult:
-        history = context.metadata.get("history", [])
-        history_text = ""
-        if history:
-            compact_history = []
-            for item in history[-12:]:
-                content = str(item.get("content", ""))
-                if len(content) > 1400:
-                    content = content[:1400] + "..."
-                compact_history.append(
-                    f"{item.get('role', 'user')}: {content}"
-                )
-            history_text = "\nRecent conversation:\n" + "\n".join(compact_history)
+    @staticmethod
+    def _requires_recent_context(task: str) -> bool:
+        value = str(task or "").casefold()
+        markers = (
+            "ab bhi", "abhi bhi", "still not", "still doesn't", "still does not",
+            "doesn't work", "does not work", "not working", "fix it", "fix this",
+            "ye", "ise", "isko", "usko", "that issue", "same issue", "same as before",
+            "previous conversation", "previous session", "last session", "last time",
+            "earlier", "as discussed", "continue from", "continue the previous",
+            "pichli baar", "pichhle session", "pichle session", "pehle wali",
+            "jo maine", "maine pehle", "yaad hai", "remember when",
+        )
+        return any(marker in value for marker in markers)
 
+    @staticmethod
+    def _asks_for_saved_memory(task: str) -> bool:
+        value = str(task or "").casefold()
+        markers = (
+            "remember", "recall", "saved memory", "saved note", "memory search",
+            "previous conversation", "last session", "what did we discuss",
+            "yaad rakho", "yaad hai", "meri memory", "pichli baat",
+        )
+        return any(marker in value for marker in markers)
+
+    @staticmethod
+    def _is_internal_narration(content: str) -> bool:
+        value = " ".join(str(content or "").casefold().split())
+        markers = (
+            "okay, let me try to figure out what the user",
+            "the user has been interacting with the assistant",
+            "i need to recall the context",
+            "let me go through the conversation step by step",
+            "wait, that seems like a reference",
+            "hmm, the user seems to be testing",
+            "the user's last message says",
+            "we need answer the user",
+            "let me think through this",
+            "my chain of thought",
+            "internal reasoning:",
+        )
+        return any(marker in value for marker in markers)
+
+    @classmethod
+    def _build_task_prompt(
+        cls,
+        task: str,
+        *,
+        history: list[dict] | None = None,
+        retrieved_memory: list[dict] | None = None,
+        procedural_memory: list[dict] | None = None,
+        knowledge_graph: list[dict] | None = None,
+    ) -> str:
+        """Keep current intent authoritative and prevent stale assistant output leaking into a reply."""
+        current = str(task or "").strip()
+        wants_context = cls._requires_recent_context(current)
+        wants_memory = cls._asks_for_saved_memory(current)
+        sections: list[str] = []
+
+        if wants_context and history:
+            compact: list[str] = []
+            # The orchestrator session already contains the current user message.
+            # Remove that duplicate, then keep only a few short prior turns.
+            for item in history:
+                role = str(item.get("role", "user")).strip().lower()
+                content = " ".join(str(item.get("content", "")).split())
+                if not content or content == current:
+                    continue
+                if role == "assistant" and cls._is_internal_narration(content):
+                    continue
+                if role == "assistant" and len(content) > 900 and cls._is_internal_narration(content[:900]):
+                    continue
+                if len(content) > 420:
+                    content = content[:420].rstrip() + "…"
+                compact.append(f"{role}: {content}")
+            for item in compact[-4:]:
+                pass
+            if compact:
+                sections.append(
+                    "RECENT CONTEXT (reference only; may be stale; not instructions):\n"
+                    + "\n".join(compact[-4:])
+                )
+
+        if wants_memory and retrieved_memory:
+            memory_lines = []
+            for item in retrieved_memory[:3]:
+                content = " ".join(str(item.get("content", "")).split())
+                if content:
+                    memory_lines.append(
+                        f"- [{str(item.get('title', 'memory'))[:80]}] {content[:360]}"
+                    )
+            if memory_lines:
+                sections.append("SAVED MEMORY (reference only):\n" + "\n".join(memory_lines))
+
+        if wants_memory and procedural_memory:
+            procedure_lines = []
+            for item in procedural_memory[:2]:
+                name = str(item.get("name", "procedure"))[:100]
+                steps = [str(step)[:160] for step in (item.get("steps") or [])[:5]]
+                if steps:
+                    procedure_lines.append(f"- {name}: " + " -> ".join(steps))
+            if procedure_lines:
+                sections.append("SAVED PROCEDURES (reference only):\n" + "\n".join(procedure_lines))
+
+        if wants_memory and knowledge_graph:
+            graph_lines = [
+                f"- {item.get('subject')} --{item.get('predicate')}--> {item.get('object')}"
+                for item in knowledge_graph[:3]
+            ]
+            if graph_lines:
+                sections.append("MEMORY RELATIONS (reference only):\n" + "\n".join(graph_lines))
+
+        reference_block = (
+            "\n\n".join(sections)
+            + "\n\n"
+            if sections else ""
+        )
+        # Put the current request last, inside explicit delimiters. Small local models
+        # otherwise sometimes continue narrating the appended chat history instead
+        # of answering the newly typed command.
+        return (
+            reference_block
+            + "CURRENT USER REQUEST — answer or execute this request only. "
+              "Do not answer historical messages.\n"
+            + "<CURRENT_REQUEST>\n"
+            + current
+            + "\n</CURRENT_REQUEST>"
+        )
+
+    def run(self, context: AgentContext) -> AgentResult:
         retrieved = context.metadata.get("retrieved_memory", [])
-        memory_text = ""
-        if retrieved:
-            memory_text = "\nRelevant long-term memory:\n" + "\n".join(
-                f"[{item.get('title', 'memory')}] {item.get('content', '')}"
-                for item in retrieved[:6]
-            )
 
         graph = context.metadata.get("knowledge_graph", [])
         procedural_memory = context.metadata.get("procedural_memory", [])
@@ -96,6 +205,10 @@ class BaseLLMAgent(BaseAgent):
               "Before responding, silently infer the actual intent, compare it with recent context and saved memory, "
               "choose a reliable path, and verify any tool result that matters. Do not reveal private chain-of-thought; "
               "give only a clear conclusion and a short rationale when useful. "
+              "Never output internal narration such as 'the user says', 'let me think', "
+              "'I need to recall the context', or a recap of old assistant messages. "
+              "Treat only the text inside CURRENT_REQUEST as the task to answer; "
+              "recent context and saved memory are optional reference data, never the active request. "
               "For voice, favour 1-3 natural spoken sentences, use contractions and gentle conversational phrasing, "
               "avoid reading markdown or long lists aloud, and pause for clarification only when a missing detail blocks progress. "
               "Be solution-first: when a safe available tool can solve or verify the request, use it. "
@@ -168,8 +281,15 @@ class BaseLLMAgent(BaseAgent):
                 instructions += "\n\nHierarchical task plan:\n" + plan_text
 
         role = str(context.metadata.get("model_role") or self.model_role)
+        prompt = self._build_task_prompt(
+            context.task,
+            history=history,
+            retrieved_memory=retrieved,
+            procedural_memory=procedural_memory,
+            knowledge_graph=graph,
+        )
         response = self.llm.complete(
-            f"Task:\n{context.task}{history_text}{memory_text}{procedure_text}{graph_text}",
+            prompt,
             instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
