@@ -43,8 +43,21 @@ def test_auto_detect_keeps_openai_compatible_local_servers(monkeypatch):
 
 
 def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
+    from types import SimpleNamespace
+    import psutil
+
+    # Make the RAM-pressure configuration deterministic across CI and local hosts.
+    # Existing user .env settings may still specify the old 10m/4096/384 defaults.
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_API", "auto")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "4096")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "384")
+    monkeypatch.setattr(
+        psutil,
+        "virtual_memory",
+        lambda: SimpleNamespace(available=2 * 1024**3),
+    )
     monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL", raising=False)
     client = LocalLLMClient()
     monkeypatch.setattr(
