@@ -44,9 +44,9 @@ python -m pip install -r requirements.txt
 
 cp .env.example .env
 # .env me apne available provider keys daalo.
-python run.py
-# Optional one-time offline browser-microphone STT setup (downloads a local model):
+# Recommended: cache offline microphone STT before first launch (one-time model download).
 python run.py --setup-voice
+python run.py
 ```
 
 ### One-command runtime
