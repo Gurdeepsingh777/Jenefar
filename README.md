@@ -148,6 +148,12 @@ Continuous mode microphone ko open rakhta hai, local energy-based VAD se utteran
 
 Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai. Groq voice ke liye `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, aur `GROQ_TTS_VOICE` configure kiye ja sakte hain.
 
+### Linux audio troubleshooting (Kali / GNOME)
+
+If Jenefar shows `SPEAKING` but you hear nothing, open the top-right system menu → **Sound Output** and select the physical speaker/headphone device (for example, `Speaker – 500 Series Chipset...`). Do not leave `Dummy Output` selected: it is a virtual sink and does not produce audible sound. Then open Sound Settings → **Input**, select the real microphone, speak, and confirm the input meter moves. The browser microphone status should show a non-zero input level.
+
+When the cloud STT quota is exhausted, Jenefar tries cached local Whisper. The terminal logs `Browser microphone PCM` peak/RMS (no spoken words are written) and either a successful transcription length or the reason it could not transcribe. If the input level stays near zero, fix the OS Input device before increasing LLM timeouts.
+
 ### Offline browser-microphone STT fallback
 
 Cloud STT credits/quota khatam ho jaaye to microphone ko offline chalane ke liye one-time setup run karo:
