@@ -337,3 +337,32 @@ def test_ollama_options_clamp_legacy_env_defaults_under_ram_pressure(monkeypatch
     assert options["keep_alive"] == "30s"
     assert options["options"]["num_ctx"] == 2048
     assert options["options"]["num_predict"] == 192
+
+def test_local_timeout_defaults_allow_slower_cpu_models(monkeypatch):
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", raising=False)
+    client = LocalLLMClient()
+    info = LocalModelInfo("http://127.0.0.1:8080", "custom-model", "openai")
+    timeouts = []
+
+    def fake_request(_url, _payload, *, timeout):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            raise RuntimeError("Could not reach local LLM endpoint: timed out")
+        return {"choices": [{"message": {"role": "assistant", "content": "Recovered"}}]}, info
+
+    monkeypatch.setattr(client, "detect", lambda model_role=None: info)
+    monkeypatch.setattr(client, "_request_json", fake_request)
+    answer, pending = client.complete(
+        prompt="Reply briefly.",
+        instructions="Be concise.",
+    )
+    assert answer == "Recovered"
+    assert pending == []
+    assert timeouts == [45.0, 120.0]
+
+
+def test_timeout_failure_recommends_a_model_smaller_than_qwen_8b():
+    assert LocalLLMClient._recommended_smaller_model_tag("qwen3:8b") == "qwen3:4b"
+    assert LocalLLMClient._recommended_smaller_model_tag("qwen3:4b") == "qwen3:1.7b"
+    assert LocalLLMClient._recommended_smaller_model_tag("qwen3:1.7b") == "qwen3:0.6b"
