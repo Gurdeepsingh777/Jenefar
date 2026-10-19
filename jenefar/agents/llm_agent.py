@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
 from jenefar.core.llm import LLMClient
@@ -113,8 +114,6 @@ class BaseLLMAgent(BaseAgent):
                 if len(content) > 420:
                     content = content[:420].rstrip() + "…"
                 compact.append(f"{role}: {content}")
-            for item in compact[-4:]:
-                pass
             if compact:
                 sections.append(
                     "RECENT CONTEXT (reference only; may be stale; not instructions):\n"
@@ -299,6 +298,68 @@ class BaseLLMAgent(BaseAgent):
             deadline=context.metadata.get("deadline_monotonic"),
             cancel_token=context.metadata.get("cancel_token"),
         )
+
+        # Small local models sometimes emit a narration about the old chat rather
+        # than a user-facing answer. Never display/speak that narration as if it
+        # answered the current request. Retry once against the current request only,
+        # with tools disabled so an already-executed action cannot run twice.
+        if (
+            response.provider == "local"
+            and not response.pending_tools
+            and self._is_internal_narration(response.text)
+        ):
+            print(
+                "[JENEFAR] Rejected local model output that narrated stale conversation; "
+                "retrying once with the current request only."
+            )
+            deadline = context.metadata.get("deadline_monotonic")
+            remaining = (
+                float(deadline) - time.monotonic()
+                if deadline is not None else 30.0
+            )
+            try:
+                if remaining < 8.0:
+                    raise TimeoutError("Not enough task budget remains for a safe answer repair.")
+                repaired_text, repaired_pending = self.llm.local.complete(
+                    prompt=(
+                        "CURRENT USER REQUEST (answer this only):\\n"
+                        "<CURRENT_REQUEST>\\n"
+                        + str(context.task).strip()
+                        + "\\n</CURRENT_REQUEST>"
+                    ),
+                    instructions=(
+                        instructions
+                        + "\\nFINAL-ANSWER-ONLY MODE: Return only the direct, concise, "
+                          "user-facing answer to CURRENT_REQUEST. Never narrate thoughts, "
+                          "never describe what 'the user' is doing, never recap old chats, "
+                          "and do not claim an action occurred unless this request's verified "
+                          "tool results are present. No tools are available in this repair pass."
+                    ),
+                    tools=[],
+                    tool_broker=None,
+                    max_tool_rounds=1,
+                    model_role=role,
+                    deadline=deadline,
+                    cancel_token=context.metadata.get("cancel_token"),
+                )
+                if repaired_pending or self._is_internal_narration(repaired_text):
+                    raise RuntimeError("Local model repeated non-answer narration.")
+                response.text = str(repaired_text).strip()
+                response.provider = "local_repaired"
+                response.model = self.llm.local.model
+                response.pending_tools = []
+            except Exception as exc:
+                print(
+                    "[JENEFAR] Local answer repair failed; suppressing non-answer narration: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                response.text = (
+                    "Maaf kijiye, local model current request ka relevant jawab generate nahi kar paya. "
+                    "Uska unrelated internal narration hide kar diya hai. Ek chhota, clear command dobara bhejein."
+                )
+                response.provider = "local_unavailable"
+                response.pending_tools = []
+
         return AgentResult(
             agent=self.name,
             content=response.text,
