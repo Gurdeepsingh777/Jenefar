@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import array
 import base64
+import math
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -547,7 +550,12 @@ class BrowserVoiceBridge:
     def handle_audio(self, audio: bytes, content_type: str = "audio/webm") -> dict[str, Any]:
         """Transcribe a browser MediaRecorder blob, then enqueue it as normal user text."""
         if not audio:
+            print("[JENEFAR] Browser microphone upload was empty.")
             return {"ok": False, "error": "No microphone audio was received."}
+        print(
+            f"[JENEFAR] Browser microphone upload received: {len(audio)} bytes "
+            f"({content_type or 'audio/unknown'})."
+        )
         if len(audio) > 12 * 1024 * 1024:
             return {"ok": False, "error": "Audio recording is too large (limit: 12 MiB)."}
         if content_type and not str(content_type).lower().startswith("audio/"):
@@ -600,16 +608,44 @@ class BrowserVoiceBridge:
                 "ok": False,
                 "error": "Could not decode microphone audio." + (f" {detail}" if detail else ""),
             }
+        # Log only signal statistics (never the user's words) so a silent or
+        # misrouted OS input device can be distinguished from an STT/model error.
+        samples = array.array("h")
+        samples.frombytes(converted.stdout)
+        if sys.byteorder != "little":
+            samples.byteswap()
+        peak = max((abs(int(sample)) for sample in samples), default=0)
+        rms = math.sqrt(
+            sum(int(sample) * int(sample) for sample in samples) / max(1, len(samples))
+        )
+        print(
+            "[JENEFAR] Browser microphone PCM: "
+            f"samples={len(samples)} peak={peak}/32768 rms={rms:.1f}/32768."
+        )
+        if peak < 80 and rms < 20:
+            print(
+                "[JENEFAR] Microphone signal is near silence. "
+                "Check System Settings → Sound → Input and select the physical microphone."
+            )
         try:
             transcript = asyncio.run(
                 self._stt_runtime.transcribe_pcm(converted.stdout)
             )
         except Exception as exc:
+            print(
+                "[JENEFAR] Browser microphone STT failed after local/cloud fallback: "
+                f"{type(exc).__name__}: {exc}"
+            )
             return {"ok": False, "error": f"Speech-to-text unavailable: {type(exc).__name__}: {exc}"}
 
         transcript = " ".join(str(transcript or "").split()).strip()
         if not transcript:
+            print("[JENEFAR] Speech recognition returned an empty transcript.")
             return {"ok": True, "ignored": True, "reason": "empty_transcript"}
+        print(
+            f"[JENEFAR] Browser microphone command transcribed successfully "
+            f"({len(transcript)} characters); submitting it to the command handler."
+        )
         if self._task_generation != task_generation_at_start:
             return {
                 "ok": True,
