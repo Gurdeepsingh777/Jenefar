@@ -1174,6 +1174,28 @@ function resumeVoiceIfAssistantIdle(){
   resumeBrowserVoice();
 }
 
+function fallbackToBrowserSpeech(reason){
+  const detail=String(reason||"Microphone audio capture is unavailable.");
+  addActivity({state:"error",text:detail});
+  if(!micEnabled) return false;
+  if(voiceSupported&&recognition){
+    stopFallbackMonitor(true);
+    fallbackMode=false;
+    voiceLocked=false;
+    setVoiceInputStatus("BROWSER SPEECH FALLBACK — LISTENING",true);
+    setMicButton(true,true);
+    addActivity({state:"listening",text:"Switching microphone input to browser-native recognition."});
+    resumeBrowserVoice();
+    return true;
+  }
+  stopFallbackMonitor(true);
+  micEnabled=false;
+  voiceLocked=true;
+  setVoiceInputStatus("MIC INPUT UNAVAILABLE — CHECK SYSTEM SOUND → INPUT",false);
+  setMicButton(false,false);
+  return false;
+}
+
 async function transcribeCapturedAudio(blob,durationMs){
   if(!micEnabled||voiceLocked||!blob||blob.size<1200||durationMs<550) return;
   fallbackSubmitting=true;
@@ -1297,7 +1319,17 @@ function startFallbackMonitor(){
     fallbackData=new Uint8Array(fallbackAnalyser.fftSize);
     fallbackSource=fallbackContext.createMediaStreamSource(fallbackStream);
     fallbackSource.connect(fallbackAnalyser);
-    fallbackContext.resume().catch(()=>{});
+    const activeContext=fallbackContext;
+    activeContext.resume().then(()=>{
+      if(!micEnabled||!fallbackMode||fallbackContext!==activeContext) return;
+      if(activeContext.state!=="running"){
+        fallbackToBrowserSpeech("Browser AudioContext stayed suspended; the microphone level meter could not run.");
+      }
+    }).catch(error=>{
+      if(micEnabled&&fallbackMode&&fallbackContext===activeContext){
+        fallbackToBrowserSpeech("Browser AudioContext could not start: "+String(error?.message||error));
+      }
+    });
   }catch(error){
     setVoiceInputStatus("AUDIO CAPTURE ERROR — "+String(error?.message||error).slice(0,80),false);
     addActivity({state:"error",text:"Audio capture setup failed: "+(error?.message||error)});
@@ -1327,7 +1359,10 @@ function startFallbackMonitor(){
         if(!micEnabled||voiceLocked) return;
         const duration=Math.max(0,performance.now()-fallbackRecordStartedAt);
         const blob=new Blob(chunks,{type:recorder.mimeType||"audio/webm"});
-        if(duration<550||blob.size<1200) return;
+        if(duration<550||blob.size<1200){
+          setVoiceInputStatus("AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS",true);
+          return;
+        }
         transcribeCapturedAudio(blob,duration);
       };
       recorder.start();
@@ -1338,6 +1373,11 @@ function startFallbackMonitor(){
     }
   };
 
+  const monitorStartedAt=performance.now();
+  let noiseFloor=0.001;
+  let lastInputSignalAt=monitorStartedAt;
+  let lastLevelStatusAt=0;
+  let speechFrames=0;
   const monitor=()=>{
     fallbackAnimationFrame=0;
     if(!micEnabled||voiceLocked||!fallbackMode||!fallbackStream||fallbackSubmitting) return;
@@ -1350,12 +1390,36 @@ function startFallbackMonitor(){
     }
     const rms=Math.sqrt(energy/fallbackData.length)/128;
     const now=performance.now();
-    // 0.020 misses quiet speech on some Linux microphone/USB levels.
-    const speechThreshold=0.010;
-    if(rms>speechThreshold){
-      fallbackLastSpeechAt=now;
-      if(!fallbackRecorder&&!fallbackStopping) beginSegment(now);
+
+    // Adapt to quiet laptop/USB microphones rather than requiring a fixed
+    // amplitude. The old fixed 0.010 threshold could leave MIC ON forever with
+    // no recorder started on a low-level Linux input device.
+    if(!fallbackRecorder&&rms<0.020){
+      noiseFloor=(noiseFloor*0.985)+(rms*0.015);
     }
+    const speechThreshold=Math.max(0.0035,Math.min(0.009,noiseFloor*2.4));
+    if(rms>0.0025) lastInputSignalAt=now;
+    if(rms>speechThreshold){
+      speechFrames=Math.min(4,speechFrames+1);
+      fallbackLastSpeechAt=now;
+      if(speechFrames>=2&&!fallbackRecorder&&!fallbackStopping) beginSegment(now);
+    }else{
+      speechFrames=0;
+    }
+
+    if(!fallbackRecorder&&now-lastLevelStatusAt>1200){
+      const level=Math.max(0,Math.min(100,Math.round(rms*100)));
+      setVoiceInputStatus("MIC ON — INPUT LEVEL "+level+"%",true);
+      lastLevelStatusAt=now;
+    }
+
+    // A suspended/incorrect input device previously looked like an active mic
+    // forever: no recorder started and no server request was ever sent.
+    if(!fallbackRecorder&&now-monitorStartedAt>8000&&now-lastInputSignalAt>7000){
+      fallbackToBrowserSpeech("No microphone signal detected (input level stayed near zero). Check System Sound → Input and select the real microphone.");
+      return;
+    }
+
     if(fallbackRecorder&&fallbackRecorder.state==="recording"){
       const elapsed=now-fallbackRecordStartedAt;
       const quietFor=now-fallbackLastSpeechAt;
