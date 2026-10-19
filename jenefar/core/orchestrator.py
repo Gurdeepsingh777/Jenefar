@@ -130,6 +130,21 @@ class JenefarOrchestrator:
             value = 60.0
         return min(max(value, 10.0), 300.0)
 
+    @staticmethod
+    def _late_dispatch_result_should_fail(deadline: float, result: Any, *, now: float | None = None) -> bool:
+        """Reject late successes, but preserve a bounded provider-failure explanation.
+
+        LLMClient may return an explicit offline_unavailable result after exhausting
+        its bounded local retry. Raising another TimeoutError here discarded that
+        useful response and made the chat show only 'execution budget exhausted'.
+        """
+        moment = time.monotonic() if now is None else float(now)
+        if float(deadline) > moment:
+            return False
+        metadata = getattr(result, "metadata", {}) or {}
+        provider = str(metadata.get("provider", "")).strip().lower()
+        return provider not in {"offline_unavailable", "online_unavailable"}
+
     def cancel_active_task(self, reason: str = "cancelled by user") -> dict[str, Any]:
         token = self._active_cancel_token
         active = self.task_lifecycle.active()
@@ -568,10 +583,16 @@ class JenefarOrchestrator:
             }
             if self._active_cancel_token is not None:
                 self._active_cancel_token.raise_if_cancelled()
-            if deadline <= time.monotonic():
+            if self._late_dispatch_result_should_fail(deadline, result):
                 raise TimeoutError("Jenefar execution budget exhausted")
             trace.actual_agent = result.agent
-            self.runtime_context.update({"agent": result.agent, "provider": str(result.metadata.get("provider", "")), "last_event": "agent_result"})
+            result_provider = str(result.metadata.get("provider", ""))
+            provider_unavailable = result_provider in {"offline_unavailable", "online_unavailable"}
+            self.runtime_context.update({
+                "agent": result.agent,
+                "provider": result_provider,
+                "last_event": "provider_unavailable" if provider_unavailable else "agent_result",
+            })
             for action in task_actions:
                 trace.add_tool_call(
                     name=str(action.get("tool") or "unknown"),
@@ -589,27 +610,33 @@ class JenefarOrchestrator:
             from jenefar.voice.speech import devanagari_to_roman
             output = devanagari_to_roman(output)
             verification = {
-                "passed": bool(output and output.strip()),
+                "passed": bool(output and output.strip()) and not provider_unavailable,
                 "verifier": self.verifier.__class__.__name__,
+                "provider_available": not provider_unavailable,
             }
             awaiting = result.metadata.get("provider") in {"approval_required", "local_approval_required"}
-            trace.finish(status="awaiting_approval" if awaiting else "success", provider=trace.provider, verification=verification)
+            trace.finish(
+                status="awaiting_approval" if awaiting else ("error" if provider_unavailable else "success"),
+                provider=trace.provider,
+                verification=verification,
+            )
             if not awaiting and verification["passed"]:
                 self._auto_learn_successful_workflow(text, plan.agent, task_actions)
             self.session.add("assistant", output)
-            self.memory_engine.record_message(
-                self.session.session_id,
-                "assistant",
-                output,
-                importance=0.5,
-            )
-            self.graph.learn_text(output)
-            if len(self.session.messages) % 6 == 0:
-                self.memory_engine.consolidate_messages(
+            if not provider_unavailable:
+                self.memory_engine.record_message(
                     self.session.session_id,
-                    self.session.recent(12),
-                    importance=0.72,
+                    "assistant",
+                    output,
+                    importance=0.5,
                 )
+                self.graph.learn_text(output)
+                if len(self.session.messages) % 6 == 0:
+                    self.memory_engine.consolidate_messages(
+                        self.session.session_id,
+                        self.session.recent(12),
+                        importance=0.72,
+                    )
             self._persist_runtime_trace(
                 trace,
                 task=text,
@@ -622,18 +649,35 @@ class JenefarOrchestrator:
                 self._avatar_state("waiting_approval", output)
             else:
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
-                self._avatar_state("speaking", output)
+                self._avatar_state("error" if provider_unavailable else "speaking", output)
             if awaiting:
                 self.task_lifecycle.transition(trace.trace_id, "waiting_approval", reason="approval_required", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
                 self.runtime_context.update({"state": "waiting_approval", "last_event": "approval_required"})
                 if self.production is not None:
                     self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
             else:
-                self.task_lifecycle.transition(trace.trace_id, "completed", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
-                self.runtime_context.update({"state": "speaking", "last_event": "response_ready"})
+                final_task_state = "failed" if provider_unavailable else "completed"
+                self.task_lifecycle.transition(
+                    trace.trace_id,
+                    final_task_state,
+                    reason=output if provider_unavailable else "",
+                    provider=trace.provider,
+                    agent=trace.actual_agent or trace.planned_agent,
+                )
+                self.runtime_context.update({
+                    "state": "error" if provider_unavailable else "speaking",
+                    "last_event": "provider_unavailable" if provider_unavailable else "response_ready",
+                })
                 if self.production is not None:
-                    self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
-                    self.production.task_finished(trace.trace_id, state="completed", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
+                    if not provider_unavailable:
+                        self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
+                    self.production.task_finished(
+                        trace.trace_id,
+                        state=final_task_state,
+                        agent=trace.actual_agent or trace.planned_agent,
+                        provider=trace.provider,
+                        error=output if provider_unavailable else "",
+                    )
                 self._runtime_task_id = None
                 self._active_cancel_token = None
             return output
