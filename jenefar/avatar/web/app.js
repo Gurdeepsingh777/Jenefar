@@ -1271,7 +1271,7 @@ async function transcribeCapturedAudio(blob,durationMs){
       text:"Audio STT failed ("+Math.round(durationMs)+" ms, "+Math.round(blob.size/1024)+" KiB): "+errorText
     });
     if(providerUnavailable&&modelMissing){
-      setVoiceInputStatus("VOICE OFFLINE MODEL MISSING — CHECK TERMINAL HINT",false);
+      setVoiceInputStatus("VOICE MODEL MISSING — RUN python run.py --setup-voice",false);
     }else if(providerUnavailable&&localNoSpeech){
       setVoiceInputStatus("LOCAL WHISPER HEARD NO SPEECH — CHECK MIC LEVEL / TRY AGAIN",false);
     }else if(providerUnavailable){
