@@ -167,6 +167,23 @@ def doctor() -> int:
 
         config = load_config()
         print(f"  config                       OK ({config.name})")
+        print(
+            "  task timeout default          "
+            + os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "180")
+            + "s (agent/role-specific overrides may apply)"
+        )
+        print(
+            "  online LLM window             "
+            + os.getenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "20") + "s"
+        )
+        print(
+            "  local fallback reserve        "
+            + os.getenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "45") + "s"
+        )
+        print(
+            "  local LLM timeout             "
+            + os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600") + "s socket ceiling"
+        )
         configured_keys = any(
             os.getenv(name, "").strip()
             for name in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
