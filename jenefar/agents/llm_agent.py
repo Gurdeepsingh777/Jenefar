@@ -327,12 +327,9 @@ class BaseLLMAgent(BaseAgent):
                 if remaining < 8.0:
                     raise TimeoutError("Not enough task budget remains for a safe answer repair.")
                 repaired_text, repaired_pending = self.llm.local.complete(
-                    prompt=(
-                        "CURRENT USER REQUEST (answer this only):\\n"
-                        "<CURRENT_REQUEST>\\n"
-                        + str(context.task).strip()
-                        + "\\n</CURRENT_REQUEST>"
-                    ),
+                    # Reuse the already-filtered prompt: it contains only bounded,
+                    # relevant context (when needed) and places CURRENT_REQUEST last.
+                    prompt=prompt,
                     instructions=(
                         instructions
                         + "\\nFINAL-ANSWER-ONLY MODE: Return only the direct, concise, "
