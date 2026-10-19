@@ -414,6 +414,18 @@ class LocalLLMClient:
                 return None
         return None
 
+    @classmethod
+    def _recommended_smaller_model_tag(cls, current_model: str) -> str | None:
+        """Suggest a smaller text-only Qwen tag after the installed model times out."""
+        size = cls._model_parameter_billions(current_model)
+        if size is None or size > 4.0:
+            return "qwen3:4b"
+        if size > 1.7:
+            return "qwen3:1.7b"
+        if size > 0.6:
+            return "qwen3:0.6b"
+        return None
+
     def _find_smaller_ollama_model(self, info: LocalModelInfo) -> LocalModelInfo | None:
         """Select a smaller model only if it is already installed; never pull models automatically."""
         if info.api != "ollama":
@@ -679,10 +691,10 @@ class LocalLLMClient:
     ) -> tuple[dict[str, Any], LocalModelInfo]:
         """Recover from slow local models without exceeding the task's time budget."""
         primary_cap = self._bounded_int_env(
-            "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 18, 5, 45
+            "JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 45, 5, 180
         )
         retry_cap = self._bounded_int_env(
-            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 60, 5, 300
+            "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 120, 5, 300
         )
         started_at = time.monotonic()
         total_budget = max(0.0, float(configured_timeout))
@@ -730,11 +742,17 @@ class LocalLLMClient:
             except RuntimeError as exc:
                 if not self._is_timeout_error(exc):
                     raise
+                recommended = self._recommended_smaller_model_tag(smaller.model)
+                setup_hint = (
+                    f" Install it with 'ollama pull {recommended}', then set "
+                    f"JENEFAR_LOCAL_LLM_FALLBACK_MODEL={recommended} in .env."
+                    if recommended else
+                    " Choose a model smaller than the configured fallback."
+                )
                 raise RuntimeError(
                     f"Both local model '{current.model}' and smaller installed model "
-                    f"'{smaller.model}' timed out within the task budget. "
-                    "Choose a smaller installed model or increase available RAM. "
-                    f"Smaller-model error: {exc}"
+                    f"'{smaller.model}' timed out within the task budget."
+                    f"{setup_hint} Smaller-model error: {exc}"
                 ) from exc
             self._runtime_fallback_model = selected.model
             self.model = selected.model
@@ -760,9 +778,14 @@ class LocalLLMClient:
                 smaller_result = try_smaller(compact_payload, info)
                 if smaller_result is not None:
                     return smaller_result
+                recommended = self._recommended_smaller_model_tag(info.model)
                 suggestion = (
-                    "Install a smaller local model once, for example 'ollama pull qwen3:8b', "
-                    "or set JENEFAR_LOCAL_LLM_FALLBACK_MODEL to an already-installed model. "
+                    (
+                        f" Install a smaller model with 'ollama pull {recommended}' and set "
+                        f"JENEFAR_LOCAL_LLM_FALLBACK_MODEL={recommended} in .env. "
+                        if recommended else
+                        "Set JENEFAR_LOCAL_LLM_FALLBACK_MODEL to an installed smaller model. "
+                    )
                     if info.api == "ollama"
                     else "Configure a smaller model in the local server and set its model ID in Jenefar. "
                 )
