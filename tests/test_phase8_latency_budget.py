@@ -7,8 +7,8 @@ from jenefar.core.orchestrator import JenefarOrchestrator
 from jenefar.offline.local_llm import LocalLLMClient
 
 
-def test_execution_budget_defaults_to_60_seconds():
-    assert JenefarOrchestrator._execution_budget_seconds("research", "research") == 60.0
+def test_execution_budget_defaults_to_180_seconds():
+    assert JenefarOrchestrator._execution_budget_seconds("research", "research") == 180.0
 
 
 def test_execution_budget_is_clamped_and_agent_override_wins(monkeypatch):
@@ -136,3 +136,26 @@ def test_expired_deadline_preserves_explicit_offline_fallback_reply():
     assert not JenefarOrchestrator._late_dispatch_result_should_fail(
         102.0, online_result, now=101.0
     )
+
+def test_online_llm_window_reserves_time_for_local_fallback(monkeypatch):
+    monkeypatch.setenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "20")
+    monkeypatch.setenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "45")
+    now = 100.0
+    deadline = 280.0
+    assert LLMClient._online_request_deadline(deadline, now=now) == 120.0
+
+
+def test_short_task_budget_skips_online_window_and_reserves_local_time(monkeypatch):
+    monkeypatch.setenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "20")
+    monkeypatch.setenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "45")
+    now = 100.0
+    deadline = 130.0
+    assert LLMClient._online_request_deadline(deadline, now=now) == 100.0
+
+
+def test_online_window_is_limited_by_local_fallback_reserve(monkeypatch):
+    monkeypatch.setenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "60")
+    monkeypatch.setenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "45")
+    now = 100.0
+    deadline = 160.0
+    assert LLMClient._online_request_deadline(deadline, now=now) == 115.0
