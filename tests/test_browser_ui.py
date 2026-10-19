@@ -774,3 +774,29 @@ def test_empty_server_transcript_switches_to_browser_speech_recognition():
     assert "stopFallbackMonitor(true);" in handler
     assert "fallbackMode=false;" in handler
     assert '"SERVER STT HEARD NO WORDS — SWITCHING TO BROWSER SPEECH"' in handler
+
+
+
+def test_dashboard_has_explicit_quit_and_release_memory_control():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+
+    assert 'id="runtime-ops-shutdown"' in html
+    assert 'fetch("/runtime/shutdown"' in app
+    assert 'if path == "/runtime/shutdown":' in server
+    assert "shutdown_handler=request_runtime_shutdown" in run
+    assert "LocalLLMClient.release_runtime_models()" in run
+
+
+def test_live_system_metrics_have_only_one_browser_writer():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+
+    # REST polling and WebSocket telemetry previously painted the same rings
+    # with different units and sample times, making the readings flicker.
+    assert 'setInterval(refreshSystemMetrics,1500)' not in js
+    assert "function refreshSystemMetrics()" not in js
+    assert 'new WebSocket(socketUrl())' in js
+    assert "particleFrameInterval=1000/30" in js
+    assert "Math.min(110,Math.max(36,Math.floor(width/14)))" in js
