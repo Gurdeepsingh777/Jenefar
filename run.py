@@ -528,6 +528,20 @@ def main() -> int:
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
 
+        runtime_shutdown_event = threading.Event()
+
+        def request_runtime_shutdown():
+            """Acknowledge the dashboard request before waking the runtime thread."""
+            if not runtime_shutdown_event.is_set():
+                print("[JENEFAR] Graceful shutdown requested from the dashboard.")
+                timer = threading.Timer(0.75, runtime_shutdown_event.set)
+                timer.daemon = True
+                timer.start()
+            return {
+                "accepted": True,
+                "message": "Shutdown requested. Jenefar will stop background services and release its Ollama models.",
+            }
+
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
         browser_voice_enabled = os.getenv("JENEFAR_BROWSER_VOICE", "1").strip().lower() not in {
@@ -553,6 +567,7 @@ def main() -> int:
             runtime_status_handler=orchestrator.runtime_status,
             runtime_tasks_handler=orchestrator.runtime_tasks,
             runtime_cancel_handler=orchestrator.cancel_active_task,
+            shutdown_handler=request_runtime_shutdown,
         )
         avatar_server.start()
 
@@ -631,15 +646,31 @@ def main() -> int:
                 print("[JENEFAR] Your browser may ask for microphone permission in the avatar UI.")
                 print("[JENEFAR] Browser microphone + server-generated browser audio are the primary voice path; Web SpeechSynthesis is the final fallback.")
                 print("[JENEFAR] Python TTS is disabled in this browser runtime.")
-                threading.Event().wait()
+                runtime_shutdown_event.wait()
             else:
                 print("[JENEFAR] Browser voice is disabled. UI remains available; no terminal voice/TTS is started.")
-                threading.Event().wait()
+                runtime_shutdown_event.wait()
+        except KeyboardInterrupt:
+            print("\n[JENEFAR] Ctrl+C received; shutting down cleanly.")
         finally:
+            try:
+                orchestrator.cancel_active_task(reason="Jenefar runtime is shutting down")
+            except Exception as exc:
+                print(f"[JENEFAR] Task cancellation during shutdown skipped: {type(exc).__name__}: {exc}")
             browser_voice.shutdown()
             if monitoring_server is not None and monitoring_server_owned:
                 monitoring_server.stop()
             avatar_server.stop()
+            try:
+                from jenefar.offline.local_llm import LocalLLMClient
+                released = LocalLLMClient.release_runtime_models()
+                print(
+                    "[JENEFAR] Local model cleanup: "
+                    f"{len(released.get('released', []))}/{released.get('attempted', 0)} "
+                    "Ollama model(s) released."
+                )
+            except Exception as exc:
+                print(f"[JENEFAR] Local model cleanup skipped: {type(exc).__name__}: {exc}")
         return 0
 
     if args.setup_assets:
