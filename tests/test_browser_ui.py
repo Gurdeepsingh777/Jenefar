@@ -27,7 +27,10 @@ def test_browser_mic_starts_only_after_explicit_user_action():
     assert 'micButton.onclick=async()=>{' in js
     assert 'if(canRecord){\n        // Prefer server-side STT to Chromium' in js
     assert 'setVoiceInputStatus("CLICK MIC ON — SERVER STT READY",false);' in js
-    assert "const speechThreshold=0.010;" in js
+    assert "const speechThreshold=Math.max(0.0035,Math.min(0.009,noiseFloor*2.4));" in js
+    assert "No microphone signal detected (input level stayed near zero)." in js
+    assert "fallbackToBrowserSpeech" in js
+    assert 'setVoiceInputStatus("AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS",true)' in js
     assert "NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL" in js
 
 
@@ -825,3 +828,21 @@ def test_voice_ui_shows_local_whisper_setup_hint_for_cache_miss():
     assert "No usable local Whisper model was found in the cache" in js
     assert "python run.py --setup-voice" in js
     assert "VOICE MODEL MISSING — RUN python run.py --setup-voice" in js
+
+def test_browser_mic_detects_suspended_audio_context_and_silent_input():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("function startFallbackMonitor(){")
+    end = js.index("async function sendBrowserTranscript(text){", start)
+    monitor = js[start:end]
+
+    assert "activeContext.resume().then" in monitor
+    assert 'activeContext.state!=="running"' in monitor
+    assert "fallbackToBrowserSpeech" in monitor
+    assert "MIC ON — INPUT LEVEL " in monitor
+    assert "noiseFloor*2.4" in monitor
+    assert "now-monitorStartedAt>8000&&now-lastInputSignalAt>7000" in monitor
+
+
+def test_browser_mic_short_recording_does_not_fail_silently():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS" in js
