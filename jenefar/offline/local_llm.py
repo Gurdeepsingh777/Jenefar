@@ -319,12 +319,32 @@ class LocalLLMClient:
     @classmethod
     def _ollama_request_options(cls) -> dict[str, Any]:
         think_value = os.getenv("JENEFAR_LOCAL_LLM_THINK", "false").strip().lower()
+        keep_alive = os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "30s").strip() or "30s"
+        num_ctx = cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 2048, 2048, 65536)
+        num_predict = cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 192, 128, 8192)
+
+        # Existing .env files may still contain the old sample defaults (10m,
+        # 4096 context, 384 tokens). On a memory-starved machine those legacy
+        # settings keep a large model resident and amplify CPU/swap pressure.
+        # Preserve custom settings when RAM is healthy, but clamp the old defaults
+        # and generation size when less than 8 GiB is currently available.
+        try:
+            import psutil
+            available_gib = float(psutil.virtual_memory().available) / (1024 ** 3)
+        except Exception:
+            available_gib = None
+
+        if available_gib is not None and available_gib < 8.0:
+            keep_alive = "30s"
+            num_ctx = min(num_ctx, 2048)
+            num_predict = min(num_predict, 192)
+
         return {
             "think": think_value in {"1", "true", "yes", "on"},
-            "keep_alive": os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "30s").strip() or "30s",
+            "keep_alive": keep_alive,
             "options": {
-                "num_ctx": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_CTX", 2048, 2048, 65536),
-                "num_predict": cls._bounded_int_env("JENEFAR_LOCAL_LLM_NUM_PREDICT", 192, 128, 8192),
+                "num_ctx": num_ctx,
+                "num_predict": num_predict,
                 "temperature": 0.2,
             },
         }
