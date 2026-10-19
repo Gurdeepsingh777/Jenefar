@@ -772,6 +772,11 @@ class LocalLLMClient:
                 self._prefer_compact_requests = True
                 return result, selected
 
+            if len(attempted) == 1 and last_error is None:
+                # No smaller local model is installed (or the endpoint isn't
+                # Ollama); let the caller make one compact retry of the current model.
+                return None
+
             recommended = self._recommended_smaller_model_tag(candidate_source.model)
             hint = (
                 f" Install a smaller model with 'ollama pull {recommended}' and set "
