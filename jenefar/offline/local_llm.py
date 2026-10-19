@@ -135,6 +135,39 @@ class LocalLLMClient:
             return self._runtime_fallback_model
         configured = self.model
         if configured and configured in names:
+            # Respect explicit model pins when there is enough available RAM.
+            # A large pinned model is not viable on a memory-starved host, though;
+            # prefer an already-installed smaller model before it drives the OS
+            # into swap or leaves no budget for command execution.
+            configured_size = self._model_parameter_billions(configured)
+            if configured_size is not None and api.casefold() == "ollama":
+                try:
+                    import psutil
+                    available_gib = float(psutil.virtual_memory().available) / (1024 ** 3)
+                except Exception:
+                    available_gib = float("inf")
+                required_gib = max(3.0, configured_size * 0.65)
+                if available_gib < required_gib:
+                    candidates = []
+                    for name in names:
+                        size = self._model_parameter_billions(name)
+                        if size is None or size >= configured_size:
+                            continue
+                        if any(marker in name.casefold() for marker in (
+                            "vision", "-vl:", "embed", "rerank", "whisper", "audio",
+                        )):
+                            continue
+                        candidates.append((size, name))
+                    if candidates:
+                        capacity = max(0.0, available_gib / 0.65)
+                        fitting = [item for item in candidates if item[0] <= capacity]
+                        selected = max(fitting, key=lambda item: (item[0], item[1].casefold()))[1] if fitting else min(candidates, key=lambda item: (item[0], item[1].casefold()))[1]
+                        print(
+                            f"[JENEFAR] Local model '{configured}' needs roughly "
+                            f"{required_gib:.1f} GiB available RAM; only {available_gib:.1f} GiB "
+                            f"is free. Using smaller installed model '{selected}' for this run."
+                        )
+                        return selected
             return configured
         if configured and names:
             # Avoid repeatedly using a stale model ID that the local server does
@@ -191,6 +224,14 @@ class LocalLLMClient:
                     continue
                 selected = self._select_installed_model(names, "Ollama")
                 if selected:
+                    if self.model in names and selected != self.model:
+                        previous_size = self._model_parameter_billions(self.model)
+                        selected_size = self._model_parameter_billions(selected)
+                        if previous_size is not None and selected_size is not None and selected_size < previous_size:
+                            # The memory-pressure guard selected a smaller installed
+                            # model; unload the oversized model left resident by an
+                            # earlier run before the new model starts loading.
+                            self._unload_ollama_model(origin, self.model, timeout=1.0)
                     return LocalModelInfo(origin, selected, "ollama")
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
