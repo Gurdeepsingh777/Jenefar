@@ -184,6 +184,14 @@ def doctor() -> int:
             "  local LLM timeout             "
             + os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600") + "s socket ceiling"
         )
+        print(
+            "  local primary timeout         "
+            + os.getenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "45") + "s"
+        )
+        print(
+            "  local retry timeout            "
+            + os.getenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "120") + "s maximum"
+        )
         configured_keys = any(
             os.getenv(name, "").strip()
             for name in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
