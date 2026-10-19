@@ -816,6 +816,9 @@ def test_offline_voice_setup_command_is_available():
     run = (ROOT / "run.py").read_text(encoding="utf-8")
     assert "def setup_voice() -> int:" in run
     assert "WhisperModel(" in run
+    assert "sys.prefix == sys.base_prefix" in run
+    assert "python3 -m venv .venv" in run
+    assert "def _reexec_in_project_venv_if_available() -> bool:" in run
 
 def test_voice_ui_shows_local_whisper_setup_hint_for_cache_miss():
     js = (WEB / "app.js").read_text(encoding="utf-8")
