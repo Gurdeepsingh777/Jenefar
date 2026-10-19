@@ -7,7 +7,11 @@ from jenefar.core.orchestrator import JenefarOrchestrator
 from jenefar.offline.local_llm import LocalLLMClient
 
 
-def test_execution_budget_defaults_to_180_seconds():
+def test_execution_budget_defaults_to_180_seconds(monkeypatch):
+    # The project .env is loaded when the suite imports Jenefar; isolate this
+    # default-value test from a developer's runtime timeout preferences.
+    monkeypatch.delenv("JENEFAR_AGENT_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("JENEFAR_AGENT_TIMEOUT_RESEARCH", raising=False)
     assert JenefarOrchestrator._execution_budget_seconds("research", "research") == 180.0
 
 
