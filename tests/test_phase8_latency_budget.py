@@ -119,3 +119,20 @@ def test_explicit_oversized_model_is_overridden_under_memory_pressure(monkeypatc
         "Ollama",
     )
     assert selected == "qwen3:1.7b"
+
+def test_expired_deadline_preserves_explicit_offline_fallback_reply():
+    from types import SimpleNamespace
+
+    expired = 100.0
+    offline_result = SimpleNamespace(metadata={"provider": "offline_unavailable"})
+    online_result = SimpleNamespace(metadata={"provider": "openai"})
+
+    assert not JenefarOrchestrator._late_dispatch_result_should_fail(
+        expired, offline_result, now=101.0
+    )
+    assert JenefarOrchestrator._late_dispatch_result_should_fail(
+        expired, online_result, now=101.0
+    )
+    assert not JenefarOrchestrator._late_dispatch_result_should_fail(
+        102.0, online_result, now=101.0
+    )
