@@ -116,7 +116,7 @@ def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
     assert pending == []
     assert broker.invocations == [("memory_recall", {"query": "voice setup"})]
     assert requests[0][0] == "http://127.0.0.1:11434/api/chat"
-    assert requests[0][2] == 18.0
+    assert requests[0][2] == 45.0
     assert requests[0][1]["think"] is False
     assert requests[0][1]["keep_alive"] == "30s"
     assert requests[0][1]["options"]["num_ctx"] == 2048
@@ -349,7 +349,7 @@ def test_local_timeout_defaults_allow_slower_cpu_models(monkeypatch):
         timeouts.append(timeout)
         if len(timeouts) == 1:
             raise RuntimeError("Could not reach local LLM endpoint: timed out")
-        return {"choices": [{"message": {"role": "assistant", "content": "Recovered"}}]}, info
+        return {"choices": [{"message": {"role": "assistant", "content": "Recovered"}}]}
 
     monkeypatch.setattr(client, "detect", lambda model_role=None: info)
     monkeypatch.setattr(client, "_request_json", fake_request)
