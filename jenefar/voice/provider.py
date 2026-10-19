@@ -472,8 +472,8 @@ class ProviderVoiceRuntime:
             ).strip()
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise RuntimeError("Gemini STT returned an invalid response.") from exc
-        if not transcript:
-            raise RuntimeError("Gemini STT returned no transcription text.")
+        # Empty text is a provider-level miss, not a terminal error.
+        # transcribe_pcm() will try the next cloud provider and local Whisper.
         return transcript
 
     async def transcribe_pcm(
@@ -495,11 +495,26 @@ class ProviderVoiceRuntime:
                 continue
             try:
                 if provider == "openai":
-                    return await self._transcribe_openai(audio)
-                if provider == "groq":
-                    return await self._transcribe_groq(audio)
-                if provider == "gemini":
-                    return await self._transcribe_gemini(audio)
+                    transcript = await self._transcribe_openai(audio)
+                elif provider == "groq":
+                    transcript = await self._transcribe_groq(audio)
+                elif provider == "gemini":
+                    transcript = await self._transcribe_gemini(audio)
+                else:
+                    continue
+
+                transcript = str(transcript or "").strip()
+                if transcript:
+                    return transcript
+
+                # A successful HTTP response can still contain no recognized
+                # words. Do not treat that as success: continue to the next
+                # provider, then the cache-only local Whisper fallback below.
+                last_error = RuntimeError(f"{provider} STT returned an empty transcript.")
+                print(
+                    f"[JENEFAR] STT provider {provider} returned an empty transcript; "
+                    "trying the next configured provider."
+                )
             except Exception as exc:
                 last_error = exc
                 if not is_retryable_provider_error(exc):
