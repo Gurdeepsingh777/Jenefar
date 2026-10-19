@@ -36,6 +36,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     runtime_status_handler = None
     runtime_tasks_handler = None
     runtime_cancel_handler = None
+    shutdown_handler = None
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         try:
@@ -343,6 +344,19 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 self._json(200, handler(reason=reason))
                 return
 
+            if path == "/runtime/shutdown":
+                handler = self.shutdown_handler
+                if handler is None:
+                    self._json(503, {"error": "Graceful runtime shutdown is not connected."})
+                    return
+                result = handler()
+                payload = result if isinstance(result, dict) else {
+                    "accepted": bool(result),
+                    "message": "Shutdown request received.",
+                }
+                self._json(202 if payload.get("accepted") else 409, payload)
+                return
+
             if path == "/voice/text":
                 handler = self.voice_handler
                 if handler is None:
@@ -499,6 +513,7 @@ class AvatarServer:
         runtime_status_handler=None,
         runtime_tasks_handler=None,
         runtime_cancel_handler=None,
+        shutdown_handler=None,
     ) -> None:
         self.controller = controller
         self.host = host
@@ -512,6 +527,7 @@ class AvatarServer:
         self.runtime_status_handler = runtime_status_handler
         self.runtime_tasks_handler = runtime_tasks_handler
         self.runtime_cancel_handler = runtime_cancel_handler
+        self.shutdown_handler = shutdown_handler
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._create_server()
@@ -531,6 +547,7 @@ class AvatarServer:
         runtime_status_handler = self.runtime_status_handler
         runtime_tasks_handler = self.runtime_tasks_handler
         runtime_cancel_handler = self.runtime_cancel_handler
+        shutdown_handler = self.shutdown_handler
 
         class Handler(_AvatarHandler):
             pass
@@ -547,6 +564,7 @@ class AvatarServer:
         Handler.runtime_status_handler = staticmethod(runtime_status_handler) if runtime_status_handler is not None else None
         Handler.runtime_tasks_handler = staticmethod(runtime_tasks_handler) if runtime_tasks_handler is not None else None
         Handler.runtime_cancel_handler = staticmethod(runtime_cancel_handler) if runtime_cancel_handler is not None else None
+        Handler.shutdown_handler = staticmethod(shutdown_handler) if shutdown_handler is not None else None
         return Handler
 
     def _create_server(self) -> None:
