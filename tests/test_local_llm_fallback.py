@@ -305,3 +305,22 @@ def test_smaller_model_selection_prefers_largest_installed_model_below_current(m
     selected = client._find_smaller_ollama_model(current)
 
     assert selected == LocalModelInfo("http://127.0.0.1:11434", "qwen3:8b", "ollama")
+
+def test_ollama_options_clamp_legacy_env_defaults_under_ram_pressure(monkeypatch):
+    from types import SimpleNamespace
+    import psutil
+    from jenefar.offline.local_llm import LocalLLMClient
+
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "4096")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "384")
+    monkeypatch.setattr(
+        psutil,
+        "virtual_memory",
+        lambda: SimpleNamespace(available=2 * 1024**3),
+    )
+
+    options = LocalLLMClient._ollama_request_options()
+    assert options["keep_alive"] == "30s"
+    assert options["options"]["num_ctx"] == 2048
+    assert options["options"]["num_predict"] == 192
