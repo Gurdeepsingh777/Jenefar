@@ -804,3 +804,15 @@ def test_live_system_metrics_have_only_one_browser_writer():
     assert 'new WebSocket(socketUrl())' in js
     assert "particleFrameInterval=1000/30" in js
     assert "Math.min(110,Math.max(36,Math.floor(width/14)))" in js
+
+
+
+def test_offline_voice_setup_command_is_available():
+    from run import build_parser
+
+    parsed = build_parser().parse_args(["--setup-voice"])
+    assert parsed.setup_voice is True
+    assert (ROOT / "requirements-voice.txt").is_file()
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "def setup_voice() -> int:" in run
+    assert "WhisperModel(" in run
