@@ -1695,6 +1695,7 @@ const runtimeHistorySearch=document.getElementById("runtime-history-search");
 const runtimeHistoryState=document.getElementById("runtime-history-state");
 const runtimeRefreshButton=document.getElementById("runtime-ops-refresh");
 const runtimeCancelButton=document.getElementById("runtime-ops-cancel");
+const runtimeShutdownButton=document.getElementById("runtime-ops-shutdown");
 let runtimeHistoryTimer=null;
 let runtimeHistoryRequest=0;
 function runtimeOpsNode(tag,className,text){
@@ -1769,6 +1770,33 @@ async function refreshRuntimeHistory(){
 }
 runtimeRefreshButton?.addEventListener("click",refreshRuntimeHistory);
 runtimeHistoryState?.addEventListener("change",refreshRuntimeHistory);
+
+runtimeShutdownButton?.addEventListener("click", async () => {
+  if (!runtimeShutdownButton || runtimeShutdownButton.disabled) return;
+  const confirmed = window.confirm(
+    "Quit Jenefar? This stops its local voice/dashboard servers and asks Ollama to release models used by Jenefar. Other Ollama apps may be affected only if they share the same model session."
+  );
+  if (!confirmed) return;
+
+  runtimeShutdownButton.disabled = true;
+  if (runtimeOpsStatus) runtimeOpsStatus.textContent = "Shutdown requested — stopping services and releasing local model memory…";
+  try {
+    const response = await fetch("/runtime/shutdown", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmed: true })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload?.accepted) {
+      throw new Error(payload?.message || payload?.error || ("HTTP " + response.status));
+    }
+    if (runtimeOpsStatus) runtimeOpsStatus.textContent = payload.message || "Jenefar is shutting down.";
+    if (runtimeHistoryTimer) clearInterval(runtimeHistoryTimer);
+  } catch (error) {
+    runtimeShutdownButton.disabled = false;
+    if (runtimeOpsStatus) runtimeOpsStatus.textContent = "Shutdown failed: " + String(error?.message || error);
+  }
+});
 let runtimeSearchDebounce=null;
 runtimeHistorySearch?.addEventListener("input",()=>{
   if(runtimeSearchDebounce!==null) clearTimeout(runtimeSearchDebounce);
