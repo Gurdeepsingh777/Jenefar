@@ -1264,7 +1264,7 @@ async function transcribeCapturedAudio(blob,durationMs){
       return;
     }
     voiceLocked=false;
-    const modelMissing=/Local Whisper STT is not installed|not available in the local cache|does not point to a model directory/i.test(errorText);
+    const modelMissing=/Local Whisper STT is not installed|not available in the local cache|No usable local Whisper model was found in the cache|does not point to a model directory|python run\\.py --setup-voice/i.test(errorText);
     const localNoSpeech=/no transcript was produced|did not recognize speech|no speech text/i.test(errorText);
     addActivity({
       state:"error",
