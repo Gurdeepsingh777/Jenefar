@@ -124,3 +124,26 @@ def test_local_internal_narration_is_repaired_without_replaying_tools(monkeypatc
         "</CURRENT_REQUEST>"
     )
     assert "old tasks" not in captured["prompt"]
+
+def test_explicit_thinking_markup_is_removed_before_user_output():
+    assert BaseLLMAgent._strip_internal_reasoning(
+        "<think>Need to reason through the request.</think>\nThe direct answer is 42."
+    ) == "The direct answer is 42."
+
+
+def test_analysis_final_format_keeps_only_final_answer():
+    assert BaseLLMAgent._strip_internal_reasoning(
+        "Analysis: I should inspect the previous context first.\nFinal answer: Audio output is routed to Dummy Output."
+    ) == "Audio output is routed to Dummy Output."
+
+
+def test_internal_narration_detection_catches_more_stale_chat_patterns():
+    assert BaseLLMAgent._is_internal_narration(
+        "The user's last message says the application is still broken."
+    )
+    assert BaseLLMAgent._is_internal_narration(
+        "Let me go through the conversation step by step."
+    )
+    assert not BaseLLMAgent._is_internal_narration(
+        "The output is set to Dummy Output; select the physical speaker."
+    )
