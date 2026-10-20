@@ -1758,6 +1758,7 @@ const runtimeHistoryList=document.getElementById("task-history-list");
 const runtimeHistorySearch=document.getElementById("runtime-history-search");
 const runtimeHistoryState=document.getElementById("runtime-history-state");
 const runtimeRefreshButton=document.getElementById("runtime-ops-refresh");
+const runtimeDiagnosticsButton=document.getElementById("runtime-ops-diagnostics");
 const runtimeCancelButton=document.getElementById("runtime-ops-cancel");
 const runtimeShutdownButton=document.getElementById("runtime-ops-shutdown");
 let runtimeHistoryTimer=null;
@@ -1834,6 +1835,52 @@ async function refreshRuntimeHistory(){
 }
 runtimeRefreshButton?.addEventListener("click",refreshRuntimeHistory);
 runtimeHistoryState?.addEventListener("change",refreshRuntimeHistory);
+
+async function refreshRuntimeDiagnostics(){
+  if(!runtimeDiagnosticsButton) return;
+  runtimeDiagnosticsButton.disabled=true;
+  if(runtimeOpsStatus) runtimeOpsStatus.textContent="Checking microphone, audio devices, local models, desktop backend and timeouts…";
+  try{
+    const response=await fetch("/runtime/diagnostics?ts="+Date.now(),{cache:"no-store"});
+    const report=await response.json();
+    if(!response.ok) throw new Error(report?.error||("Diagnostics HTTP "+response.status));
+    const checks=Array.isArray(report.checks)?report.checks:[];
+    const labelFor={
+      browser_voice:"BROWSER VOICE",
+      whisper:"LOCAL WHISPER",
+      audio_output:"SOUND OUTPUT",
+      audio_input:"MIC INPUT",
+      ollama:"LOCAL LLM",
+      desktop:"DESKTOP INPUT"
+    };
+    const statusText=item=>String(item?.status||"unknown").replaceAll("_"," ").toUpperCase();
+    const lines=[
+      "DIAGNOSTICS: "+String(report.status||"unknown").replaceAll("_"," ").toUpperCase(),
+      ...checks.map(item=>{
+        const icon=item.ok?"OK":"CHECK";
+        const title=labelFor[item.id]||String(item.id||"CHECK");
+        return icon+" · "+title+": "+statusText(item)+" — "+String(item.message||"");
+      }),
+      "TIMEOUTS · task "+Number(report.timeouts?.task_seconds||0)+"s"
+        +" · cloud "+Number(report.timeouts?.online_window_seconds||0)+"s"
+        +" · local reserve "+Number(report.timeouts?.local_reserve_seconds||0)+"s"
+        +" · primary "+Number(report.timeouts?.local_primary_seconds||0)+"s"
+        +" · retry "+Number(report.timeouts?.local_retry_seconds||0)+"s",
+      report.active_task
+        ? "ACTIVE TASK · "+String(report.active_task.state||"unknown")+" · "+String(report.active_task.agent||"")
+        : "ACTIVE TASK · none"
+    ];
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent=lines.join("\n");
+    for(const item of report.issues||[]){
+      addActivity({state:"error",text:"Diagnostic · "+String(item.id||"check")+": "+String(item.message||item.status||"needs attention")});
+    }
+  }catch(error){
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent="Diagnostics failed: "+String(error?.message||error);
+  }finally{
+    runtimeDiagnosticsButton.disabled=false;
+  }
+}
+runtimeDiagnosticsButton?.addEventListener("click",refreshRuntimeDiagnostics);
 
 runtimeShutdownButton?.addEventListener("click", async () => {
   if (!runtimeShutdownButton || runtimeShutdownButton.disabled) return;
