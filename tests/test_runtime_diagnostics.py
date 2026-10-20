@@ -72,7 +72,19 @@ def test_runtime_diagnostics_are_structured_and_do_not_expose_keys(monkeypatch):
     })
     monkeypatch.setattr(diagnostics, "_module_available", lambda _name: True)
 
-    report = diagnostics.collect_runtime_diagnostics(browser_voice_enabled=True)
+    orchestrator = SimpleNamespace(
+        tool_broker=SimpleNamespace(
+            desktop=SimpleNamespace(backend_status=lambda: {
+                "status": "ready", "input": "ready", "capture": "ready",
+                "message": "Desktop backend ready.",
+            })
+        ),
+        task_lifecycle=SimpleNamespace(active=lambda: None),
+    )
+    report = diagnostics.collect_runtime_diagnostics(
+        orchestrator,
+        browser_voice_enabled=True,
+    )
     serialized = json.dumps(report)
 
     assert report["status"] == "ready"
