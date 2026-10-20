@@ -456,13 +456,14 @@ class BrowserVoiceBridge:
                     "display_text": display_text,
                 }
 
-            self._last_text = normalized
-            self._last_at = now
             task_id = uuid.uuid4().hex[:10]
 
             # Admission is atomic. A busy command must not publish a fake queued
             # task or leave a phantom RUNNING entry in the dashboard. The lock
             # also prevents two simultaneous requests from both passing the gate.
+            # Do not mark a rejected busy command as the last accepted utterance:
+            # the user must be able to retry the same command as soon as the active
+            # task finishes, without the duplicate-speech guard swallowing it.
             if self._active_task is not None and not self._active_task.done():
                 return {
                     "ok": True,
@@ -476,6 +477,8 @@ class BrowserVoiceBridge:
                     "reason": "assistant_busy",
                 }
 
+            self._last_text = normalized
+            self._last_at = now
             self._task_generation += 1
             self._publish("listening", "You: " + display_text, task_id)
             self._publish("queued", "", task_id)
