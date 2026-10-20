@@ -10,11 +10,77 @@ import tempfile
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
+from concurrent.futures import Future
+from queue import Empty, Queue
 from typing import Any
 
 from jenefar.voice.speech import devanagari_to_roman, enforce_hinglish, roman_hinglish_for_voice
+
+
+_EXECUTOR_STOP = object()
+
+
+class _DaemonSingleWorkerExecutor:
+    """Small single-worker executor that cannot keep the Python process alive at exit."""
+
+    def __init__(self, *, thread_name_prefix: str):
+        self._queue: Queue[Any] = Queue()
+        self._lock = threading.Lock()
+        self._shutdown = False
+        self._thread = threading.Thread(
+            target=self._worker,
+            name=f"{thread_name_prefix}-1",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def submit(self, fn, /, *args, **kwargs) -> Future:
+        future: Future = Future()
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("Cannot schedule new tasks after voice executor shutdown.")
+            self._queue.put((future, fn, args, kwargs))
+        return future
+
+    def _worker(self) -> None:
+        while True:
+            item = self._queue.get()
+            try:
+                if item is _EXECUTOR_STOP:
+                    return
+                future, fn, args, kwargs = item
+                if not future.set_running_or_notify_cancel():
+                    continue
+                try:
+                    result = fn(*args, **kwargs)
+                except BaseException as exc:
+                    future.set_exception(exc)
+                else:
+                    future.set_result(result)
+            finally:
+                self._queue.task_done()
+
+    def shutdown(self, wait: bool = False, cancel_futures: bool = False) -> None:
+        with self._lock:
+            if self._shutdown:
+                thread = self._thread
+            else:
+                self._shutdown = True
+                if cancel_futures:
+                    while True:
+                        try:
+                            pending = self._queue.get_nowait()
+                        except Empty:
+                            break
+                        try:
+                            if pending is not _EXECUTOR_STOP:
+                                pending[0].cancel()
+                        finally:
+                            self._queue.task_done()
+                self._queue.put(_EXECUTOR_STOP)
+                thread = self._thread
+        if wait and thread.is_alive():
+            thread.join()
 
 
 class BrowserVoiceBridge:
@@ -33,13 +99,13 @@ class BrowserVoiceBridge:
             os.getenv("JENEFAR_BROWSER_VOICE_REPEAT_WINDOW", "1.8")
         )
         self._conversation_language = "Hinglish"
-        self._task_executor = ThreadPoolExecutor(
-            max_workers=1,
+        self._task_executor = _DaemonSingleWorkerExecutor(
             thread_name_prefix="jenefar-task",
         )
         self._task_lock = threading.RLock()
         self._active_task = None
         self._task_generation = 0
+        self._shutdown_requested = False
         self._last_assistant_text = ""
         self._last_assistant_spoken_at = 0.0
         try:
@@ -73,6 +139,8 @@ class BrowserVoiceBridge:
         audio_mime: str = "",
         data: dict[str, Any] | None = None,
     ) -> None:
+        if getattr(self, "_shutdown_requested", False):
+            return
         if self.avatar is not None:
             self.avatar.publish(
                 state,
@@ -433,6 +501,14 @@ class BrowserVoiceBridge:
         normalized = self.orchestrator.wakeword.normalize_stt_text(raw)
         now = time.monotonic()
         with self._ensure_task_lock():
+            if getattr(self, "_shutdown_requested", False):
+                return {
+                    "ok": False,
+                    "accepted": False,
+                    "status": "shutdown",
+                    "error": "Jenefar voice runtime is shutting down; restart it to accept new commands.",
+                    "text": display_text,
+                }
             if (
                 normalized
                 and normalized == self._last_text
@@ -593,6 +669,13 @@ class BrowserVoiceBridge:
         # generated. STT may finish after that reply and otherwise enqueue
         # microphone echo as a brand-new command.
         with self._ensure_task_lock():
+            if getattr(self, "_shutdown_requested", False):
+                return {
+                    "ok": False,
+                    "accepted": False,
+                    "status": "shutdown",
+                    "error": "Jenefar voice runtime is shutting down.",
+                }
             active_task = getattr(self, "_active_task", None)
             task_generation_at_start = int(getattr(self, "_task_generation", 0))
             if active_task is not None and not active_task.done():
@@ -826,9 +909,13 @@ class BrowserVoiceBridge:
         while True:
             task_id, text = self._speech_queue.get()
             try:
+                if task_id == "__JENEFAR_SHUTDOWN__":
+                    return
                 display_text = self._display_text(text)
                 speech_text = roman_hinglish_for_voice(display_text)
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+                if getattr(self, "_shutdown_requested", False):
+                    continue
                 if audio_b64:
                     self._publish(
                         "speaking",
@@ -847,4 +934,33 @@ class BrowserVoiceBridge:
                 self._speech_queue.task_done()
 
     def shutdown(self) -> None:
-        self._task_executor.shutdown(wait=False, cancel_futures=True)
+        # Stop admitting work first. The daemon task worker means an in-flight
+        # network/model call cannot hold process exit open if a provider ignores
+        # cancellation; model unloading still runs in the top-level shutdown path.
+        with self._ensure_task_lock():
+            if getattr(self, "_shutdown_requested", False):
+                return
+            self._shutdown_requested = True
+        try:
+            self._task_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception as exc:
+            print(f"[JENEFAR] Voice task executor shutdown warning: {type(exc).__name__}: {exc}")
+
+        # Drop queued TTS payloads so shutdown never keeps old speech waiting to
+        # play; a worker currently inside TTS exits when the bounded provider call
+        # returns and then consumes this sentinel.
+        while True:
+            try:
+                self._speech_queue.get_nowait()
+            except Empty:
+                break
+            else:
+                self._speech_queue.task_done()
+        try:
+            self._speech_queue.put_nowait(("__JENEFAR_SHUTDOWN__", ""))
+        except Exception:
+            pass
+        if self._speech_thread.is_alive():
+            self._speech_thread.join(timeout=0.5)
+            if self._speech_thread.is_alive():
+                print("[JENEFAR] Speech synthesis is still unwinding; daemon worker will not block process exit.")
