@@ -163,3 +163,25 @@ def test_online_window_is_limited_by_local_fallback_reserve(monkeypatch):
     now = 100.0
     deadline = 160.0
     assert LLMClient._online_request_deadline(deadline, now=now) == 115.0
+
+def test_tool_failure_verification_does_not_mark_unresolved_action_successful():
+    failures = [
+        {"tool": "terminal_execute", "stage": "execution", "error": "Terminal command exited with code 7."},
+        {"tool": "workspace_read_file", "stage": "execution", "error": "Path not found."},
+    ]
+    successes = [{"tool": "terminal_execute"}]
+
+    unresolved = JenefarOrchestrator._unresolved_tool_failures(failures, successes)
+
+    assert unresolved == [failures[1]]
+
+
+def test_tool_failure_verification_resolves_retried_success_of_same_tool():
+    failures = [
+        {"tool": "terminal_execute", "stage": "execution", "error": "temporary failure"},
+    ]
+    successes = [
+        {"tool": "terminal_execute"},
+    ]
+
+    assert JenefarOrchestrator._unresolved_tool_failures(failures, successes) == []
