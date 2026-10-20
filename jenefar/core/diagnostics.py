@@ -259,6 +259,113 @@ def _whisper_status() -> dict[str, Any]:
     }
 
 
+def _online_provider_status(orchestrator=None) -> dict[str, Any]:
+    """Report provider availability/cooldowns without exposing keys or endpoints."""
+    try:
+        from jenefar.core.provider_pool import ProviderPool
+        base_pool = ProviderPool()
+    except Exception as exc:
+        return {
+            "available": False,
+            "order": [],
+            "providers": [],
+            "message": f"Provider routing status unavailable ({type(exc).__name__}).",
+        }
+
+    source_pools = []
+    try:
+        for agent in getattr(getattr(orchestrator, "router", None), "agents", []) or []:
+            client = getattr(agent, "llm", None)
+            source = getattr(client, "providers", None)
+            if source is not None and source not in source_pools:
+                source_pools.append(source)
+    except Exception:
+        source_pools = []
+    if not source_pools:
+        source_pools = [base_pool]
+
+    import time
+    now = time.monotonic()
+    providers: list[dict[str, Any]] = []
+    for name in base_pool.CONFIGS:
+        try:
+            configured = bool(base_pool.configured(name))
+            cooldowns = [
+                max(0.0, float(getattr(source, "cooldowns", {}).get(name, 0.0)) - now)
+                for source in source_pools
+            ]
+            cooldown_seconds = max(cooldowns, default=0.0)
+            samples: list[float] = []
+            failures: list[int] = []
+            for source in source_pools:
+                samples.extend(
+                    float(value)
+                    for value in getattr(source, "latency_samples", {}).get(name, [])[-8:]
+                )
+                failures.append(int(getattr(source, "failure_samples", {}).get(name, 0)))
+            samples = samples[-8:]
+            model = base_pool.model(name, "fast")
+            providers.append({
+                "name": name,
+                "configured": configured,
+                "available": configured and cooldown_seconds <= 0.0,
+                "cooldown_seconds": round(cooldown_seconds, 1),
+                "model": model,
+                "latency_samples": len(samples),
+                "average_ms": round(sum(samples) / len(samples) * 1000, 1) if samples else None,
+                "last_ms": round(samples[-1] * 1000, 1) if samples else None,
+                "recent_failures": max(failures, default=0),
+            })
+        except Exception as exc:
+            providers.append({
+                "name": name,
+                "configured": False,
+                "available": False,
+                "cooldown_seconds": 0.0,
+                "model": None,
+                "latency_samples": 0,
+                "average_ms": None,
+                "last_ms": None,
+                "recent_failures": 0,
+                "message": f"Provider status probe failed ({type(exc).__name__}).",
+            })
+    try:
+        order = base_pool.order()
+    except Exception:
+        order = [item["name"] for item in providers]
+    configured_count = sum(1 for item in providers if item["configured"])
+    available_count = sum(1 for item in providers if item["available"])
+    return {
+        "available": bool(available_count),
+        "order": order,
+        "configured_count": configured_count,
+        "available_count": available_count,
+        "providers": providers,
+        "message": (
+            f"{available_count} configured cloud LLM provider(s) currently available; "
+            f"{configured_count} configured in total. A provider may still reject a request due to remote quota/billing."
+        ),
+    }
+
+
+def _voice_provider_status() -> dict[str, Any]:
+    """Expose configured STT/TTS provider order, never credentials."""
+    try:
+        from jenefar.voice.provider import ProviderVoiceRuntime
+        status = ProviderVoiceRuntime.audio_status()
+    except Exception as exc:
+        return {
+            "stt": None,
+            "tts": None,
+            "message": f"Voice provider status unavailable ({type(exc).__name__}).",
+        }
+    return {
+        "stt": status.get("stt"),
+        "tts": status.get("tts"),
+        "message": "Shows configured fallback order only; it cannot pre-verify provider quota or remote billing.",
+    }
+
+
 def _timeout_settings() -> dict[str, int]:
     def read(name: str, default: int, minimum: int, maximum: int) -> int:
         try:
@@ -286,8 +393,10 @@ def collect_runtime_diagnostics(
     audio = _audio_status()
     whisper = _whisper_status()
     ollama = _ollama_status()
+    online_providers = _online_provider_status(orchestrator)
+    voice_providers = _voice_provider_status()
 
-    desktop: dict[str, Any] = {"available": False, "message": "Desktop backend is not connected."}
+    desktop: dict[str, Any> = {"available": False, "message": "Desktop backend is not connected."}
     if orchestrator is not None:
         try:
             broker = getattr(orchestrator, "tool_broker", None)
@@ -333,6 +442,9 @@ def collect_runtime_diagnostics(
          "message": f"Default input: {((audio['input'].get('default') or {}).get('name') or 'none')}."},
         {"id": "ollama", "status": "ready" if ollama["available"] else "unavailable",
          "ok": ollama["available"], "message": ollama["message"]},
+        {"id": "cloud_llm", "status": "cloud_available" if online_providers["available"] else ("local_fallback" if ollama["available"] else "unavailable"),
+         "ok": online_providers["available"] or ollama["available"],
+         "message": online_providers["message"] + (" Local model list is reachable as a fallback." if not online_providers["available"] and ollama["available"] else "")},
         {"id": "desktop", "status": "ready" if desktop["available"] else "partial_or_unavailable",
          "ok": desktop["available"], "message": desktop.get("message", "")},
     ]
@@ -348,13 +460,17 @@ def collect_runtime_diagnostics(
         "voice": {
             "browser_enabled": bool(browser_voice_enabled),
             "whisper": whisper,
+            "stt": voice_providers.get("stt"),
             "tts": {
+                **(voice_providers.get("tts") or {}),
                 "edge_tts_installed": _module_available("edge_tts"),
-                "browser_speech_synthesis": "browser fallback (availability confirmed by client)",
+                "browser_speech_synthesis": "browser fallback (actual capability is browser-reported)",
             },
+            "provider_message": voice_providers.get("message"),
         },
         "audio": audio,
         "local_llm": ollama,
+        "online_llm": online_providers,
         "desktop": desktop,
         "timeouts": _timeout_settings(),
         "active_task": active_task,
