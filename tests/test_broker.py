@@ -138,3 +138,22 @@ def test_terminal_result_includes_zero_exit_code_for_success():
     assert result["status"] == "ok"
     assert "exit_code=0" in result["result"]
     assert "verified" in result["result"]
+
+def test_terminal_failure_is_recorded_for_task_verification_without_raw_command():
+    import json
+
+    broker = ToolBroker(require_confirmation=True)
+    broker.set_task_context(agent="coding", task="Run the requested local test safely")
+    request = json.loads(broker.invoke(
+        "terminal_execute",
+        {"command": "python -c 'import sys; sys.exit(7)'", "timeout": 5},
+    ))
+    result = json.loads(broker.approve(request["pending_id"]))
+    failures = broker.consume_task_failures()
+
+    assert result["status"] == "error"
+    assert len(failures) == 1
+    assert failures[0]["tool"] == "terminal_execute"
+    assert failures[0]["stage"] == "execution"
+    assert "exit code 7" in failures[0]["error"]
+    assert "python -c" not in json.dumps(failures)
