@@ -35,6 +35,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     rejection_handler = None
     runtime_status_handler = None
     runtime_tasks_handler = None
+    runtime_diagnostics_handler = None
     runtime_cancel_handler = None
     shutdown_handler = None
 
@@ -121,6 +122,13 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 handler = self.runtime_status_handler
                 if handler is None:
                     self._json(503, {"error": "Runtime status is not connected to the orchestrator."})
+                else:
+                    self._json(200, handler())
+                return
+            if path == "/runtime/diagnostics":
+                handler = self.runtime_diagnostics_handler
+                if handler is None:
+                    self._json(503, {"error": "Runtime diagnostics are not connected."})
                 else:
                     self._json(200, handler())
                 return
@@ -512,6 +520,7 @@ class AvatarServer:
         rejection_handler=None,
         runtime_status_handler=None,
         runtime_tasks_handler=None,
+        runtime_diagnostics_handler=None,
         runtime_cancel_handler=None,
         shutdown_handler=None,
     ) -> None:
@@ -526,6 +535,7 @@ class AvatarServer:
         self.rejection_handler = rejection_handler
         self.runtime_status_handler = runtime_status_handler
         self.runtime_tasks_handler = runtime_tasks_handler
+        self.runtime_diagnostics_handler = runtime_diagnostics_handler
         self.runtime_cancel_handler = runtime_cancel_handler
         self.shutdown_handler = shutdown_handler
         self._server: ThreadingHTTPServer | None = None
@@ -546,6 +556,7 @@ class AvatarServer:
         rejection_handler = self.rejection_handler
         runtime_status_handler = self.runtime_status_handler
         runtime_tasks_handler = self.runtime_tasks_handler
+        runtime_diagnostics_handler = self.runtime_diagnostics_handler
         runtime_cancel_handler = self.runtime_cancel_handler
         shutdown_handler = self.shutdown_handler
 
@@ -563,6 +574,7 @@ class AvatarServer:
         Handler.rejection_handler = staticmethod(rejection_handler) if rejection_handler is not None else None
         Handler.runtime_status_handler = staticmethod(runtime_status_handler) if runtime_status_handler is not None else None
         Handler.runtime_tasks_handler = staticmethod(runtime_tasks_handler) if runtime_tasks_handler is not None else None
+        Handler.runtime_diagnostics_handler = staticmethod(runtime_diagnostics_handler) if runtime_diagnostics_handler is not None else None
         Handler.runtime_cancel_handler = staticmethod(runtime_cancel_handler) if runtime_cancel_handler is not None else None
         Handler.shutdown_handler = staticmethod(shutdown_handler) if shutdown_handler is not None else None
         return Handler
