@@ -1468,6 +1468,8 @@ body.vrm-loaded #photo-avatar{display:none}
 .runtime-ops-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
 .runtime-ops-actions button{min-width:0;flex:1;padding:7px 8px;border:1px solid rgba(100,194,255,.2);border-radius:7px;background:rgba(12,75,116,.24);color:#b9eaff;font-size:7px;font-weight:850;letter-spacing:.08em;cursor:pointer}
 .runtime-ops-actions button:disabled{opacity:.4;cursor:not-allowed}
+#runtime-ops-diagnostics{border-color:rgba(94,224,205,.35);color:#aaf8e7}
+#runtime-ops-status{white-space:pre-line;max-height:210px;overflow:auto;line-height:1.45}
 #runtime-ops-shutdown{flex:1 0 100%;border-color:rgba(255,111,132,.36);background:rgba(100,20,38,.3);color:#ffb5c1}
 #runtime-ops-shutdown:hover:not(:disabled){background:rgba(145,26,53,.45);border-color:rgba(255,111,132,.62)}
 .runtime-ops-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.7fr);gap:7px;margin-top:7px}
