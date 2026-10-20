@@ -53,3 +53,11 @@ def test_busy_voice_command_does_not_publish_listening_or_queued_state():
     assert result["status"] == "busy"
     assert result["task_id"]
     assert bridge.events == []
+
+def test_empty_or_whitespace_assistant_reply_is_not_treated_as_success():
+    import pytest
+
+    with pytest.raises(RuntimeError, match="empty response"):
+        BrowserVoiceBridge._require_user_reply("   ")
+
+    assert BrowserVoiceBridge._require_user_reply("Done.") == "Done."
