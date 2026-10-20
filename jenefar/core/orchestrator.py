@@ -131,6 +131,21 @@ class JenefarOrchestrator:
         return min(max(value, 10.0), 300.0)
 
     @staticmethod
+    def _unresolved_tool_failures(
+        failures: list[dict[str, Any]],
+        successful_actions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """A failed tool is resolved only when that same tool later succeeds."""
+        successful_names = {
+            str(action.get("tool") or "unknown")
+            for action in successful_actions
+        }
+        return [
+            item for item in failures
+            if str(item.get("tool") or "unknown") not in successful_names
+        ]
+
+    @staticmethod
     def _late_dispatch_result_should_fail(deadline: float, result: Any, *, now: float | None = None) -> bool:
         """Reject late successes, but preserve a bounded provider-failure explanation.
 
@@ -596,14 +611,10 @@ class JenefarOrchestrator:
                 "provider": result_provider,
                 "last_event": "provider_unavailable" if provider_unavailable else "agent_result",
             })
-            successful_tool_names = {
-                str(action.get("tool") or "unknown")
-                for action in task_actions
-            }
-            unresolved_tool_failures = [
-                failure for failure in task_action_failures
-                if str(failure.get("tool") or "unknown") not in successful_tool_names
-            ]
+            unresolved_tool_failures = self._unresolved_tool_failures(
+                task_action_failures,
+                task_actions,
+            )
             trace.metadata["tool_failures"] = task_action_failures[:20]
             for action in task_actions:
                 trace.add_tool_call(
