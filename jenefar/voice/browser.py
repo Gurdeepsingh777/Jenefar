@@ -589,7 +589,7 @@ class BrowserVoiceBridge:
         # Do not transcribe stale audio while an assistant reply is being
         # generated. STT may finish after that reply and otherwise enqueue
         # microphone echo as a brand-new command.
-        with self._task_lock:
+        with self._ensure_task_lock():
             active_task = self._active_task
             task_generation_at_start = self._task_generation
             if active_task is not None and not active_task.done():
@@ -671,7 +671,7 @@ class BrowserVoiceBridge:
             f"[JENEFAR] Browser microphone command transcribed successfully "
             f"({len(transcript)} characters); submitting it to the command handler."
         )
-        with self._task_lock:
+        with self._ensure_task_lock():
             generation_changed = self._task_generation != task_generation_at_start
         if generation_changed:
             return {
