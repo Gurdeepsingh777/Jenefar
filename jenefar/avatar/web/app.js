@@ -1851,9 +1851,24 @@ async function refreshRuntimeDiagnostics(){
       audio_output:"SOUND OUTPUT",
       audio_input:"MIC INPUT",
       ollama:"LOCAL LLM",
+      cloud_llm:"CLOUD LLM / FAILOVER",
       desktop:"DESKTOP INPUT"
     };
     const statusText=item=>String(item?.status||"unknown").replaceAll("_"," ").toUpperCase();
+    const providers=Array.isArray(report.online_llm?.providers)?report.online_llm.providers:[];
+    const providerLines=providers.map(provider=>{
+      const state=!provider.configured?"NOT CONFIGURED"
+        :provider.available?"AVAILABLE"
+        :"COOLDOWN "+formatRuntimeDuration(provider.cooldown_seconds||0);
+      const latency=Number.isFinite(Number(provider.last_ms))
+        ? " · last "+formatRuntimeDuration(Number(provider.last_ms)/1000)
+        :"";
+      const failures=Number(provider.recent_failures||0);
+      return "CLOUD "+String(provider.name||"provider").toUpperCase()+" · "+state
+        +(provider.model?" · "+provider.model:"")+latency+(failures?" · failures "+failures:"");
+    });
+    const stt=report.voice?.stt;
+    const tts=report.voice?.tts;
     const lines=[
       "DIAGNOSTICS: "+String(report.status||"unknown").replaceAll("_"," ").toUpperCase(),
       ...checks.map(item=>{
@@ -1861,6 +1876,15 @@ async function refreshRuntimeDiagnostics(){
         const title=labelFor[item.id]||String(item.id||"CHECK");
         return icon+" · "+title+": "+statusText(item)+" — "+String(item.message||"");
       }),
+      ...providerLines,
+      "VOICE STT · "+(stt
+        ? String(stt.provider||"unknown")+"/"+String(stt.model||"model")
+          +(Array.isArray(stt.fallback)&&stt.fallback.length?" · fallback "+stt.fallback.join(" → "):"")
+        : "no hosted STT provider configured; local Whisper/browser fallback may be used"),
+      "VOICE TTS · "+(tts?.provider
+        ? String(tts.provider)+"/"+String(tts.model||"model")
+          +(Array.isArray(tts.fallback)&&tts.fallback.length?" · fallback "+tts.fallback.join(" → "):"")
+        : "no server TTS provider configured; browser SpeechSynthesis is the fallback"),
       "TIMEOUTS · task "+Number(report.timeouts?.task_seconds||0)+"s"
         +" · cloud "+Number(report.timeouts?.online_window_seconds||0)+"s"
         +" · local reserve "+Number(report.timeouts?.local_reserve_seconds||0)+"s"
