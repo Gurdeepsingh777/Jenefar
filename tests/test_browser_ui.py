@@ -169,9 +169,13 @@ def test_no_internal_model_metadata_is_appended_to_spoken_output():
     assert "[Model:" not in orch
 
 
-def test_browser_voice_bridge_is_serialized():
+def test_browser_voice_bridge_is_serialized_and_shutdown_safe():
     bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
-    assert "max_workers=1" in bridge
+    assert "class _DaemonSingleWorkerExecutor" in bridge
+    assert "self._queue: Queue[Any] = Queue()" in bridge
+    assert "daemon=True" in bridge
+    assert "self._task_executor = _DaemonSingleWorkerExecutor(" in bridge
+    assert "cancel_futures=True" in bridge
 
 
 def test_dashboard_has_explicit_fixed_regions():
