@@ -396,7 +396,7 @@ def collect_runtime_diagnostics(
     online_providers = _online_provider_status(orchestrator)
     voice_providers = _voice_provider_status()
 
-    desktop: dict[str, Any> = {"available": False, "message": "Desktop backend is not connected."}
+    desktop: dict[str, Any] = {"available": False, "message": "Desktop backend is not connected."}
     if orchestrator is not None:
         try:
             broker = getattr(orchestrator, "tool_broker", None)
