@@ -38,12 +38,29 @@ def get_gpu() -> dict:
     }
 
 
+def get_process_memory() -> dict:
+    """Return Jenefar's own resident memory separately from host-wide RAM."""
+    import os
+
+    try:
+        process = psutil.Process(os.getpid())
+        rss = int(process.memory_info().rss)
+        return {
+            "memory_bytes": rss,
+            "memory_mb": round(rss / 1024**2, 1),
+            "memory_percent": round(float(process.memory_percent()), 2),
+        }
+    except (OSError, psutil.Error):
+        return {"memory_bytes": None, "memory_mb": None, "memory_percent": None}
+
+
 def get_system_stats() -> dict:
     """Build the JSON-safe payload broadcast to local dashboard clients."""
     return {
         "timestamp": time.time(),
         "cpu": get_cpu(),
         "ram": get_ram(),
+        "process": get_process_memory(),
         "gpu": get_gpu(),
     }
 
