@@ -89,6 +89,16 @@ class BrowserVoiceBridge:
         return devanagari_to_roman(str(text or "").strip())
 
     @staticmethod
+    def _require_user_reply(reply: Any) -> str:
+        """Never report an empty assistant result as a successful completed task."""
+        value = str(reply or "").strip()
+        if not value:
+            raise RuntimeError(
+                "The task handler returned an empty response. Check the task trace and model diagnostics."
+            )
+        return value
+
+    @staticmethod
     def _direct_openai_key() -> str:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         return "" if not key or key.startswith("sk-or-") else key
@@ -522,6 +532,7 @@ class BrowserVoiceBridge:
                 self.orchestrator._latest_scan_result = None
             result = self.orchestrator._approve_pending(approval_id)
             task_id = uuid.uuid4().hex[:10]
+            reply = self._require_user_reply(reply)
             structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
             if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
                 "host_discovery", "port_scan"
