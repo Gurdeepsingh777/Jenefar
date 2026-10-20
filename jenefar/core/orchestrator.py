@@ -553,6 +553,7 @@ class JenefarOrchestrator:
             self._avatar_activity("thinking", "")
             retry_count_before = self.self_healing.health.retries
             task_actions: list[dict[str, str]] = []
+            task_action_failures: list[dict[str, str]] = []
             if hasattr(self.tool_broker, "set_task_context"):
                 self.tool_broker.set_task_context(
                     agent=plan.agent,
@@ -574,6 +575,8 @@ class JenefarOrchestrator:
             finally:
                 if hasattr(self.tool_broker, "consume_task_actions"):
                     task_actions = self.tool_broker.consume_task_actions()
+                if hasattr(self.tool_broker, "consume_task_failures"):
+                    task_action_failures = self.tool_broker.consume_task_failures()
                 if hasattr(self.tool_broker, "clear_task_context"):
                     self.tool_broker.clear_task_context()
             trace.metadata["self_healing"] = {
@@ -593,10 +596,28 @@ class JenefarOrchestrator:
                 "provider": result_provider,
                 "last_event": "provider_unavailable" if provider_unavailable else "agent_result",
             })
+            successful_tool_names = {
+                str(action.get("tool") or "unknown")
+                for action in task_actions
+            }
+            unresolved_tool_failures = [
+                failure for failure in task_action_failures
+                if str(failure.get("tool") or "unknown") not in successful_tool_names
+            ]
+            trace.metadata["tool_failures"] = task_action_failures[:20]
             for action in task_actions:
                 trace.add_tool_call(
                     name=str(action.get("tool") or "unknown"),
                     status="success",
+                )
+            for failure in task_action_failures[:20]:
+                trace.add_tool_call(
+                    name=str(failure.get("tool") or "unknown"),
+                    status="failed",
+                    result={
+                        "stage": str(failure.get("stage") or "execution")[:60],
+                        "error": str(failure.get("error") or "Tool failed")[:500],
+                    },
                 )
             self._avatar_activity("thinking", "")
             trace.provider = str(result.metadata.get("provider", ""))
@@ -609,14 +630,39 @@ class JenefarOrchestrator:
             output = self.verifier.verify(text, result.content)
             from jenefar.voice.speech import devanagari_to_roman
             output = devanagari_to_roman(output)
+            if unresolved_tool_failures:
+                failures_text = "; ".join(
+                    f"{str(item.get('tool') or 'unknown')} "
+                    f"[{str(item.get('stage') or 'execution')}]: "
+                    f"{str(item.get('error') or 'tool failed')[:250]}"
+                    for item in unresolved_tool_failures[:5]
+                )
+                trace.add_error(
+                    "Tool execution was not verified as successful: " + failures_text
+                )
+                original_output = str(output or "").strip()
+                output = (
+                    "Task ko successfully complete verify nahi kar saka. "
+                    "Yeh tool attempt fail hua, isliye main action ko successful mark nahi kar raha: "
+                    + failures_text
+                    + (
+                        "\nAssistant ka unverified summary: " + original_output[:600]
+                        if original_output else ""
+                    )
+                )
             verification = {
-                "passed": bool(output and output.strip()) and not provider_unavailable,
+                "passed": bool(output and output.strip())
+                and not provider_unavailable
+                and not unresolved_tool_failures,
                 "verifier": self.verifier.__class__.__name__,
                 "provider_available": not provider_unavailable,
+                "unresolved_tool_failures": unresolved_tool_failures[:5],
             }
             awaiting = result.metadata.get("provider") in {"approval_required", "local_approval_required"}
+            has_execution_failure = bool(unresolved_tool_failures)
+            task_failed = provider_unavailable or has_execution_failure
             trace.finish(
-                status="awaiting_approval" if awaiting else ("error" if provider_unavailable else "success"),
+                status="awaiting_approval" if awaiting else ("error" if task_failed else "success"),
                 provider=trace.provider,
                 verification=verification,
             )
@@ -630,13 +676,14 @@ class JenefarOrchestrator:
                     output,
                     importance=0.5,
                 )
-                self.graph.learn_text(output)
-                if len(self.session.messages) % 6 == 0:
-                    self.memory_engine.consolidate_messages(
-                        self.session.session_id,
-                        self.session.recent(12),
-                        importance=0.72,
-                    )
+                if not has_execution_failure:
+                    self.graph.learn_text(output)
+                    if len(self.session.messages) % 6 == 0:
+                        self.memory_engine.consolidate_messages(
+                            self.session.session_id,
+                            self.session.recent(12),
+                            importance=0.72,
+                        )
             self._persist_runtime_trace(
                 trace,
                 task=text,
@@ -649,34 +696,39 @@ class JenefarOrchestrator:
                 self._avatar_state("waiting_approval", output)
             else:
                 self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
-                self._avatar_state("error" if provider_unavailable else "speaking", output)
+                self._avatar_state("error" if task_failed else "speaking", output)
             if awaiting:
                 self.task_lifecycle.transition(trace.trace_id, "waiting_approval", reason="approval_required", provider=trace.provider, agent=trace.actual_agent or trace.planned_agent)
                 self.runtime_context.update({"state": "waiting_approval", "last_event": "approval_required"})
                 if self.production is not None:
                     self.production.task_finished(trace.trace_id, state="waiting_approval", agent=trace.actual_agent or trace.planned_agent, provider=trace.provider)
             else:
-                final_task_state = "failed" if provider_unavailable else "completed"
+                final_task_state = "failed" if task_failed else "completed"
+                failure_reason = output if task_failed else ""
                 self.task_lifecycle.transition(
                     trace.trace_id,
                     final_task_state,
-                    reason=output if provider_unavailable else "",
+                    reason=failure_reason,
                     provider=trace.provider,
                     agent=trace.actual_agent or trace.planned_agent,
                 )
                 self.runtime_context.update({
-                    "state": "error" if provider_unavailable else "speaking",
-                    "last_event": "provider_unavailable" if provider_unavailable else "response_ready",
+                    "state": "error" if task_failed else "speaking",
+                    "last_event": (
+                        "tool_execution_failed" if has_execution_failure
+                        else "provider_unavailable" if provider_unavailable
+                        else "response_ready"
+                    ),
                 })
                 if self.production is not None:
-                    if not provider_unavailable:
+                    if not task_failed:
                         self.production.remember(output, kind="episodic", importance=0.5, provenance="assistant")
                     self.production.task_finished(
                         trace.trace_id,
                         state=final_task_state,
                         agent=trace.actual_agent or trace.planned_agent,
                         provider=trace.provider,
-                        error=output if provider_unavailable else "",
+                        error=failure_reason,
                     )
                 self._runtime_task_id = None
                 self._active_cancel_token = None
