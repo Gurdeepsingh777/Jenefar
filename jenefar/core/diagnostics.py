@@ -70,7 +70,11 @@ def _audio_status() -> dict[str, Any]:
         body = text[start:] if end < 0 else text[start:end]
         items = []
         for line in body.splitlines():
-            match = re.match(r"^\s*(\*)?\s*(\d+)\.\s+([^\[]+?)(?:\s+\[.*)?\s*$", line)
+            # wpctl prefixes tree drawing characters (│, ├─) before node IDs.
+            match = re.match(
+                r"^\s*[^0-9*]*?(\*)?\s*(\d+)\.\s+([^\[]+?)(?:\s+\[.*)?\s*$",
+                line,
+            )
             if not match:
                 continue
             name = match.group(3).strip()
