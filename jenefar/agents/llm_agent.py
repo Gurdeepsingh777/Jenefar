@@ -95,7 +95,9 @@ class BaseLLMAgent(BaseAgent):
             if labelled_final:
                 value = value[labelled_final.end():]
         value = re.sub(r"(?is)^\s*(?:<\|assistant\|>\s*)?(?:final answer|final)\s*:\s*", "", value)
-        return " ".join(value.split()).strip()
+        # Preserve Markdown/list line breaks; only trim whitespace on each line.
+        value = "\n".join(line.rstrip() for line in value.strip().splitlines())
+        return value.strip()
 
     @staticmethod
     def _is_internal_narration(content: str) -> bool:
