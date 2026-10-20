@@ -1822,6 +1822,43 @@ class ToolBroker:
         try:
             self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
+
+            # Do not wrap a failed handler/terminal exit as outer status="ok".
+            # The model and task verifier must see the actual execution outcome.
+            handler_status = (
+                str(value.get("status", "")).strip().lower()
+                if isinstance(value, dict) else ""
+            )
+            terminal_match = (
+                re.match(r"^\\[exit_code=(-?\\d+);", value)
+                if name == "terminal_execute" and isinstance(value, str) else None
+            )
+            terminal_exit = int(terminal_match.group(1)) if terminal_match else None
+            failed_terminal = terminal_exit is not None and terminal_exit != 0
+            failed_handler = handler_status in {"error", "denied", "failed"}
+            if failed_terminal or failed_handler:
+                reason = (
+                    f"Terminal command exited with code {terminal_exit}."
+                    if failed_terminal else
+                    str(value.get("error") or value.get("message") or handler_status)
+                )
+                self.audit.record(
+                    "tool_failed",
+                    tool=name,
+                    arguments=arguments,
+                    exit_code=terminal_exit,
+                    error=reason,
+                )
+                self._activity("error", f"Tool failed: {name} -> {reason}")
+                return json.dumps({
+                    "status": "error",
+                    "tool": name,
+                    "executed": True,
+                    "exit_code": terminal_exit,
+                    "error": reason,
+                    "result": value,
+                }, ensure_ascii=False, default=str)
+
             if (
                 self._task_context.get("task")
                 and name not in {
