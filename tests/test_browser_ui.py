@@ -846,3 +846,22 @@ def test_browser_mic_detects_suspended_audio_context_and_silent_input():
 def test_browser_mic_short_recording_does_not_fail_silently():
     js = (WEB / "app.js").read_text(encoding="utf-8")
     assert "AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS" in js
+
+def test_runtime_diagnostics_endpoint_and_dashboard_control_are_wired():
+    from pathlib import Path
+
+    web = ROOT / "jenefar" / "avatar" / "web"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    app = (web / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    diagnostics = (ROOT / "jenefar" / "core" / "diagnostics.py").read_text(encoding="utf-8")
+
+    assert 'id="runtime-ops-diagnostics"' in html
+    assert 'fetch("/runtime/diagnostics?ts="+Date.now()' in app
+    assert 'if path == "/runtime/diagnostics":' in server
+    assert "runtime_diagnostics_handler= lambda" in run or "runtime_diagnostics_handler=lambda" in run
+    assert "collect_runtime_diagnostics" in diagnostics
+    assert "_audio_status()" in diagnostics
+    assert "_whisper_status()" in diagnostics
+    assert "_ollama_status()" in diagnostics
