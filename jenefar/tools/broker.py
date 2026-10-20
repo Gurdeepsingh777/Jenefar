@@ -1830,7 +1830,7 @@ class ToolBroker:
                 if isinstance(value, dict) else ""
             )
             terminal_match = (
-                re.match(r"^\\[exit_code=(-?\\d+);", value)
+                re.match(r"^\[exit_code=(-?\d+);", value)
                 if name == "terminal_execute" and isinstance(value, str) else None
             )
             terminal_exit = int(terminal_match.group(1)) if terminal_match else None
