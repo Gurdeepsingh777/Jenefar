@@ -88,6 +88,14 @@ class BrowserVoiceBridge:
         # Preserve markdown/code/technical tokens; only force Hindi script to Roman.
         return devanagari_to_roman(str(text or "").strip())
 
+    def _ensure_task_lock(self):
+        """Provide a lock for normal instances and lightweight embedded/test fixtures."""
+        lock = getattr(self, "_task_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._task_lock = lock
+        return lock
+
     @staticmethod
     def _require_user_reply(reply: Any) -> str:
         """Never report an empty assistant result as a successful completed task."""
@@ -424,7 +432,7 @@ class BrowserVoiceBridge:
         display_text = self._display_text(raw)
         normalized = self.orchestrator.wakeword.normalize_stt_text(raw)
         now = time.monotonic()
-        with self._task_lock:
+        with self._ensure_task_lock():
             if (
                 normalized
                 and normalized == self._last_text
@@ -532,7 +540,6 @@ class BrowserVoiceBridge:
                 self.orchestrator._latest_scan_result = None
             result = self.orchestrator._approve_pending(approval_id)
             task_id = uuid.uuid4().hex[:10]
-            reply = self._require_user_reply(reply)
             structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
             if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
                 "host_discovery", "port_scan"
@@ -741,6 +748,7 @@ class BrowserVoiceBridge:
                     response_language="Hinglish",
                 )
 
+            reply = self._require_user_reply(reply)
             structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
             if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
                 "host_discovery", "port_scan"
