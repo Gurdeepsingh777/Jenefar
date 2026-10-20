@@ -123,56 +123,86 @@ def _audio_status() -> dict[str, Any]:
 
 
 def _ollama_status() -> dict[str, Any]:
+    """Probe the configured local chat server without loading a model."""
     configured = os.getenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434").strip()
     parsed = urlsplit(configured if "://" in configured else "http://" + configured)
     origin = urlunsplit((parsed.scheme or "http", parsed.netloc, "", "", ""))
-    url = origin.rstrip("/") + "/api/tags"
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=1.4) as response:
-            import json
-            payload = json.loads(response.read(1024 * 1024).decode("utf-8", errors="replace"))
-        models = payload.get("models") if isinstance(payload, dict) else []
-        names = [
-            str(item.get("name") or item.get("model") or "").strip()
-            for item in (models or [])
-            if isinstance(item, dict)
-        ]
-        names = [name for name in names if name]
-        configured_model = (
-            os.getenv("JENEFAR_LOCAL_LLM_MODEL_FAST", "").strip()
-            or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
-        )
-        configured_model = configured_model or None
-        configured_fallback = os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip() or None
-        return {
-            "available": True,
-            "endpoint": origin,
-            "model_count": len(names),
-            "models": names[:12],
-            "configured_model": configured_model,
-            "configured_model_installed": configured_model in names if configured_model else None,
-            "configured_fallback": configured_fallback,
-            "fallback_installed": configured_fallback in names if configured_fallback else None,
-            "message": "Ollama's model list is reachable; this does not guarantee a model will meet the task deadline.",
-        }
-    except Exception as exc:
-        return {
-            "available": False,
-            "endpoint": origin,
-            "model_count": 0,
-            "models": [],
-            "configured_model": (
+    config_api = os.getenv("JENEFAR_LOCAL_LLM_API", "auto").strip().casefold()
+    configured_path = parsed.path.rstrip("/")
+    if configured_path.endswith("/v1"):
+        openai_models_url = configured.rstrip("/") + "/models"
+    else:
+        openai_models_url = origin.rstrip("/") + "/v1/models"
+
+    candidates: list[tuple[str, str]] = []
+    if config_api not in {"openai", "openai-compatible", "openai_compatible"}:
+        candidates.append((origin.rstrip("/") + "/api/tags", "ollama"))
+    if config_api not in {"ollama"}:
+        candidates.append((openai_models_url, "openai-compatible"))
+
+    errors: list[str] = []
+    for url, protocol in candidates:
+        request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=1.4) as response:
+                import json
+                payload = json.loads(response.read(1024 * 1024).decode("utf-8", errors="replace"))
+            if protocol == "ollama":
+                items = payload.get("models") if isinstance(payload, dict) else []
+                names = [
+                    str(item.get("name") or item.get("model") or "").strip()
+                    for item in (items or [])
+                    if isinstance(item, dict)
+                ]
+            else:
+                items = payload.get("data") if isinstance(payload, dict) else []
+                names = [
+                    str(item.get("id") or "").strip()
+                    for item in (items or [])
+                    if isinstance(item, dict)
+                ]
+            names = [name for name in names if name]
+            configured_model = (
                 os.getenv("JENEFAR_LOCAL_LLM_MODEL_FAST", "").strip()
                 or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
                 or None
-            ),
-            "configured_model_installed": None,
-            "configured_fallback": os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip() or None,
-            "fallback_installed": False,
-            "message": f"Local Ollama model list is unavailable ({type(exc).__name__}).",
-        }
+            )
+            configured_fallback = os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip() or None
+            return {
+                "available": True,
+                "protocol": protocol,
+                "endpoint": origin,
+                "model_count": len(names),
+                "models": names[:12],
+                "configured_model": configured_model,
+                "configured_model_installed": configured_model in names if configured_model else None,
+                "configured_fallback": configured_fallback,
+                "fallback_installed": configured_fallback in names if configured_fallback else None,
+                "message": (
+                    f"Local {protocol} model list is reachable; this does not guarantee a model "
+                    "will meet the task deadline."
+                ),
+            }
+        except Exception as exc:
+            errors.append(f"{protocol}: {type(exc).__name__}")
 
+    detail = "; ".join(errors) if errors else "no compatible local API configured"
+    return {
+        "available": False,
+        "protocol": None,
+        "endpoint": origin,
+        "model_count": 0,
+        "models": [],
+        "configured_model": (
+            os.getenv("JENEFAR_LOCAL_LLM_MODEL_FAST", "").strip()
+            or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
+            or None
+        ),
+        "configured_model_installed": None,
+        "configured_fallback": os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip() or None,
+        "fallback_installed": False,
+        "message": f"Local model list is unavailable ({detail}).",
+    }
 
 def _whisper_status() -> dict[str, Any]:
     package_available = _module_available("faster_whisper")
