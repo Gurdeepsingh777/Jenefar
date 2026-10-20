@@ -23,10 +23,14 @@ def test_system_stats_has_stable_payload_shape(monkeypatch):
         "available": False, "vendor": None, "name": None, "usage": 0.0,
         "power_w": None, "memory_used_gb": None, "memory_total_gb": None,
     })
+    monkeypatch.setattr(system_monitor, "get_process_memory", lambda: {
+        "memory_bytes": 1024 * 1024, "memory_mb": 1.0, "memory_percent": 0.01,
+    })
     result = system_monitor.get_system_stats()
     assert isinstance(result["timestamp"], float)
     assert result["cpu"] == 12.5
     assert result["ram"]["percent"] == 40.0
+    assert result["process"]["memory_mb"] == 1.0
     assert result["gpu"]["available"] is False
 
 
@@ -94,3 +98,9 @@ def test_current_hud_is_wired_to_live_telemetry():
     assert '":8765"' in app
     assert "function updateTelemetry(data)" in app
     assert "setupLiveSystemTelemetry" in app
+
+def test_process_memory_is_reported_separately_from_system_ram():
+    result = system_monitor.get_process_memory()
+    assert set(result) == {"memory_bytes", "memory_mb", "memory_percent"}
+    assert result["memory_bytes"] is None or result["memory_bytes"] > 0
+    assert result["memory_mb"] is None or result["memory_mb"] > 0
