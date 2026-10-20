@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
@@ -66,6 +67,35 @@ class BaseLLMAgent(BaseAgent):
             "yaad rakho", "yaad hai", "meri memory", "pichli baat",
         )
         return any(marker in value for marker in markers)
+
+    @staticmethod
+    def _strip_internal_reasoning(content: str) -> str:
+        """Remove explicit model reasoning tags before any answer is displayed or spoken."""
+        value = str(content or "").strip()
+        if not value:
+            return ""
+        # Some local instruct models ignore the instruction not to expose chain-of-thought
+        # and emit tagged reasoning followed by a clean final answer.
+        value = re.sub(
+            r"<(?:think|analysis|reasoning)>.*?</(?:think|analysis|reasoning)>",
+            " ",
+            value,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        # Support common token-style reasoning/final separators without depending on a
+        # particular model family.
+        final_token = re.search(r"<\|final\|>", value, flags=re.IGNORECASE)
+        if final_token:
+            value = value[final_token.end():]
+        else:
+            labelled_final = re.search(
+                r"(?is)^\s*(?:analysis|reasoning|chain of thought|thoughts)\s*:\s*.*?\n\s*(?:final answer|final|answer)\s*:\s*",
+                value,
+            )
+            if labelled_final:
+                value = value[labelled_final.end():]
+        value = re.sub(r"(?is)^\s*(?:<\|assistant\|>\s*)?(?:final answer|final)\s*:\s*", "", value)
+        return " ".join(value.split()).strip()
 
     @staticmethod
     def _is_internal_narration(content: str) -> bool:
@@ -303,14 +333,20 @@ class BaseLLMAgent(BaseAgent):
             cancel_token=context.metadata.get("cancel_token"),
         )
 
-        # Small local models sometimes emit a narration about the old chat rather
-        # than a user-facing answer. Never display/speak that narration as if it
-        # answered the current request. Retry once against the current request only,
-        # with tools disabled so an already-executed action cannot run twice.
+        # Strip explicit reasoning blocks for every provider before the text reaches
+        # the dashboard or TTS. Then catch local models that narrate old chat instead
+        # of answering the current request.
+        cleaned_response = self._strip_internal_reasoning(response.text)
+        if cleaned_response != response.text:
+            print("[JENEFAR] Removed explicit model reasoning markup from user-facing output.")
+            response.text = cleaned_response
         if (
             response.provider == "local"
             and not response.pending_tools
-            and self._is_internal_narration(response.text)
+            and (
+                not str(response.text or "").strip()
+                or self._is_internal_narration(response.text)
+            )
         ):
             print(
                 "[JENEFAR] Rejected local model output that narrated stale conversation; "
