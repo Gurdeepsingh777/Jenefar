@@ -682,6 +682,7 @@ def main() -> int:
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.core.diagnostics import collect_runtime_diagnostics
         from jenefar.monitoring.server import start_monitoring_server
 
         if args.online_only:
@@ -725,6 +726,10 @@ def main() -> int:
             rejection_handler=orchestrator._reject_pending_workflow,
             runtime_status_handler=orchestrator.runtime_status,
             runtime_tasks_handler=orchestrator.runtime_tasks,
+            runtime_diagnostics_handler=lambda: collect_runtime_diagnostics(
+                orchestrator,
+                browser_voice_enabled=browser_voice_enabled,
+            ),
             runtime_cancel_handler=orchestrator.cancel_active_task,
             shutdown_handler=request_runtime_shutdown,
         )
