@@ -139,14 +139,21 @@ def _ollama_status() -> dict[str, Any]:
             if isinstance(item, dict)
         ]
         names = [name for name in names if name]
-        configured_model = os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip()
+        configured_model = (
+            os.getenv("JENEFAR_LOCAL_LLM_MODEL_FAST", "").strip()
+            or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
+        )
+        configured_model = configured_model or None
+        configured_fallback = os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip() or None
         return {
             "available": True,
             "endpoint": origin,
             "model_count": len(names),
             "models": names[:12],
-            "configured_fallback": configured_model or None,
-            "fallback_installed": configured_model in names if configured_model else None,
+            "configured_model": configured_model,
+            "configured_model_installed": configured_model in names if configured_model else None,
+            "configured_fallback": configured_fallback,
+            "fallback_installed": configured_fallback in names if configured_fallback else None,
             "message": "Ollama's model list is reachable; this does not guarantee a model will meet the task deadline.",
         }
     except Exception as exc:
@@ -155,6 +162,12 @@ def _ollama_status() -> dict[str, Any]:
             "endpoint": origin,
             "model_count": 0,
             "models": [],
+            "configured_model": (
+                os.getenv("JENEFAR_LOCAL_LLM_MODEL_FAST", "").strip()
+                or os.getenv("JENEFAR_LOCAL_LLM_MODEL", "").strip()
+                or None
+            ),
+            "configured_model_installed": None,
             "configured_fallback": os.getenv("JENEFAR_LOCAL_LLM_FALLBACK_MODEL", "").strip() or None,
             "fallback_installed": False,
             "message": f"Local Ollama model list is unavailable ({type(exc).__name__}).",
