@@ -37,6 +37,7 @@ class BrowserVoiceBridge:
             max_workers=1,
             thread_name_prefix="jenefar-task",
         )
+        self._task_lock = threading.RLock()
         self._active_task = None
         self._task_generation = 0
         self._last_assistant_text = ""
@@ -413,53 +414,59 @@ class BrowserVoiceBridge:
         display_text = self._display_text(raw)
         normalized = self.orchestrator.wakeword.normalize_stt_text(raw)
         now = time.monotonic()
-        if (
-            normalized
-            and normalized == self._last_text
-            and now - self._last_at < self._repeat_window
-        ):
-            return {
-                "ok": True,
-                "ignored": True,
-                "reason": "duplicate",
-                "text": display_text,
-                "display_text": display_text,
-            }
+        with self._task_lock:
+            if (
+                normalized
+                and normalized == self._last_text
+                and now - self._last_at < self._repeat_window
+            ):
+                return {
+                    "ok": True,
+                    "ignored": True,
+                    "reason": "duplicate",
+                    "text": display_text,
+                    "display_text": display_text,
+                }
 
-        if normalized.strip() == "exit":
+            if normalized.strip() == "exit":
+                self._last_text = normalized
+                self._last_at = now
+                return {
+                    "ok": True,
+                    "exit": True,
+                    "text": display_text,
+                    "display_text": display_text,
+                }
+
             self._last_text = normalized
             self._last_at = now
-            return {
-                "ok": True,
-                "exit": True,
-                "text": display_text,
-                "display_text": display_text,
-            }
+            task_id = uuid.uuid4().hex[:10]
 
-        self._last_text = normalized
-        self._last_at = now
-        task_id = uuid.uuid4().hex[:10]
-        self._publish("listening", "You: " + display_text, task_id)
-        self._publish("queued", "", task_id)
+            # Admission is atomic. A busy command must not publish a fake queued
+            # task or leave a phantom RUNNING entry in the dashboard. The lock
+            # also prevents two simultaneous requests from both passing the gate.
+            if self._active_task is not None and not self._active_task.done():
+                return {
+                    "ok": True,
+                    "accepted": False,
+                    "queued": False,
+                    "busy": True,
+                    "task_id": task_id,
+                    "text": display_text,
+                    "display_text": display_text,
+                    "status": "busy",
+                    "reason": "assistant_busy",
+                }
 
-        if self._active_task is not None and not self._active_task.done():
-            return {
-                "ok": True,
-                "accepted": False,
-                "queued": False,
-                "busy": True,
-                "task_id": task_id,
-                "text": display_text,
-                "display_text": display_text,
-                "status": "busy",
-            }
+            self._task_generation += 1
+            self._publish("listening", "You: " + display_text, task_id)
+            self._publish("queued", "", task_id)
+            self._active_task = self._task_executor.submit(
+                self._run_task,
+                task_id,
+                display_text,
+            )
 
-        self._task_generation += 1
-        self._active_task = self._task_executor.submit(
-            self._run_task,
-            task_id,
-            display_text,
-        )
         return {
             "ok": True,
             "accepted": True,
@@ -564,17 +571,17 @@ class BrowserVoiceBridge:
         # Do not transcribe stale audio while an assistant reply is being
         # generated. STT may finish after that reply and otherwise enqueue
         # microphone echo as a brand-new command.
-        active_task = self._active_task
-        if active_task is not None and not active_task.done():
-            return {
-                "ok": True,
-                "accepted": False,
-                "busy": True,
-                "status": "busy",
-                "reason": "assistant_busy",
-            }
-
-        task_generation_at_start = self._task_generation
+        with self._task_lock:
+            active_task = self._active_task
+            task_generation_at_start = self._task_generation
+            if active_task is not None and not active_task.done():
+                return {
+                    "ok": True,
+                    "accepted": False,
+                    "busy": True,
+                    "status": "busy",
+                    "reason": "assistant_busy",
+                }
         import shutil
         import subprocess
 
@@ -646,7 +653,9 @@ class BrowserVoiceBridge:
             f"[JENEFAR] Browser microphone command transcribed successfully "
             f"({len(transcript)} characters); submitting it to the command handler."
         )
-        if self._task_generation != task_generation_at_start:
+        with self._task_lock:
+            generation_changed = self._task_generation != task_generation_at_start
+        if generation_changed:
             return {
                 "ok": True,
                 "accepted": False,
