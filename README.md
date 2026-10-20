@@ -74,6 +74,11 @@ Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime
 
 Voice provider behavior:
 
+- Runtime Operations panel me **RUN DIAGNOSTICS** button microphone input, selected audio output (including Dummy Output), cached Whisper, local Ollama/OpenAI-compatible model list, timeout configuration, and desktop input/capture ko ek report me dikhata hai. Ye read-only probes hain; ye audio device, model, ya system settings khud change nahi karte.
+- Dashboard CPU/RAM panel me host RAM ke saath Jenefar process ka apna RSS memory bhi dikhta hai, taaki system-wide use aur Jenefar ke use ko alag samjha ja sake.
+- Task admission atomic hai: assistant busy ho to rejected command fake queued/running task nahi banata. Blank assistant reply ko successful completion nahi maana jata.
+- Terminal tool result exact exit code, bounded timeout aur truncation status ke saath return karta hai; non-zero exit ko tool failure ke roop me report kiya jata hai, success ke roop me nahi.
+- Current request ko prompt me explicit delimiter ke saath last rakha jata hai. Unrelated old assistant narration filter hota hai, aur explicit reasoning markup user-facing reply/TTS se strip hota hai.
 - Browser microphone permission sirf MIC button click karne ke baad maangi jaati hai. Supported browsers par Jenefar pehle MediaRecorder se utterance capture karke server STT use karta hai, jo Hinglish ke liye preferred path hai.
 - Server STT configured OpenAI, Groq aur Gemini providers ko failover order me try karta hai. Quota/credits exhaust hone ya providers fail hone par cached local Whisper STT fallback try hota hai.
 - Local STT ke liye optional `faster-whisper` package aur ek Whisper model ki one-time download zaroori hai. Runtime model ko local cache se hi load karta hai, isliye mic use karte waqt model download nahi karta.
