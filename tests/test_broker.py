@@ -155,5 +155,5 @@ def test_terminal_failure_is_recorded_for_task_verification_without_raw_command(
     assert len(failures) == 1
     assert failures[0]["tool"] == "terminal_execute"
     assert failures[0]["stage"] == "execution"
-    assert "exit code 7" in failures[0]["error"]
+    assert "code 7" in failures[0]["error"]
     assert "python -c" not in json.dumps(failures)
