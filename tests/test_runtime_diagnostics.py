@@ -101,3 +101,15 @@ def test_runtime_diagnostics_handles_missing_audio_tools(monkeypatch):
     assert result["available"] is False
     assert result["output"]["status"] == "unknown"
     assert "wpctl" in result["message"]
+
+def test_online_provider_diagnostics_show_configuration_but_never_keys(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-gemini-provider-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-openai-provider-key")
+    monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", "gemini,openai")
+    result = diagnostics._online_provider_status()
+    serialized = json.dumps(result)
+
+    assert result["configured_count"] >= 2
+    assert [item["name"] for item in result["providers"]]
+    assert "secret-gemini-provider-key" not in serialized
+    assert "secret-openai-provider-key" not in serialized
