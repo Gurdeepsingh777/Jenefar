@@ -479,7 +479,7 @@ class BrowserVoiceBridge:
 
             self._last_text = normalized
             self._last_at = now
-            self._task_generation += 1
+            self._task_generation = int(getattr(self, "_task_generation", 0)) + 1
             self._publish("listening", "You: " + display_text, task_id)
             self._publish("queued", "", task_id)
             self._active_task = self._task_executor.submit(
@@ -593,8 +593,8 @@ class BrowserVoiceBridge:
         # generated. STT may finish after that reply and otherwise enqueue
         # microphone echo as a brand-new command.
         with self._ensure_task_lock():
-            active_task = self._active_task
-            task_generation_at_start = self._task_generation
+            active_task = getattr(self, "_active_task", None)
+            task_generation_at_start = int(getattr(self, "_task_generation", 0))
             if active_task is not None and not active_task.done():
                 return {
                     "ok": True,
@@ -675,7 +675,7 @@ class BrowserVoiceBridge:
             f"({len(transcript)} characters); submitting it to the command handler."
         )
         with self._ensure_task_lock():
-            generation_changed = self._task_generation != task_generation_at_start
+            generation_changed = int(getattr(self, "_task_generation", 0)) != task_generation_at_start
         if generation_changed:
             return {
                 "ok": True,
