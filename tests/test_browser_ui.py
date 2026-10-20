@@ -865,3 +865,7 @@ def test_runtime_diagnostics_endpoint_and_dashboard_control_are_wired():
     assert "_audio_status()" in diagnostics
     assert "_whisper_status()" in diagnostics
     assert "_ollama_status()" in diagnostics
+    assert "_online_provider_status(orchestrator)" in diagnostics
+    assert "CLOUD " in app
+    assert "VOICE STT" in app
+    assert "VOICE TTS" in app
