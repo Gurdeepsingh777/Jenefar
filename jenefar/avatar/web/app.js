@@ -2380,10 +2380,16 @@ refreshModelStatus();
       paintRing(ramRing, ramValue, data.ram.percent);
       const used = Number(data.ram.used_gb);
       const total = Number(data.ram.total_gb);
+      const processMb=Number(data.process?.memory_mb);
+      const processPercent=Number(data.process?.memory_percent);
+      const processSuffix=Number.isFinite(processMb)
+        ? " · Jenefar "+(processMb>=1024?(processMb/1024).toFixed(2)+" GB":processMb.toFixed(0)+" MB")
+          +(Number.isFinite(processPercent)?" ("+processPercent.toFixed(1)+"%)":"")
+        : "";
       if (ramDetail && Number.isFinite(used) && Number.isFinite(total)) {
-        ramDetail.textContent = used.toFixed(1) + " / " + total.toFixed(1) + " GB";
+        ramDetail.textContent = used.toFixed(1) + " / " + total.toFixed(1) + " GB" + processSuffix;
       } else if (ramDetail) {
-        ramDetail.textContent = "RAM " + Math.round(Number(data.ram.percent) || 0) + "%";
+        ramDetail.textContent = "RAM " + Math.round(Number(data.ram.percent) || 0) + "%" + processSuffix;
       }
     }
 
