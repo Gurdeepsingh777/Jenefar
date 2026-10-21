@@ -888,3 +888,17 @@ def test_busy_typed_command_gets_visible_explanation_instead_of_silent_return():
     assert "Command not queued: Jenefar is busy with another task." in js
     assert "ASSISTANT BUSY — wait or cancel the active task" in js
     assert "Main abhi ek task par kaam kar rahi hoon." in js
+
+
+
+def test_dashboard_diagnostics_reports_local_model_policy_and_timeout_controls():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    diagnostics = (ROOT / "jenefar" / "core" / "diagnostics.py").read_text(encoding="utf-8")
+
+    assert "LOCAL MODEL POLICY" in js
+    assert "local_max_params_billions" in js
+    assert "local_context_tokens" in js
+    assert '"local_max_params_billions"' in diagnostics
+    assert '"local_allow_large_model"' in diagnostics
+    assert '"local_think_enabled"' in diagnostics
+    assert '"local_keep_alive"' in diagnostics
