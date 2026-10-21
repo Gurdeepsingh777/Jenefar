@@ -873,3 +873,18 @@ def test_runtime_diagnostics_endpoint_and_dashboard_control_are_wired():
     assert "CLOUD " in app
     assert "VOICE STT" in app
     assert "VOICE TTS" in app
+
+def test_chat_finalizes_audio_and_terminal_task_states():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'function playBrowserAudio(base64,mime,text,taskId="")' in js
+    assert 'apply({state:"completed",task_id:taskId,text:""})' in js
+    assert '["result","speaking","speaking_fallback","error","cancelled","waiting_approval"]' in js
+    assert '["completed","error","cancelled"]' in js
+    assert "Task complete nahi ho saka." in js
+
+
+def test_busy_typed_command_gets_visible_explanation_instead_of_silent_return():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "Command not queued: Jenefar is busy with another task." in js
+    assert "ASSISTANT BUSY — wait or cancel the active task" in js
+    assert "Main abhi ek task par kaam kar rahi hoon." in js
