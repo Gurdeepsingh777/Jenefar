@@ -58,3 +58,26 @@ def test_orchestrator_runtime_snapshot_exposes_task_lifecycle(tmp_path, monkeypa
     assert snapshot["tasks"]["active"] is None
     assert snapshot["tasks"]["active_count"] == 0
     assert snapshot["tasks"]["history"] == []
+
+def test_orchestrator_activity_events_inherit_and_reset_voice_task_id():
+    import threading
+    from jenefar.core.orchestrator import JenefarOrchestrator
+
+    class Avatar:
+        def __init__(self):
+            self.events = []
+
+        def publish(self, state, text="", **kwargs):
+            self.events.append({"state": state, "text": text, **kwargs})
+
+    orchestrator = object.__new__(JenefarOrchestrator)
+    orchestrator.avatar = Avatar()
+    orchestrator._avatar_event_task = threading.local()
+
+    previous = orchestrator.bind_avatar_event_task("voice-task-123")
+    orchestrator._avatar_activity("thinking", "Planning current request")
+    orchestrator.reset_avatar_event_task(previous)
+    orchestrator._avatar_activity("idle", "Ready")
+
+    assert orchestrator.avatar.events[0]["task_id"] == "voice-task-123"
+    assert orchestrator.avatar.events[1]["task_id"] == ""
