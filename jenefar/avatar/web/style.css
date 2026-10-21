@@ -1512,3 +1512,15 @@ body.vrm-loaded #photo-avatar{display:none}
 #metric-ram{--meter-color:#627bff}
 #metric-gpu{--meter-color:#a574ff}
 #metric-gpu.meter-unavailable{background:rgba(255,255,255,.025);opacity:.7}
+
+/* Chat task lifecycle feedback: errors and cancellations must not look like success. */
+#chat-log .chat-row-error .bubble{
+  border-color:rgba(255,111,132,.46);
+  background:rgba(95,22,39,.38);
+  color:#ffd2da;
+}
+#chat-log .chat-row-cancelled .bubble{
+  border-color:rgba(255,203,107,.34);
+  background:rgba(90,62,18,.2);
+  color:#ffe5b2;
+}
