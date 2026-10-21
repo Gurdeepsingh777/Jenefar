@@ -504,7 +504,7 @@ function stopBrowserAudio(){
   try{URL.revokeObjectURL(activeAudio.dataset?.url||"");}catch(_){}
 }
 
-function playBrowserAudio(base64,mime,text){
+function playBrowserAudio(base64,mime,text,taskId=""){
   if(!base64) return false;
   let url="";
   let audio=null;
@@ -536,7 +536,7 @@ function playBrowserAudio(base64,mime,text){
       audio.onerror=null;
       browserSpeechActive=false;
       try{URL.revokeObjectURL(url);}catch(_){}
-      if(text) browserSpeakFallback(text);
+      if(text) browserSpeakFallback(text,taskId);
       else{
         voiceLocked=false;
         resumeBrowserVoice();
@@ -552,9 +552,14 @@ function playBrowserAudio(base64,mime,text){
       browserAudioGeneration+=1;
       if(browserAudio===audio) browserAudio=null;
       browserSpeechActive=false;
-      voiceLocked=false;
       try{URL.revokeObjectURL(url);}catch(_){}
-      resumeBrowserVoice();
+      // Mark the task's audio phase complete; otherwise the dashboard can remain
+      // stuck on VOICE // SPEAKING after the last sample has played.
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
     };
     audio.onerror=failPlayback;
     audio.play().catch(failPlayback);
@@ -564,14 +569,17 @@ function playBrowserAudio(base64,mime,text){
     if(text) browserSpeakFallback(text);
     else{
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
     }
     return false;
   }
 }
 
-function browserSpeakFallback(text){
+function browserSpeakFallback(text,taskId=""){
   const clean=String(text||"").replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
   if(!clean) return;
 
@@ -581,8 +589,12 @@ function browserSpeakFallback(text){
   const generation=browserSpeechGeneration;
   if(!browserSpeechReady){
     browserSpeechActive=false;
-    voiceLocked=false;
-    resumeBrowserVoice();
+    if(taskId) apply({state:"completed",task_id:taskId,text:""});
+    else{
+      voiceLocked=false;
+      resumeBrowserVoice();
+    }
+    setVoiceInputStatus("SPEECH OUTPUT UNAVAILABLE — check browser voices and system output",false);
     return;
   }
 
@@ -600,8 +612,11 @@ function browserSpeakFallback(text){
     utterance.onend=()=>{
       if(generation!==browserSpeechGeneration) return;
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
     };
     utterance.onerror=()=>{
       if(generation!==browserSpeechGeneration) return;
@@ -652,7 +667,7 @@ function apply(event){
       // that this tab has already played or is already playing.
       if(!speechEventWasAlreadyHandled(event)){
         pauseBrowserVoice();
-        playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+        playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"",String(event.task_id||""));
       }
     }else{
       pauseBrowserVoice();
@@ -660,7 +675,7 @@ function apply(event){
   }else if(currentState==="speaking_fallback"){
     if(event.text&&!speechEventWasAlreadyHandled(event)){
       pauseBrowserVoice();
-      browserSpeakFallback(event.text);
+      browserSpeakFallback(event.text,String(event.task_id||""));
     }
   }else if(currentState==="scan_results"||currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
@@ -709,18 +724,32 @@ function updateChatFromEvent(event){
   const log=document.getElementById("chat-log");
   if(!log || !event?.task_id) return;
   const taskId=String(event.task_id);
+  const state=String(event.state||"");
   let row=log.querySelector('[data-task-id="'+CSS.escape(taskId)+'"]');
-  if((event.state==="speaking"||event.state==="result") && event.text){
-    if(!row){
-      row=document.createElement("div");
-      row.className="chat-row bot";
-      row.dataset.taskId=taskId;
-      row.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
-      log.appendChild(row);
-    }
-    row.querySelector(".bubble").textContent=event.text;
-    log.scrollTop=log.scrollHeight;
+  const shouldShowText=["result","speaking","speaking_fallback","error","cancelled","waiting_approval"].includes(state)
+    && String(event.text||"").trim();
+  const isTerminal=["completed","error","cancelled"].includes(state);
+  if(!row && (shouldShowText||isTerminal)){
+    row=document.createElement("div");
+    row.className="chat-row bot";
+    row.dataset.taskId=taskId;
+    row.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
+    log.appendChild(row);
   }
+  if(!row) return;
+  const bubble=row.querySelector(".bubble");
+  if(shouldShowText){
+    bubble.textContent=String(event.text);
+  }else if(isTerminal && /Jawaab aa raha hai|Working…|Thinking…/i.test(bubble.textContent||"")){
+    bubble.textContent=state==="cancelled"
+      ? "Task cancel kar diya gaya."
+      : state==="error"
+        ? "Task complete nahi ho saka. Details Activity aur task history mein dekho."
+        : "Task completed.";
+  }
+  row.classList.toggle("chat-row-error",state==="error");
+  row.classList.toggle("chat-row-cancelled",state==="cancelled");
+  log.scrollTop=log.scrollHeight;
 }
 
 
@@ -1711,7 +1740,23 @@ async function dispatchDashboardCommand(command){
       log.appendChild(bot);
       log.scrollTop=log.scrollHeight;
     }
-    if(result?.accepted || result?.busy){
+    if(result?.busy){
+      const taskId=String(result.task_id||"busy-"+Date.now());
+      if(log){
+        const bot=document.createElement("div");
+        bot.className="chat-row bot chat-row-error";
+        bot.dataset.taskId=taskId;
+        bot.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
+        bot.querySelector(".bubble").textContent="Main abhi ek task par kaam kar rahi hoon. Current task complete hone dein ya RUNTIME OPERATIONS se cancel karein, phir command dobara bhejein.";
+        log.appendChild(bot);
+        log.scrollTop=log.scrollHeight;
+      }
+      addActivity({state:"error",text:"Command not queued: Jenefar is busy with another task."});
+      setVoiceInputStatus("ASSISTANT BUSY — wait or cancel the active task",true);
+      // The active task's own terminal/audio event will resume microphone capture.
+      return result;
+    }
+    if(result?.accepted){
       // Keep capture locked until the corresponding speaking/completed event.
       return result;
     }
