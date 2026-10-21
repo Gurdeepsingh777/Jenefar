@@ -902,3 +902,12 @@ def test_dashboard_diagnostics_reports_local_model_policy_and_timeout_controls()
     assert '"local_allow_large_model"' in diagnostics
     assert '"local_think_enabled"' in diagnostics
     assert '"local_keep_alive"' in diagnostics
+
+def test_browser_native_tts_error_releases_speaking_lock_and_surfaces_status():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("function browserSpeakFallback(text,taskId=\"\"){")
+    end = js.index("function apply(event){", start)
+    fallback = js[start:end]
+    assert 'utterance.onerror=()=>{' in fallback
+    assert 'apply({state:"completed",task_id:taskId,text:""})' in fallback
+    assert "BROWSER SPEECH PLAYBACK FAILED — check system sound output" in fallback
