@@ -1223,6 +1223,20 @@ Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asy
 - Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.
 
 
+## Defensive VoIP / WebRTC Parser Review
+
+The cybersecurity agent can call `voip_parser_source_review` to review user-provided C/C++ snippets offline for memory-safety indicators such as risky `memcpy` lengths, signed packet-size declarations, possible length arithmetic overflow, and network-facing parser entry points. Results include line numbers, evidence, severity, and remediation suggestions.
+
+For a local source file, run:
+
+```bash
+python -m jenefar.voip_security path/to/parser.cpp
+python -m jenefar.voip_security path/to/parser.cpp --json
+python -m pytest -q tests/test_voip_security.py
+```
+
+This is a heuristic defensive review, not proof of exploitability. It does not send packets, contact remote targets, create exploit payloads, execute shellcode, access device sensors, or erase telemetry. See [the defensive VoIP workflow](docs/voip-security.md) for the recommended review, isolated fuzzing, crash-triage, patch, and regression-test process.
+
 ## Existing Feature — Visual Network Scan Results & Host Follow-ups (separate from Runtime Phase 15: Memory 2.0)
 
 Browser host-discovery results open an in-app liquid-glass **Scan Results** window. Each responsive host is displayed as a numbered row with its IPv4 address, UP state, and available latency/vendor information; the IP list is not read aloud or repeated in the general chat/task feed. The window has separate **LIVE HOSTS** and **OPEN PORTS** views and closes automatically when a new instruction starts.
