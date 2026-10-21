@@ -795,6 +795,36 @@ class BrowserVoiceBridge:
         matcher = getattr(self.orchestrator, "_is_ip_info_query", None)
         return bool(callable(matcher) and matcher(transcript))
 
+    def _handle_orchestrator_task(
+        self,
+        task_id: str,
+        command: str,
+        *,
+        response_language: str = "Hinglish",
+    ) -> str:
+        """Propagate browser task identity through internal orchestrator activity."""
+        bind = getattr(self.orchestrator, "bind_avatar_event_task", None)
+        reset = getattr(self.orchestrator, "reset_avatar_event_task", None)
+        previous = ""
+        bound = False
+        if callable(bind):
+            try:
+                previous = str(bind(task_id) or "")
+                bound = True
+            except Exception as exc:
+                print(f"[JENEFAR] Could not bind dashboard task ID: {type(exc).__name__}: {exc}")
+        try:
+            return self.orchestrator.handle(
+                command,
+                response_language=response_language,
+            )
+        finally:
+            if bound and callable(reset):
+                try:
+                    reset(previous)
+                except Exception as exc:
+                    print(f"[JENEFAR] Could not reset dashboard task ID: {type(exc).__name__}: {exc}")
+
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
 
@@ -823,13 +853,15 @@ class BrowserVoiceBridge:
                 reply = (
                     "Haan, boliye. Main sun rahi hoon."
                     if not command
-                    else self.orchestrator.handle(
+                    else self._handle_orchestrator_task(
+                        task_id,
                         command,
                         response_language="Hinglish",
                     )
                 )
             else:
-                reply = self.orchestrator.handle(
+                reply = self._handle_orchestrator_task(
+                    task_id,
                     raw,
                     response_language="Hinglish",
                 )
