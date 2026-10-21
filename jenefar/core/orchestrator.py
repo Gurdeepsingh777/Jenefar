@@ -2113,9 +2113,17 @@ class JenefarOrchestrator:
             self.state = JenefarState.SLEEPING
             return raw_result
 
+        # Approval may take minutes. Do not reuse the already-expired pre-approval
+        # deadline; begin a fresh, bounded continuation budget when approval resolves.
+        continuation_budget = self._execution_budget_seconds(
+            str(workflow.get("model_role") or "fast"),
+            str(workflow.get("agent") or "agent"),
+        )
         continue_kwargs = {
             "continue_tools": bool(getattr(agent, "use_tools", False)),
             "task_plan_text": str(workflow.get("task_plan_text") or ""),
+            "deadline_monotonic": time.monotonic() + continuation_budget,
+            "cancel_token": getattr(self, "_active_cancel_token", None),
         }
         if workflow.get("response_language"):
             continue_kwargs["response_language"] = workflow["response_language"]
