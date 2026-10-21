@@ -218,12 +218,29 @@ class ProviderVoiceRuntime:
     def _local_stt_model_spec() -> str:
         """Return a Whisper model path or a Hugging Face cache model alias."""
         path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
-        model = os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip()
+        model = os.getenv("JENEFAR_LOCAL_STT_MODEL", "base").strip()
         return str(Path(path).expanduser()) if path else (model or "small")
 
+    @staticmethod
+    def _local_stt_model_candidates(model_spec: str, *, explicit_path: bool = False) -> list[str]:
+        """Try the configured Whisper alias, then smaller aliases that may be cached."""
+        if explicit_path:
+            return [model_spec]
+        ranks = {"tiny": 0, "base": 1, "small": 2, "medium": 3, "large": 4}
+        configured = str(model_spec or "base").strip()
+        if configured not in ranks:
+            return [configured]
+        smaller = [
+            name for name, rank in ranks.items()
+            if rank < ranks[configured]
+        ]
+        smaller.sort(key=lambda name: ranks[name], reverse=True)
+        return list(dict.fromkeys([configured, *smaller]))
+
     def _get_local_stt_model(self):
-        """Load faster-whisper in cache-only mode; never download during mic use."""
+        """Load cache-only Whisper, falling back to a smaller cached model."""
         model_spec = self._local_stt_model_spec()
+        explicit_path = bool(os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip())
         device = os.getenv("JENEFAR_LOCAL_STT_DEVICE", "cpu").strip().lower() or "cpu"
         default_compute = "int8" if device == "cpu" else "float16"
         compute_type = os.getenv(
@@ -238,68 +255,126 @@ class ProviderVoiceRuntime:
                 from faster_whisper import WhisperModel
             except ImportError as exc:
                 raise RuntimeError(
-                    "Local Whisper STT is not installed. Run "
-                    "'python -m pip install faster-whisper' in the active .venv, "
-                    "then download the model once as described in README/.env.example."
+                    "Local Whisper STT is not installed. Recommended: run "
+                    "'python run.py --setup-voice' in the active .venv while online; "
+                    "this installs faster-whisper and caches a base offline model. "
+                    "Manual alternative: 'python -m pip install faster-whisper'."
                 ) from exc
 
-            if os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip() and not Path(model_spec).is_dir():
+            if explicit_path and not Path(model_spec).is_dir():
                 raise RuntimeError(
                     f"JENEFAR_LOCAL_STT_MODEL_PATH does not point to a model directory: {model_spec}"
                 )
 
-            try:
-                model = WhisperModel(
-                    model_spec,
-                    device=device,
-                    compute_type=compute_type,
-                    local_files_only=True,
-                )
-            except Exception as exc:
+            candidates = self._local_stt_model_candidates(
+                model_spec,
+                explicit_path=explicit_path,
+            )
+            failures: list[str] = []
+            model = None
+            selected_model = ""
+            for candidate in candidates:
+                try:
+                    model = WhisperModel(
+                        candidate,
+                        device=device,
+                        compute_type=compute_type,
+                        local_files_only=True,
+                    )
+                    selected_model = candidate
+                    break
+                except Exception as exc:
+                    failures.append(f"{candidate}: {type(exc).__name__}: {exc}")
+
+            if model is None:
+                detail = "; ".join(failures[-3:])
                 raise RuntimeError(
-                    f"Local Whisper STT model '{model_spec}' is not available in the local cache. "
-                    "While online, run "
-                    f"python -c \"from faster_whisper import WhisperModel; "
-                    f"WhisperModel('{model_spec}', device='{device}', compute_type='{compute_type}')\" "
-                    "once to cache the model. Mic transcription itself stays offline."
-                ) from exc
+                    "No usable local Whisper model was found in the cache. "
+                    f"Tried: {', '.join(candidates)}. "
+                    "While online, run 'python run.py --setup-voice' once to cache the "
+                    "base multilingual model; microphone transcription then works offline. "
+                    + detail
+                )
 
             self._local_stt_model = model
             self._local_stt_signature = signature
             print(
-                f"[JENEFAR] Local Whisper STT ready: {model_spec} "
+                f"[JENEFAR] Local Whisper STT ready: {selected_model} "
                 f"({device}/{compute_type}, cache-only)."
             )
+            if selected_model != model_spec:
+                print(
+                    f"[JENEFAR] Configured Whisper model '{model_spec}' was not cached; "
+                    f"using smaller cached model '{selected_model}'."
+                )
             return model
 
     async def _transcribe_local(self, audio) -> str:
-        """Transcribe a WAV buffer with a locally cached faster-whisper model."""
+        """Transcribe a WAV buffer with cached Whisper, retrying without VAD.
+
+        VAD can discard quiet Hinglish syllables or short commands. If the
+        filtered pass produces no text, replay the same in-memory audio without
+        VAD and with a wider beam before reporting failure to the browser.
+        """
         def run() -> str:
             with self._local_stt_inference_lock:
                 model = self._get_local_stt_model()
-                audio.seek(0)
                 configured_language = os.getenv(
                     "JENEFAR_LOCAL_STT_LANGUAGE", "auto"
                 ).strip().lower()
                 language = None if configured_language in {"", "auto"} else configured_language
-                segments, _info = model.transcribe(
-                    audio,
-                    language=language,
-                    beam_size=1,
-                    vad_filter=True,
-                    temperature=0.0,
-                )
-                transcript = " ".join(
-                    str(segment.text or "").strip()
-                    for segment in segments
-                    if str(segment.text or "").strip()
-                ).strip()
-                if not transcript:
-                    raise RuntimeError(
-                        "Local Whisper STT did not recognize speech. Speak closer to the microphone "
-                        "or set JENEFAR_LOCAL_STT_LANGUAGE to hi or en."
+                attempts = [
+                    {"language": language, "beam_size": 1, "vad_filter": True},
+                    {"language": language, "beam_size": 3, "vad_filter": False},
+                ]
+                # Auto-detection can miss short Hindi/Hinglish utterances. When
+                # language is auto, give the cached model one explicit Hindi pass
+                # before telling the user that speech was not recognized.
+                if language is None:
+                    attempts.append(
+                        {"language": "hi", "beam_size": 3, "vad_filter": False}
                     )
-                return transcript
+
+                failures: list[str] = []
+                for attempt_number, options in enumerate(attempts, start=1):
+                    audio.seek(0)
+                    try:
+                        segments, _info = model.transcribe(
+                            audio,
+                            language=options["language"],
+                            beam_size=options["beam_size"],
+                            vad_filter=options["vad_filter"],
+                            temperature=0.0,
+                            condition_on_previous_text=False,
+                        )
+                        transcript = " ".join(
+                            str(segment.text or "").strip()
+                            for segment in segments
+                            if str(segment.text or "").strip()
+                        ).strip()
+                    except Exception as exc:
+                        failures.append(f"pass {attempt_number}: {type(exc).__name__}: {exc}")
+                        continue
+                    if transcript:
+                        if attempt_number > 1:
+                            print(
+                                "[JENEFAR] Local Whisper recovered speech on fallback "
+                                f"pass {attempt_number} (language={options['language'] or 'auto'}, "
+                                f"vad_filter={options['vad_filter']})."
+                            )
+                        return transcript
+                    failures.append(
+                        f"pass {attempt_number}: no speech text "
+                        f"(language={options['language'] or 'auto'}, "
+                        f"vad_filter={options['vad_filter']}, beam_size={options['beam_size']})"
+                    )
+
+                detail = "; ".join(failures)
+                raise RuntimeError(
+                    "Local Whisper loaded, but no transcript was produced from the captured audio. "
+                    "Check the selected microphone/input level, speak a little closer, and try a "
+                    "short 2–4 second phrase. " + detail
+                )
 
         return await asyncio.to_thread(run)
 
@@ -434,8 +509,8 @@ class ProviderVoiceRuntime:
             ).strip()
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise RuntimeError("Gemini STT returned an invalid response.") from exc
-        if not transcript:
-            raise RuntimeError("Gemini STT returned no transcription text.")
+        # Empty text is a provider-level miss, not a terminal error.
+        # transcribe_pcm() will try the next cloud provider and local Whisper.
         return transcript
 
     async def transcribe_pcm(
@@ -457,11 +532,30 @@ class ProviderVoiceRuntime:
                 continue
             try:
                 if provider == "openai":
-                    return await self._transcribe_openai(audio)
-                if provider == "groq":
-                    return await self._transcribe_groq(audio)
-                if provider == "gemini":
-                    return await self._transcribe_gemini(audio)
+                    transcript = await self._transcribe_openai(audio)
+                elif provider == "groq":
+                    transcript = await self._transcribe_groq(audio)
+                elif provider == "gemini":
+                    transcript = await self._transcribe_gemini(audio)
+                else:
+                    continue
+
+                transcript = str(transcript or "").strip()
+                if transcript:
+                    print(
+                        f"[JENEFAR] Browser STT succeeded via {provider} "
+                        f"({len(transcript)} characters)."
+                    )
+                    return transcript
+
+                # A successful HTTP response can still contain no recognized
+                # words. Do not treat that as success: continue to the next
+                # provider, then the cache-only local Whisper fallback below.
+                last_error = RuntimeError(f"{provider} STT returned an empty transcript.")
+                print(
+                    f"[JENEFAR] STT provider {provider} returned an empty transcript; "
+                    "trying the next configured provider."
+                )
             except Exception as exc:
                 last_error = exc
                 if not is_retryable_provider_error(exc):
@@ -475,7 +569,17 @@ class ProviderVoiceRuntime:
         # Always attempt local speech recognition last. It is cache-only, so it
         # never attempts a model download while the user is speaking.
         try:
-            return await self._transcribe_local(audio)
+            # Keep the transcriber contract normalized across cloud and local
+            # providers; whitespace-only or padded output must not be forwarded
+            # as a successful command transcript.
+            local_transcript = str(await self._transcribe_local(audio) or "").strip()
+            if not local_transcript:
+                raise RuntimeError("Local Whisper returned an empty transcript.")
+            print(
+                "[JENEFAR] Local Whisper transcription succeeded "
+                f"({len(local_transcript)} characters)."
+            )
+            return local_transcript
         except Exception as local_error:
             local_detail = f"{type(local_error).__name__}: {local_error}"
             if last_error is not None:

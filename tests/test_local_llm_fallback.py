@@ -8,6 +8,8 @@ from jenefar.offline.local_llm import LocalLLMClient, LocalModelInfo
 def test_auto_detect_uses_native_ollama_api_and_installed_model(monkeypatch):
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_API", "auto")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    # This test validates request formatting, not the user's opt-in thinking mode.
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_THINK", "false")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_MODEL", "gemini-4-argon")
     monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL_FAST", raising=False)
 
@@ -43,8 +45,21 @@ def test_auto_detect_keeps_openai_compatible_local_servers(monkeypatch):
 
 
 def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
+    from types import SimpleNamespace
+    import psutil
+
+    # Make the RAM-pressure configuration deterministic across CI and local hosts.
+    # Existing user .env settings may still specify the old 10m/4096/384 defaults.
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_API", "auto")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "4096")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "384")
+    monkeypatch.setattr(
+        psutil,
+        "virtual_memory",
+        lambda: SimpleNamespace(available=2 * 1024**3),
+    )
     monkeypatch.delenv("JENEFAR_LOCAL_LLM_MODEL", raising=False)
     client = LocalLLMClient()
     monkeypatch.setattr(
@@ -103,11 +118,11 @@ def test_native_ollama_tool_call_round_trip_uses_same_local_broker(monkeypatch):
     assert pending == []
     assert broker.invocations == [("memory_recall", {"query": "voice setup"})]
     assert requests[0][0] == "http://127.0.0.1:11434/api/chat"
-    assert requests[0][2] == 120
+    assert requests[0][2] == 45.0
     assert requests[0][1]["think"] is False
-    assert requests[0][1]["keep_alive"] == "10m"
-    assert requests[0][1]["options"]["num_ctx"] == 4096
-    assert requests[0][1]["options"]["num_predict"] == 384
+    assert requests[0][1]["keep_alive"] == "30s"
+    assert requests[0][1]["options"]["num_ctx"] == 2048
+    assert requests[0][1]["options"]["num_predict"] == 192
     history = requests[1][1]["messages"]
     assert history[-2]["role"] == "assistant"
     assert history[-2]["tool_calls"][0]["function"]["name"] == "memory_recall"
@@ -210,7 +225,7 @@ def test_model_parameter_size_parser_understands_model_tags_and_ollama_details()
 
 def test_local_timeout_switches_promptly_to_smaller_installed_model(monkeypatch):
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600")
-    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "30")
     monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "180")
     client = LocalLLMClient()
     large = LocalModelInfo("http://127.0.0.1:11434", "qwen3.8:27b", "ollama")
@@ -235,7 +250,7 @@ def test_local_timeout_switches_promptly_to_smaller_installed_model(monkeypatch)
     assert answer == "Recovered with Qwen 8B"
     assert pending == []
     assert [item[0] for item in attempts] == ["qwen3.8:27b", "qwen3:8b"]
-    assert attempts[0][2] == 120
+    assert attempts[0][2] == 30.0
     assert attempts[1][2] == 180
     assert attempts[1][1]["options"]["num_ctx"] == 2048
     assert attempts[1][1]["options"]["num_predict"] == 192
@@ -305,3 +320,88 @@ def test_smaller_model_selection_prefers_largest_installed_model_below_current(m
     selected = client._find_smaller_ollama_model(current)
 
     assert selected == LocalModelInfo("http://127.0.0.1:11434", "qwen3:8b", "ollama")
+
+def test_ollama_options_clamp_legacy_env_defaults_under_ram_pressure(monkeypatch):
+    from types import SimpleNamespace
+    import psutil
+    from jenefar.offline.local_llm import LocalLLMClient
+
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "10m")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "4096")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "384")
+    monkeypatch.setattr(
+        psutil,
+        "virtual_memory",
+        lambda: SimpleNamespace(available=2 * 1024**3),
+    )
+
+    options = LocalLLMClient._ollama_request_options()
+    assert options["keep_alive"] == "30s"
+    assert options["options"]["num_ctx"] == 2048
+    assert options["options"]["num_predict"] == 192
+
+def test_local_timeout_defaults_allow_slower_cpu_models(monkeypatch):
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", raising=False)
+    client = LocalLLMClient()
+    info = LocalModelInfo("http://127.0.0.1:8080", "custom-model", "openai")
+    timeouts = []
+
+    def fake_request(_url, _payload, *, timeout):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            raise RuntimeError("Could not reach local LLM endpoint: timed out")
+        return {"choices": [{"message": {"role": "assistant", "content": "Recovered"}}]}
+
+    monkeypatch.setattr(client, "detect", lambda model_role=None: info)
+    monkeypatch.setattr(client, "_request_json", fake_request)
+    answer, pending = client.complete(
+        prompt="Reply briefly.",
+        instructions="Be concise.",
+    )
+    assert answer == "Recovered"
+    assert pending == []
+    assert timeouts == [45.0, 120.0]
+
+
+def test_timeout_failure_recommends_a_model_smaller_than_qwen_8b():
+    assert LocalLLMClient._recommended_smaller_model_tag("qwen3:8b") == "qwen3:4b"
+    assert LocalLLMClient._recommended_smaller_model_tag("qwen3:4b") == "qwen3:1.7b"
+    assert LocalLLMClient._recommended_smaller_model_tag("qwen3:1.7b") == "qwen3:0.6b"
+
+def test_local_timeout_walks_down_multiple_installed_models(monkeypatch):
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "40")
+    client = LocalLLMClient()
+    client.timeout_seconds = 100.0
+    model27 = LocalModelInfo("http://127.0.0.1:11434", "qwen3.8:27b", "ollama")
+    model8 = LocalModelInfo("http://127.0.0.1:11434", "qwen3:8b", "ollama")
+    model4 = LocalModelInfo("http://127.0.0.1:11434", "qwen3:4b", "ollama")
+    monkeypatch.setattr(client, "detect", lambda model_role=None: model27)
+    monkeypatch.setattr(client, "_unload_ollama_model", lambda *args, **kwargs: True)
+
+    def find_next(info):
+        return {
+            "qwen3.8:27b": model8,
+            "qwen3:8b": model4,
+        }.get(info.model)
+
+    monkeypatch.setattr(client, "_find_smaller_ollama_model", find_next)
+    attempts = []
+
+    def fake_request(info, payload, *, timeout):
+        attempts.append((info.model, timeout))
+        if info.model in {"qwen3.8:27b", "qwen3:8b"}:
+            raise RuntimeError("Could not reach local LLM endpoint: timed out")
+        return {"message": {"role": "assistant", "content": "Recovered with Qwen 4B"}}, info
+
+    monkeypatch.setattr(client, "_request_chat_with_fallback", fake_request)
+    answer, pending = client.complete(
+        prompt="Answer briefly.",
+        instructions="Be concise.",
+    )
+    assert answer == "Recovered with Qwen 4B"
+    assert pending == []
+    assert [model for model, _timeout in attempts] == [
+        "qwen3.8:27b", "qwen3:8b", "qwen3:4b"
+    ]

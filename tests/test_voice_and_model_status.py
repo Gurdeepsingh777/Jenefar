@@ -374,3 +374,180 @@ def test_llm_client_has_repeated_tool_loop_guard():
     )
     assert result.provider == "openrouter"
     assert "repeated tool loop" in result.text.lower()
+
+
+
+def test_local_whisper_retries_without_vad_when_filtered_pass_is_empty(monkeypatch):
+    import asyncio
+    import io
+    import threading
+    from types import SimpleNamespace
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    runtime._local_stt_inference_lock = threading.Lock()
+    calls = []
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            calls.append({"vad_filter": kwargs["vad_filter"], "beam_size": kwargs["beam_size"]})
+            audio.read()
+            if kwargs["vad_filter"]:
+                return iter(()), None
+            return iter([SimpleNamespace(text="  Hello Jenefar  ")]), None
+
+    monkeypatch.setattr(runtime, "_get_local_stt_model", lambda: FakeModel())
+    result = asyncio.run(runtime._transcribe_local(io.BytesIO(b"wav-audio")))
+
+    assert result == "Hello Jenefar"
+    assert calls == [
+        {"vad_filter": True, "beam_size": 1},
+        {"vad_filter": False, "beam_size": 3},
+    ]
+
+
+def test_local_whisper_reports_capture_diagnostics_after_both_passes_fail(monkeypatch):
+    import asyncio
+    import io
+    import threading
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    runtime._local_stt_inference_lock = threading.Lock()
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            audio.read()
+            return iter(()), None
+
+    monkeypatch.setattr(runtime, "_get_local_stt_model", lambda: FakeModel())
+
+    try:
+        asyncio.run(runtime._transcribe_local(io.BytesIO(b"wav-audio")))
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("empty local STT results must be reported")
+
+    assert "no transcript was produced" in message
+    assert "vad_filter=True" in message
+    assert "vad_filter=False" in message
+    assert "microphone/input level" in message
+
+
+
+def test_browser_stt_uses_local_whisper_after_openai_and_gemini_quota_fail(monkeypatch):
+    import asyncio
+    from jenefar.voice.provider import ProviderVoiceRuntime
+    from jenefar.core.provider_pool import ProviderPool
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("JENEFAR_VOICE_PROVIDER_ORDER", "openai,gemini")
+
+    runtime = ProviderVoiceRuntime.__new__(ProviderVoiceRuntime)
+    runtime._audio_pool = ProviderPool()
+    calls = []
+
+    async def fail_openai(_audio):
+        calls.append("openai")
+        error = RuntimeError("429 insufficient_quota credit_balance_exhausted")
+        error.status_code = 429
+        raise error
+
+    async def fail_gemini(_audio):
+        calls.append("gemini")
+        error = RuntimeError("Gemini STT HTTP 429: quota exceeded")
+        error.status_code = 429
+        raise error
+
+    async def local_whisper(_audio):
+        calls.append("local")
+        return "Jenefar mera browser kholo"
+
+    monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_openai", staticmethod(fail_openai))
+    monkeypatch.setattr(ProviderVoiceRuntime, "_transcribe_gemini", staticmethod(fail_gemini))
+    monkeypatch.setattr(runtime, "_transcribe_local", local_whisper)
+
+    result = asyncio.run(runtime.transcribe_pcm(b"\x00\x00" * 16000))
+
+    assert result == "Jenefar mera browser kholo"
+    assert calls == ["openai", "gemini", "local"]
+
+
+
+def test_local_whisper_uses_smaller_cached_alias_candidates():
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    candidates = ProviderVoiceRuntime._local_stt_model_candidates("small")
+    assert candidates == ["small", "base", "tiny"]
+    assert ProviderVoiceRuntime._local_stt_model_candidates("base") == ["base", "tiny"]
+    assert ProviderVoiceRuntime._local_stt_model_candidates(
+        "/tmp/custom-whisper", explicit_path=True
+    ) == ["/tmp/custom-whisper"]
+
+
+def test_browser_audio_diagnostics_do_not_log_recognized_words():
+    from pathlib import Path
+
+    bridge = Path("jenefar/voice/browser.py").read_text(encoding="utf-8")
+    provider = Path("jenefar/voice/provider.py").read_text(encoding="utf-8")
+    assert "Browser microphone upload received" in bridge
+    assert "Browser microphone PCM:" in bridge
+    assert "signal is near silence" in bridge
+    assert "Browser microphone command transcribed successfully" in bridge
+    assert "Browser STT succeeded via" in provider
+    assert "Local Whisper transcription succeeded" in provider
+    # Diagnostics log transcript length only, not the actual private transcript.
+    assert "print(f\"[JENEFAR] Browser microphone command: {transcript}\"" not in bridge
+
+
+def test_tts_logs_browser_native_fallback_when_generated_audio_is_unavailable():
+    from pathlib import Path
+
+    bridge = Path("jenefar/voice/browser.py").read_text(encoding="utf-8")
+    assert "requesting browser-native SpeechSynthesis fallback" in bridge
+    assert "do not leave 'Dummy Output' selected" in bridge
+
+def test_runtime_diagnostics_expose_local_model_policy_and_allow_overrides(monkeypatch):
+    from jenefar.core.diagnostics import _timeout_settings
+
+    monkeypatch.setenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "240")
+    monkeypatch.setenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "25")
+    monkeypatch.setenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "80")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "50")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "150")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS", "6.5")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL", "true")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_THINK", "false")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "45s")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "8192")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "256")
+
+    settings = _timeout_settings()
+    assert settings["task_seconds"] == 240
+    assert settings["online_window_seconds"] == 25
+    assert settings["local_reserve_seconds"] == 80
+    assert settings["local_primary_seconds"] == 50
+    assert settings["local_retry_seconds"] == 150
+    assert settings["local_max_params_billions"] == 6.5
+    assert settings["local_allow_large_model"] is True
+    assert settings["local_think_enabled"] is False
+    assert settings["local_keep_alive"] == "45s"
+    assert settings["local_context_tokens"] == 8192
+    assert settings["local_predict_tokens"] == 256
+
+
+def test_runtime_diagnostics_model_policy_clamps_unsafe_or_malformed_values(monkeypatch):
+    from jenefar.core.diagnostics import _timeout_settings
+
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS", "not-a-number")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "999999")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "1")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL", "not-true")
+    settings = _timeout_settings()
+    assert settings["local_max_params_billions"] == 8.0
+    assert settings["local_context_tokens"] == 65536
+    assert settings["local_predict_tokens"] == 128
+    assert settings["local_allow_large_model"] is False

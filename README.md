@@ -40,10 +40,12 @@ cd Jenefar
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 cp .env.example .env
 # .env me apne available provider keys daalo.
+# Recommended: cache offline microphone STT before first launch (one-time model download).
+python run.py --setup-voice
 python run.py
 ```
 
@@ -72,6 +74,11 @@ Browser UI normally `http://127.0.0.1:8787/` par start hoti hai. Default runtime
 
 Voice provider behavior:
 
+- Runtime Operations panel me **RUN DIAGNOSTICS** button microphone input, selected audio output (including Dummy Output), cached Whisper, local Ollama/OpenAI-compatible model list, timeout configuration, and desktop input/capture ko ek report me dikhata hai. Ye read-only probes hain; ye audio device, model, ya system settings khud change nahi karte.
+- Dashboard CPU/RAM panel me host RAM ke saath Jenefar process ka apna RSS memory bhi dikhta hai, taaki system-wide use aur Jenefar ke use ko alag samjha ja sake.
+- Task admission atomic hai: assistant busy ho to rejected command fake queued/running task nahi banata. Blank assistant reply ko successful completion nahi maana jata.
+- Terminal tool result exact exit code, bounded timeout aur truncation status ke saath return karta hai; non-zero exit ko tool failure ke roop me report kiya jata hai, success ke roop me nahi.
+- Current request ko prompt me explicit delimiter ke saath last rakha jata hai. Unrelated old assistant narration filter hota hai, aur explicit reasoning markup user-facing reply/TTS se strip hota hai.
 - Browser microphone permission sirf MIC button click karne ke baad maangi jaati hai. Supported browsers par Jenefar pehle MediaRecorder se utterance capture karke server STT use karta hai, jo Hinglish ke liye preferred path hai.
 - Server STT configured OpenAI, Groq aur Gemini providers ko failover order me try karta hai. Quota/credits exhaust hone ya providers fail hone par cached local Whisper STT fallback try hota hai.
 - Local STT ke liye optional `faster-whisper` package aur ek Whisper model ki one-time download zaroori hai. Runtime model ko local cache se hi load karta hai, isliye mic use karte waqt model download nahi karta.
@@ -146,17 +153,22 @@ Continuous mode microphone ko open rakhta hai, local energy-based VAD se utteran
 
 Voice VAD ko `.env` ke `JENEFAR_VOICE_*` variables se tune kiya ja sakta hai. Groq voice ke liye `GROQ_STT_MODEL`, `GROQ_TTS_MODEL`, aur `GROQ_TTS_VOICE` configure kiye ja sakte hain.
 
+### Linux audio troubleshooting (Kali / GNOME)
+
+If Jenefar shows `SPEAKING` but you hear nothing, open the top-right system menu → **Sound Output** and select the physical speaker/headphone device (for example, `Speaker – 500 Series Chipset...`). Do not leave `Dummy Output` selected: it is a virtual sink and does not produce audible sound. Then open Sound Settings → **Input**, select the real microphone, speak, and confirm the input meter moves. The browser microphone status should show a non-zero input level.
+
+When the cloud STT quota is exhausted, Jenefar tries cached local Whisper. The terminal logs `Browser microphone PCM` peak/RMS (no spoken words are written) and either a successful transcription length or the reason it could not transcribe. If the input level stays near zero, fix the OS Input device before increasing LLM timeouts.
+
 ### Offline browser-microphone STT fallback
 
-Agar OpenAI/Gemini credits ya quota khatam ho jaaye aur Groq key configured na ho, local Whisper use karne ke liye:
+Cloud STT credits/quota khatam ho jaaye to microphone ko offline chalane ke liye one-time setup run karo:
 
 ```bash
 source .venv/bin/activate
-python -m pip install faster-whisper
-python -c 'from faster_whisper import WhisperModel; WhisperModel("small", device="cpu", compute_type="int8")'
+python run.py --setup-voice
 ```
 
-Second command `small` Whisper model ko ek baar download karke local cache me rakhega; iske liye initial setup waqt internet chahiye. Uske baad Jenefar cloud STT fail hone par cached model ko offline use kar sakta hai. Default setting `JENEFAR_LOCAL_STT_MODEL=small` aur automatic language detection hai. Optional settings `.env.example` me listed hain. Agar package installation Python 3.14 par native dependency ki wajah se fail ho, to Python 3.12/3.13 ke separate virtual environment me try karo.
+Yeh command active virtual environment me minimal `requirements-voice.txt` dependency install karta hai aur multilingual `base` Whisper model cache karta hai. Initial setup ke liye internet chahiye; uske baad browser microphone STT local cache use karta hai, kisi hosted STT credit ki zaroorat nahi hoti. Agar `.env` me larger `small` model configured hai lekin woh cache nahi hua, runtime cached `base` ya `tiny` model par fall back karega. Manual model directories ke liye `JENEFAR_LOCAL_STT_MODEL_PATH` configure kar sakte ho.
 
 ## Avatar aur realtime voice
 
@@ -897,6 +909,61 @@ python run.py --trace-report
 
 The self-healing layer is recovery-only. It does not grant permissions, change authorized security targets, auto-approve tools, or weaken existing execution policies.
 
+## Runtime Phases 7–24 — Integrated Production Track
+
+Yeh runtime track current host-discovery/port-scan flow, local-model fallback, existing approval broker aur HUD ko preserve karte hue integrate kiya gaya hai.
+
+### Phase 7 — Adaptive provider routing
+- Har configured cloud provider ke liye bounded latency samples aur failure counts.
+- Warm-up samples ke baad recent latency/failure data se provider preference; `JENEFAR_ADAPTIVE_ROUTING=0` se adaptive ordering off ki ja sakti hai.
+- Runtime trace summaries mein p50/p95/max latency, failure rate aur slow-task counts.
+
+### Phase 8 — Execution budgets
+- `JENEFAR_AGENT_TIMEOUT_SECONDS` default 180 s (10–300 s bounded); agent/role-specific `JENEFAR_AGENT_TIMEOUT_<NAME>` overrides. Cloud LLMs share a bounded window so the configured local fallback reserve remains available.
+- Deadline cloud Responses/Chat requests, local LLM inference aur tool loop tak propagate hota hai.
+
+### Phase 9 — Runtime operations dashboard
+- `GET /runtime/status` credential-redacted current task, deadline, trace health aur provider telemetry deta hai.
+- HUD ka **RUNTIME OPERATIONS** panel current status aur task history refresh karta hai.
+
+### Phase 10 — Cooperative cancellation
+- Cancellation token LLM client aur local model tool loop tak propagate hota hai.
+- `POST /runtime/cancel` current cancellable task ko cancellation request bhejta hai; ongoing network/tool action immediate stop ho, yeh us adapter ki cancellation support par depend karta hai.
+
+### Phases 11–12 — Task lifecycle and durable history
+- Single active task admission, running / waiting-approval / completed / failed / cancelled transitions.
+- Redacted persistent JSONL history with state/agent/provider/search filters.
+- Endpoints: `GET /runtime/tasks?limit=40` and `GET /runtime/tasks?search=...`; HUD mein history filter aur task cancellation controls hain.
+
+### Phases 13–24 — Production primitives
+- **13 Security:** secret redaction, workspace path containment, private/loopback URL blocking, task/action-bound expiring HMAC approval tokens, hash-chained audit events.
+- **14 Durable execution:** dependency validation, DAG parallelism, bounded retries, cooperative cancellation, checkpoints and rollback hooks.
+- **15 Memory 2.0:** typed/persistent memories, importance/decay scoring, provenance/tags and explicit forgetting.
+- **16 Skill runtime:** versioned manifests, dependency/permission checks and health tracking.
+- **17 Voice session:** bounded turn lifecycle and interruption state.
+- **18 Vision grounding:** visual-element ranking and confidence threshold before an action target is selected.
+- **19 Browser/computer agent:** bounded observe → act → verify adapter loop and optional Playwright adapter.
+- **20 Recovery foundation:** task-level retry/rollback hooks combine with Phase 6 provider/runtime self-healing.
+- **21 Observability:** counters, latency histograms, token/cost accounting primitives, provider samples and live trace summaries. The launcher starts a loopback-only WebSocket (`ws://127.0.0.1:8765`) for live CPU/RAM/GPU telemetry; unsupported GPU sensors are reported as unavailable instead of fabricated.
+- **22 UI integration:** structured JSON status/history routes and dashboard panel—not business logic embedded in the browser.
+- **23 Evaluation:** reproducible benchmark cases and latency/pass-rate summaries.
+- **24 Readiness:** provider/local LLM configuration, explicit approval secret and remote auth/TLS checks.
+
+### Verification commands
+
+Run from the project root after activating the virtual environment:
+
+```bash
+python -m compileall -q jenefar run.py
+python -m pytest -q
+node --check jenefar/avatar/web/app.js
+python run.py --doctor
+python run.py --runtime-health
+python run.py --trace-report
+```
+
+Runtime status/history routes are bound when the dashboard server starts. Browser, microphone, local Ollama, GPU, Wayland/compositor and robotics actions still need real-machine smoke tests; unit tests cannot guarantee a specific host's hardware or permissions.
+
 ## Kali Linux quick start
 
 Jenefar ko fresh Kali Linux machine par verify karne ke liye:
@@ -950,18 +1017,18 @@ Suggested settings in `.env`:
 
 ```env
 JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=600
-JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS=120
-JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=180
-JENEFAR_LOCAL_LLM_FALLBACK_MODEL=
+JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS=45
+JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=120
+JENEFAR_LOCAL_LLM_FALLBACK_MODEL=qwen3:4b
 ```
 
 If a large local model such as a 27B model is installed and requests time out, install a smaller local fallback once while online:
 
 ```bash
-ollama pull qwen3:8b
+ollama pull qwen3:4b
 ```
 
-This downloads a local model and does not use hosted API credits. Once installed, Jenefar can switch to it automatically when the larger model times out.
+This downloads a local model and does not use hosted API credits. Set `JENEFAR_LOCAL_LLM_FALLBACK_MODEL=qwen3:4b` in `.env` to select it as the preferred fallback. When an inference attempt times out, Jenefar can walk through smaller already-installed models (for example 27B → 8B → 4B → 1.7B). It never downloads models automatically. By default, models above `JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS=8` are not selected for interactive tasks unless `JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL=true` is explicitly enabled.
 
 Before opening the browser UI, run the actual inference smoke test:
 
@@ -971,6 +1038,25 @@ python run.py --llm-smoke-test
 ```
 
 The smoke test tries Groq -> Gemini -> OpenRouter -> local Ollama. It deliberately excludes OpenAI so debugging does not consume a paid OpenAI balance. `python run.py --doctor` only verifies that a local model is detected; it does not prove that chat inference completes. The smoke test prints the provider/model that responded, or the actual provider and local timeout errors if all attempts fail. Native Wayland desktop automation is a separate compositor/backend capability and is not the same as LLM/text chat availability.
+
+## Reliability workflow and diagnostics
+
+Run these from the project root with `.venv` activated:
+
+```bash
+python run.py --doctor
+python run.py --provider-status
+python run.py --llm-smoke-test
+node --check jenefar/avatar/web/app.js
+python -m compileall -q jenefar run.py
+python -m pytest -q
+```
+
+The dashboard's **RUN DIAGNOSTICS** panel reports the selected OS audio input/output, cached Whisper package/model status, online provider cooldowns, local Ollama model/fallback policy, context/output limits, task/cloud/local timeout budgets, and desktop input/capture readiness. Diagnostics never expose API keys.
+
+For a voice command, the terminal logs safe stages without printing the spoken words: microphone upload byte count, decoded PCM peak/RMS, successful STT provider and transcript length, selected LLM provider/model, tool failures, and whether browser-native TTS fallback was required. A near-zero PCM level points to the OS Input device; successful STT with a timeout points to local/cloud inference; a generated answer with no sound points to browser/system audio output.
+
+A task is not counted as successful when the local provider is unavailable or a tool execution failure remains unresolved. Tool-result summaries are bounded, treated as untrusted data, and revalidated before a user-facing answer. After tool approval, continuation receives a fresh bounded deadline. Voice and orchestrator activity events share the same dashboard task ID to prevent duplicate phantom-running entries.
 
 ## Multi-provider LLM failover
 
@@ -1137,7 +1223,7 @@ Import `ToolRegistry` from `agent.tool_registry`, implement a synchronous or asy
 - Run Telegram-specific tests with `python -m pytest -q tests/test_telegram_agent.py`. The full repository suite remains `python -m pytest -q`.
 
 
-## Phase 15 — Visual Network Scan Results & Host Follow-ups
+## Existing Feature — Visual Network Scan Results & Host Follow-ups (separate from Runtime Phase 15: Memory 2.0)
 
 Browser host-discovery results open an in-app liquid-glass **Scan Results** window. Each responsive host is displayed as a numbered row with its IPv4 address, UP state, and available latency/vendor information; the IP list is not read aloud or repeated in the general chat/task feed. The window has separate **LIVE HOSTS** and **OPEN PORTS** views and closes automatically when a new instruction starts.
 

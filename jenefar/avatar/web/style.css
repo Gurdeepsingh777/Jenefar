@@ -1457,3 +1457,70 @@ body.vrm-loaded #photo-avatar{display:none}
 .desktop-diagnostic{margin-top:7px;padding:8px 10px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:rgba(0,0,0,.13);color:rgba(190,211,231,.7);font-size:9px;line-height:1.55;overflow-wrap:anywhere;max-height:64px;overflow:auto}
 .desktop-diagnostic[data-state="partial"]{color:#ffcf86;border-color:rgba(255,207,134,.14)}
 .desktop-diagnostic[data-state="unavailable"]{color:#ffb2bb;border-color:rgba(255,154,168,.15)}
+
+
+/* Phase 9/12/22: compact runtime operations and persistent task history panel. */
+.runtime-ops{margin-top:10px;border-top:1px solid rgba(112,203,255,.12);padding-top:8px;color:#d7e9ff}
+.runtime-ops>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;font-size:9px;font-weight:850;letter-spacing:.12em;color:#a8e7ff}
+.runtime-ops>summary::-webkit-details-marker{display:none}
+.runtime-ops-hint{font-size:7px;font-weight:650;letter-spacing:.07em;color:rgba(176,210,238,.56)}
+.runtime-ops-status{margin-top:8px;padding:8px 9px;min-height:18px;border:1px solid rgba(103,213,255,.14);border-radius:8px;background:rgba(4,28,53,.55);font-size:9px;line-height:1.5;color:rgba(219,240,255,.88);overflow-wrap:anywhere}
+.runtime-ops-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
+.runtime-ops-actions button{min-width:0;flex:1;padding:7px 8px;border:1px solid rgba(100,194,255,.2);border-radius:7px;background:rgba(12,75,116,.24);color:#b9eaff;font-size:7px;font-weight:850;letter-spacing:.08em;cursor:pointer}
+.runtime-ops-actions button:disabled{opacity:.4;cursor:not-allowed}
+#runtime-ops-diagnostics{border-color:rgba(94,224,205,.35);color:#aaf8e7}
+#runtime-ops-status{white-space:pre-line;max-height:210px;overflow:auto;line-height:1.45}
+#runtime-ops-shutdown{flex:1 0 100%;border-color:rgba(255,111,132,.36);background:rgba(100,20,38,.3);color:#ffb5c1}
+#runtime-ops-shutdown:hover:not(:disabled){background:rgba(145,26,53,.45);border-color:rgba(255,111,132,.62)}
+.runtime-ops-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.7fr);gap:7px;margin-top:7px}
+.runtime-ops-filters input,.runtime-ops-filters select{width:100%;min-width:0;box-sizing:border-box;border:1px solid rgba(122,197,255,.17);border-radius:7px;padding:7px 8px;background:rgba(5,24,45,.75);color:#d9f0ff;font-size:9px;outline:none}
+.runtime-ops-filters input:focus,.runtime-ops-filters select:focus{border-color:rgba(100,219,255,.5)}
+.runtime-history-list{display:grid;gap:6px;margin-top:7px;max-height:180px;overflow:auto;padding-right:2px}
+.runtime-history-item{padding:8px;border:1px solid rgba(122,197,255,.12);border-radius:8px;background:rgba(5,24,45,.48);min-width:0}
+.runtime-history-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.runtime-history-state{font-size:7px;font-weight:900;letter-spacing:.1em;color:#9bdfff}
+.runtime-history-state.state-completed{color:#70f3c6}
+.runtime-history-state.state-failed,.runtime-history-state.state-cancelled{color:#ff9ca8}
+.runtime-history-state.state-waiting_approval{color:#ffd08a}
+.runtime-history-duration{font-size:8px;font-variant-numeric:tabular-nums;color:rgba(194,220,242,.7)}
+.runtime-history-task{margin-top:4px;font-size:9px;line-height:1.4;color:#e3f3ff;overflow-wrap:anywhere}
+.runtime-history-meta,.runtime-history-reason{margin-top:4px;font-size:8px;line-height:1.35;color:rgba(169,202,229,.65);overflow-wrap:anywhere}
+.runtime-history-reason{color:#ffb2bb}
+.runtime-history-empty{padding:12px 8px;text-align:center;font-size:8px;line-height:1.45;color:rgba(173,205,231,.56);border:1px dashed rgba(122,197,255,.12);border-radius:8px}
+@media(max-width:900px){
+  .runtime-ops-filters{grid-template-columns:minmax(0,1fr)}
+  .runtime-ops-hint{display:none}
+  .runtime-history-list{max-height:150px}
+}
+
+
+/* Live resource rings: actual values arrive from the local monitoring socket. */
+.ring-meter[role="progressbar"]{
+  position:relative;
+  border:0;
+  background:conic-gradient(var(--meter-color,#3de9ff) var(--meter-value,0%),rgba(255,255,255,.07) 0);
+}
+.ring-meter[role="progressbar"]::before{
+  content:"";
+  position:absolute;
+  inset:5px;
+  border-radius:50%;
+  background:#080713;
+}
+.ring-meter[role="progressbar"]>span{position:relative;z-index:1}
+#metric-cpu{--meter-color:#3de9ff}
+#metric-ram{--meter-color:#627bff}
+#metric-gpu{--meter-color:#a574ff}
+#metric-gpu.meter-unavailable{background:rgba(255,255,255,.025);opacity:.7}
+
+/* Chat task lifecycle feedback: errors and cancellations must not look like success. */
+#chat-log .chat-row-error .bubble{
+  border-color:rgba(255,111,132,.46);
+  background:rgba(95,22,39,.38);
+  color:#ffd2da;
+}
+#chat-log .chat-row-cancelled .bubble{
+  border-color:rgba(255,203,107,.34);
+  background:rgba(90,62,18,.2);
+  color:#ffe5b2;
+}

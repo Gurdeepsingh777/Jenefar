@@ -1,17 +1,86 @@
 from __future__ import annotations
 
 import asyncio
+import array
 import base64
+import math
 import os
+import sys
 import tempfile
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
+from concurrent.futures import Future
+from queue import Empty, Queue
 from typing import Any
 
 from jenefar.voice.speech import devanagari_to_roman, enforce_hinglish, roman_hinglish_for_voice
+
+
+_EXECUTOR_STOP = object()
+
+
+class _DaemonSingleWorkerExecutor:
+    """Small single-worker executor that cannot keep the Python process alive at exit."""
+
+    def __init__(self, *, thread_name_prefix: str):
+        self._queue: Queue[Any] = Queue()
+        self._lock = threading.Lock()
+        self._shutdown = False
+        self._thread = threading.Thread(
+            target=self._worker,
+            name=f"{thread_name_prefix}-1",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def submit(self, fn, /, *args, **kwargs) -> Future:
+        future: Future = Future()
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("Cannot schedule new tasks after voice executor shutdown.")
+            self._queue.put((future, fn, args, kwargs))
+        return future
+
+    def _worker(self) -> None:
+        while True:
+            item = self._queue.get()
+            try:
+                if item is _EXECUTOR_STOP:
+                    return
+                future, fn, args, kwargs = item
+                if not future.set_running_or_notify_cancel():
+                    continue
+                try:
+                    result = fn(*args, **kwargs)
+                except BaseException as exc:
+                    future.set_exception(exc)
+                else:
+                    future.set_result(result)
+            finally:
+                self._queue.task_done()
+
+    def shutdown(self, wait: bool = False, cancel_futures: bool = False) -> None:
+        with self._lock:
+            if self._shutdown:
+                thread = self._thread
+            else:
+                self._shutdown = True
+                if cancel_futures:
+                    while True:
+                        try:
+                            pending = self._queue.get_nowait()
+                        except Empty:
+                            break
+                        try:
+                            if pending is not _EXECUTOR_STOP:
+                                pending[0].cancel()
+                        finally:
+                            self._queue.task_done()
+                self._queue.put(_EXECUTOR_STOP)
+                thread = self._thread
+        if wait and thread.is_alive():
+            thread.join()
 
 
 class BrowserVoiceBridge:
@@ -30,12 +99,13 @@ class BrowserVoiceBridge:
             os.getenv("JENEFAR_BROWSER_VOICE_REPEAT_WINDOW", "1.8")
         )
         self._conversation_language = "Hinglish"
-        self._task_executor = ThreadPoolExecutor(
-            max_workers=1,
+        self._task_executor = _DaemonSingleWorkerExecutor(
             thread_name_prefix="jenefar-task",
         )
+        self._task_lock = threading.RLock()
         self._active_task = None
         self._task_generation = 0
+        self._shutdown_requested = False
         self._last_assistant_text = ""
         self._last_assistant_spoken_at = 0.0
         try:
@@ -69,6 +139,8 @@ class BrowserVoiceBridge:
         audio_mime: str = "",
         data: dict[str, Any] | None = None,
     ) -> None:
+        if getattr(self, "_shutdown_requested", False):
+            return
         if self.avatar is not None:
             self.avatar.publish(
                 state,
@@ -83,6 +155,24 @@ class BrowserVoiceBridge:
     def _display_text(text: str) -> str:
         # Preserve markdown/code/technical tokens; only force Hindi script to Roman.
         return devanagari_to_roman(str(text or "").strip())
+
+    def _ensure_task_lock(self):
+        """Provide a lock for normal instances and lightweight embedded/test fixtures."""
+        lock = getattr(self, "_task_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._task_lock = lock
+        return lock
+
+    @staticmethod
+    def _require_user_reply(reply: Any) -> str:
+        """Never report an empty assistant result as a successful completed task."""
+        value = str(reply or "").strip()
+        if not value:
+            raise RuntimeError(
+                "The task handler returned an empty response. Check the task trace and model diagnostics."
+            )
+        return value
 
     @staticmethod
     def _direct_openai_key() -> str:
@@ -410,53 +500,70 @@ class BrowserVoiceBridge:
         display_text = self._display_text(raw)
         normalized = self.orchestrator.wakeword.normalize_stt_text(raw)
         now = time.monotonic()
-        if (
-            normalized
-            and normalized == self._last_text
-            and now - self._last_at < self._repeat_window
-        ):
-            return {
-                "ok": True,
-                "ignored": True,
-                "reason": "duplicate",
-                "text": display_text,
-                "display_text": display_text,
-            }
+        with self._ensure_task_lock():
+            if getattr(self, "_shutdown_requested", False):
+                return {
+                    "ok": False,
+                    "accepted": False,
+                    "status": "shutdown",
+                    "error": "Jenefar voice runtime is shutting down; restart it to accept new commands.",
+                    "text": display_text,
+                }
+            if (
+                normalized
+                and normalized == self._last_text
+                and now - self._last_at < self._repeat_window
+            ):
+                return {
+                    "ok": True,
+                    "ignored": True,
+                    "reason": "duplicate",
+                    "text": display_text,
+                    "display_text": display_text,
+                }
 
-        if normalized.strip() == "exit":
+            if normalized.strip() == "exit":
+                self._last_text = normalized
+                self._last_at = now
+                return {
+                    "ok": True,
+                    "exit": True,
+                    "text": display_text,
+                    "display_text": display_text,
+                }
+
+            task_id = uuid.uuid4().hex[:10]
+
+            # Admission is atomic. A busy command must not publish a fake queued
+            # task or leave a phantom RUNNING entry in the dashboard. The lock
+            # also prevents two simultaneous requests from both passing the gate.
+            # Do not mark a rejected busy command as the last accepted utterance:
+            # the user must be able to retry the same command as soon as the active
+            # task finishes, without the duplicate-speech guard swallowing it.
+            if self._active_task is not None and not self._active_task.done():
+                return {
+                    "ok": True,
+                    "accepted": False,
+                    "queued": False,
+                    "busy": True,
+                    "task_id": task_id,
+                    "text": display_text,
+                    "display_text": display_text,
+                    "status": "busy",
+                    "reason": "assistant_busy",
+                }
+
             self._last_text = normalized
             self._last_at = now
-            return {
-                "ok": True,
-                "exit": True,
-                "text": display_text,
-                "display_text": display_text,
-            }
+            self._task_generation = int(getattr(self, "_task_generation", 0)) + 1
+            self._publish("listening", "You: " + display_text, task_id)
+            self._publish("queued", "", task_id)
+            self._active_task = self._task_executor.submit(
+                self._run_task,
+                task_id,
+                display_text,
+            )
 
-        self._last_text = normalized
-        self._last_at = now
-        task_id = uuid.uuid4().hex[:10]
-        self._publish("listening", "You: " + display_text, task_id)
-        self._publish("queued", "", task_id)
-
-        if self._active_task is not None and not self._active_task.done():
-            return {
-                "ok": True,
-                "accepted": False,
-                "queued": False,
-                "busy": True,
-                "task_id": task_id,
-                "text": display_text,
-                "display_text": display_text,
-                "status": "busy",
-            }
-
-        self._task_generation += 1
-        self._active_task = self._task_executor.submit(
-            self._run_task,
-            task_id,
-            display_text,
-        )
         return {
             "ok": True,
             "accepted": True,
@@ -547,7 +654,12 @@ class BrowserVoiceBridge:
     def handle_audio(self, audio: bytes, content_type: str = "audio/webm") -> dict[str, Any]:
         """Transcribe a browser MediaRecorder blob, then enqueue it as normal user text."""
         if not audio:
+            print("[JENEFAR] Browser microphone upload was empty.")
             return {"ok": False, "error": "No microphone audio was received."}
+        print(
+            f"[JENEFAR] Browser microphone upload received: {len(audio)} bytes "
+            f"({content_type or 'audio/unknown'})."
+        )
         if len(audio) > 12 * 1024 * 1024:
             return {"ok": False, "error": "Audio recording is too large (limit: 12 MiB)."}
         if content_type and not str(content_type).lower().startswith("audio/"):
@@ -556,17 +668,24 @@ class BrowserVoiceBridge:
         # Do not transcribe stale audio while an assistant reply is being
         # generated. STT may finish after that reply and otherwise enqueue
         # microphone echo as a brand-new command.
-        active_task = self._active_task
-        if active_task is not None and not active_task.done():
-            return {
-                "ok": True,
-                "accepted": False,
-                "busy": True,
-                "status": "busy",
-                "reason": "assistant_busy",
-            }
-
-        task_generation_at_start = self._task_generation
+        with self._ensure_task_lock():
+            if getattr(self, "_shutdown_requested", False):
+                return {
+                    "ok": False,
+                    "accepted": False,
+                    "status": "shutdown",
+                    "error": "Jenefar voice runtime is shutting down.",
+                }
+            active_task = getattr(self, "_active_task", None)
+            task_generation_at_start = int(getattr(self, "_task_generation", 0))
+            if active_task is not None and not active_task.done():
+                return {
+                    "ok": True,
+                    "accepted": False,
+                    "busy": True,
+                    "status": "busy",
+                    "reason": "assistant_busy",
+                }
         import shutil
         import subprocess
 
@@ -600,17 +719,47 @@ class BrowserVoiceBridge:
                 "ok": False,
                 "error": "Could not decode microphone audio." + (f" {detail}" if detail else ""),
             }
+        # Log only signal statistics (never the user's words) so a silent or
+        # misrouted OS input device can be distinguished from an STT/model error.
+        samples = array.array("h")
+        samples.frombytes(converted.stdout)
+        if sys.byteorder != "little":
+            samples.byteswap()
+        peak = max((abs(int(sample)) for sample in samples), default=0)
+        rms = math.sqrt(
+            sum(int(sample) * int(sample) for sample in samples) / max(1, len(samples))
+        )
+        print(
+            "[JENEFAR] Browser microphone PCM: "
+            f"samples={len(samples)} peak={peak}/32768 rms={rms:.1f}/32768."
+        )
+        if peak < 80 and rms < 20:
+            print(
+                "[JENEFAR] Microphone signal is near silence. "
+                "Check System Settings → Sound → Input and select the physical microphone."
+            )
         try:
             transcript = asyncio.run(
                 self._stt_runtime.transcribe_pcm(converted.stdout)
             )
         except Exception as exc:
+            print(
+                "[JENEFAR] Browser microphone STT failed after local/cloud fallback: "
+                f"{type(exc).__name__}: {exc}"
+            )
             return {"ok": False, "error": f"Speech-to-text unavailable: {type(exc).__name__}: {exc}"}
 
         transcript = " ".join(str(transcript or "").split()).strip()
         if not transcript:
+            print("[JENEFAR] Speech recognition returned an empty transcript.")
             return {"ok": True, "ignored": True, "reason": "empty_transcript"}
-        if self._task_generation != task_generation_at_start:
+        print(
+            f"[JENEFAR] Browser microphone command transcribed successfully "
+            f"({len(transcript)} characters); submitting it to the command handler."
+        )
+        with self._ensure_task_lock():
+            generation_changed = int(getattr(self, "_task_generation", 0)) != task_generation_at_start
+        if generation_changed:
             return {
                 "ok": True,
                 "accepted": False,
@@ -646,6 +795,36 @@ class BrowserVoiceBridge:
         matcher = getattr(self.orchestrator, "_is_ip_info_query", None)
         return bool(callable(matcher) and matcher(transcript))
 
+    def _handle_orchestrator_task(
+        self,
+        task_id: str,
+        command: str,
+        *,
+        response_language: str = "Hinglish",
+    ) -> str:
+        """Propagate browser task identity through internal orchestrator activity."""
+        bind = getattr(self.orchestrator, "bind_avatar_event_task", None)
+        reset = getattr(self.orchestrator, "reset_avatar_event_task", None)
+        previous = ""
+        bound = False
+        if callable(bind):
+            try:
+                previous = str(bind(task_id) or "")
+                bound = True
+            except Exception as exc:
+                print(f"[JENEFAR] Could not bind dashboard task ID: {type(exc).__name__}: {exc}")
+        try:
+            return self.orchestrator.handle(
+                command,
+                response_language=response_language,
+            )
+        finally:
+            if bound and callable(reset):
+                try:
+                    reset(previous)
+                except Exception as exc:
+                    print(f"[JENEFAR] Could not reset dashboard task ID: {type(exc).__name__}: {exc}")
+
     def _run_task(self, task_id: str, raw: str) -> None:
         self._publish("thinking", "", task_id)
 
@@ -653,6 +832,10 @@ class BrowserVoiceBridge:
         strict = os.getenv("JENEFAR_REQUIRE_WAKE_WORD", "").strip().lower() in {
             "1", "true", "yes"
         }
+        production = getattr(self.orchestrator, "production", None)
+        voice_session = getattr(production, "voice", None)
+        if voice_session is not None:
+            voice_session.begin(task_id, raw)
 
         try:
             if self.orchestrator.state.name == "SLEEPING":
@@ -670,17 +853,20 @@ class BrowserVoiceBridge:
                 reply = (
                     "Haan, boliye. Main sun rahi hoon."
                     if not command
-                    else self.orchestrator.handle(
+                    else self._handle_orchestrator_task(
+                        task_id,
                         command,
                         response_language="Hinglish",
                     )
                 )
             else:
-                reply = self.orchestrator.handle(
+                reply = self._handle_orchestrator_task(
+                    task_id,
                     raw,
                     response_language="Hinglish",
                 )
 
+            reply = self._require_user_reply(reply)
             structured_scan = getattr(self.orchestrator, "_latest_scan_result", None)
             if isinstance(structured_scan, dict) and structured_scan.get("kind") in {
                 "host_discovery", "port_scan"
@@ -716,6 +902,12 @@ class BrowserVoiceBridge:
                     audio_mime=audio_mime,
                 )
                 if not audio_b64:
+                    print(
+                        "[JENEFAR] No generated TTS audio is available; "
+                        "requesting browser-native SpeechSynthesis fallback. "
+                        "If there is no sound, check the OS Sound Output device "
+                        "(do not leave 'Dummy Output' selected)."
+                    )
                     self._publish("speaking_fallback", display_reply, task_id)
             else:
                 self._publish("completed", "", task_id)
@@ -734,7 +926,14 @@ class BrowserVoiceBridge:
                 audio_mime=audio_mime,
             )
             if not audio_b64:
+                print(
+                    "[JENEFAR] Error speech has no generated audio; "
+                    "requesting browser-native SpeechSynthesis fallback."
+                )
                 self._publish("speaking_fallback", error_text, task_id)
+        finally:
+            if voice_session is not None:
+                voice_session.finish()
 
     def _speech_loop(self) -> None:
         # This worker only generates browser-playable audio and publishes it.
@@ -742,9 +941,13 @@ class BrowserVoiceBridge:
         while True:
             task_id, text = self._speech_queue.get()
             try:
+                if task_id == "__JENEFAR_SHUTDOWN__":
+                    return
                 display_text = self._display_text(text)
                 speech_text = roman_hinglish_for_voice(display_text)
                 audio_b64, audio_mime = self._synthesize_browser_audio(speech_text)
+                if getattr(self, "_shutdown_requested", False):
+                    continue
                 if audio_b64:
                     self._publish(
                         "speaking",
@@ -763,4 +966,33 @@ class BrowserVoiceBridge:
                 self._speech_queue.task_done()
 
     def shutdown(self) -> None:
-        self._task_executor.shutdown(wait=False, cancel_futures=True)
+        # Stop admitting work first. The daemon task worker means an in-flight
+        # network/model call cannot hold process exit open if a provider ignores
+        # cancellation; model unloading still runs in the top-level shutdown path.
+        with self._ensure_task_lock():
+            if getattr(self, "_shutdown_requested", False):
+                return
+            self._shutdown_requested = True
+        try:
+            self._task_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception as exc:
+            print(f"[JENEFAR] Voice task executor shutdown warning: {type(exc).__name__}: {exc}")
+
+        # Drop queued TTS payloads so shutdown never keeps old speech waiting to
+        # play; a worker currently inside TTS exits when the bounded provider call
+        # returns and then consumes this sentinel.
+        while True:
+            try:
+                self._speech_queue.get_nowait()
+            except Empty:
+                break
+            else:
+                self._speech_queue.task_done()
+        try:
+            self._speech_queue.put_nowait(("__JENEFAR_SHUTDOWN__", ""))
+        except Exception:
+            pass
+        if self._speech_thread.is_alive():
+            self._speech_thread.join(timeout=0.5)
+            if self._speech_thread.is_alive():
+                print("[JENEFAR] Speech synthesis is still unwinding; daemon worker will not block process exit.")

@@ -37,6 +37,7 @@ from jenefar.connectors.manager import ConnectorManager
 from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
 from jenefar.rea.client import ReaMCPClient
+from jenefar.evaluation.trace import redact_sensitive
 
 
 @dataclass
@@ -100,6 +101,7 @@ class ToolBroker:
         self.pending: dict[str, PendingToolCall] = {}
         self._task_context: dict[str, str] = {"agent": "", "task": ""}
         self._task_action_log: list[dict[str, str]] = []
+        self._task_action_failures: list[dict[str, str]] = []
         self._register_builtin_tools()
         self._register_phase4_compat_tools()
         self._apply_critical_tool_policy()
@@ -223,6 +225,7 @@ class ToolBroker:
             "task": str(task or ""),
         }
         self._task_action_log = []
+        self._task_action_failures = []
 
     def consume_task_actions(self) -> list[dict[str, str]]:
         """Return successful tool names only; arguments/results are never retained."""
@@ -230,9 +233,27 @@ class ToolBroker:
         self._task_action_log = []
         return actions
 
+    def consume_task_failures(self) -> list[dict[str, str]]:
+        """Return bounded, redacted tool failure summaries without raw arguments/output."""
+        failures = list(self._task_action_failures)
+        self._task_action_failures = []
+        return failures
+
+    def _record_task_failure(self, tool: str, stage: str, error: Any) -> None:
+        if not self._task_context.get("task"):
+            return
+        summary = {
+            "tool": str(tool or "unknown")[:100],
+            "stage": str(stage or "execution")[:60],
+            "error": str(redact_sensitive(str(error or "Tool failed")))[:500],
+        }
+        self._task_action_failures.append(summary)
+        self._task_action_failures = self._task_action_failures[-20:]
+
     def clear_task_context(self) -> None:
         self._task_context = {"agent": "", "task": ""}
         self._task_action_log = []
+        self._task_action_failures = []
 
     @staticmethod
     def _explicit_screenshot_request(task: str) -> bool:
@@ -1725,18 +1746,25 @@ class ToolBroker:
         self._activity("thinking", f"Tool requested: {name}")
         guarded = self._guard_screen_tool(name)
         if guarded:
+            self._record_task_failure(name, "policy", guarded)
             self._activity("error", f"Tool blocked by screen policy: {name}")
             return guarded
         try:
             spec = self.registry.get(name)
         except KeyError:
+            error = f"Unknown tool: {name}"
+            self._record_task_failure(name, "dispatch", error)
             self.audit.record("tool_unknown", tool=name)
-            return json.dumps({"status": "error", "error": f"Unknown tool: {name}"})
+            return json.dumps({"status": "error", "error": error})
 
         tool_preview = None
         if name == "kali_tool_execute":
             plan_text = str(arguments.get("plan") or "").strip()
             if not plan_text:
+                self._record_task_failure(
+                    name, "preflight",
+                    "Provide a brief plan based on kali_tool_help before requesting execution.",
+                )
                 self._activity("error", "Kali execution blocked: a tool-help-based plan is required before approval.")
                 return json.dumps({
                     "status": "error",
@@ -1752,6 +1780,7 @@ class ToolBroker:
                     timeout=int(arguments.get("timeout", 120)),
                 )
             except Exception as exc:
+                self._record_task_failure(name, "preflight", f"{type(exc).__name__}: {exc}")
                 self.audit.record(
                     "tool_error",
                     tool=name,
@@ -1822,6 +1851,48 @@ class ToolBroker:
         try:
             self._activity("thinking", f"Executing tool: {name}")
             value = spec.handler(arguments)
+
+            # Do not wrap a failed handler/terminal exit as outer status="ok".
+            # The model and task verifier must see the actual execution outcome.
+            handler_status = (
+                str(value.get("status", "")).strip().lower()
+                if isinstance(value, dict) else ""
+            )
+            terminal_match = (
+                re.match(r"^\[exit_code=(-?\d+);", value)
+                if name == "terminal_execute" and isinstance(value, str) else None
+            )
+            terminal_exit = int(terminal_match.group(1)) if terminal_match else None
+            failed_terminal = terminal_exit is not None and terminal_exit != 0
+            failed_handler = handler_status in {"error", "denied", "failed"}
+            if failed_terminal or failed_handler:
+                reason = (
+                    f"Terminal command exited with code {terminal_exit}."
+                    if failed_terminal else
+                    str(value.get("error") or value.get("message") or handler_status)
+                )
+                self._record_task_failure(
+                    name,
+                    "execution",
+                    reason,
+                )
+                self.audit.record(
+                    "tool_failed",
+                    tool=name,
+                    arguments=arguments,
+                    exit_code=terminal_exit,
+                    error=reason,
+                )
+                self._activity("error", f"Tool failed: {name} -> {reason}")
+                return json.dumps({
+                    "status": "error",
+                    "tool": name,
+                    "executed": True,
+                    "exit_code": terminal_exit,
+                    "error": reason,
+                    "result": value,
+                }, ensure_ascii=False, default=str)
+
             if (
                 self._task_context.get("task")
                 and name not in {
@@ -1839,6 +1910,7 @@ class ToolBroker:
             self._activity("thinking", f"Tool result: {name} -> {str(value)[:6000]}")
             return json.dumps({"status": "ok", "result": value}, ensure_ascii=False, default=str)
         except Exception as exc:
+            self._record_task_failure(name, "execution", f"{type(exc).__name__}: {exc}")
             self.audit.record(
                 "tool_error",
                 tool=name,

@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--discover-tools-all", action="store_true", help="list all executable commands currently discoverable on PATH, not just security-related Kali tools")
     parser.add_argument("--doctor", action="store_true", help="check local Jenefar dependencies/configuration")
     parser.add_argument("--setup-vision", action="store_true", help="install the default local Ollama vision model (no hosted API required)")
+    parser.add_argument("--setup-voice", action="store_true", help="install/cache a local Whisper model for offline microphone transcription")
     parser.add_argument("--index-file", metavar="PATH", help="index one supported text/code file into long-term memory")
     parser.add_argument("--index-dir", metavar="PATH", help="index supported text/code files under a directory")
     parser.add_argument("--index-document", metavar="PATH", help="extract PDF/DOCX/text content and index it")
@@ -166,6 +167,31 @@ def doctor() -> int:
 
         config = load_config()
         print(f"  config                       OK ({config.name})")
+        print(
+            "  task timeout default          "
+            + os.getenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "180")
+            + "s (agent/role-specific overrides may apply)"
+        )
+        print(
+            "  online LLM window             "
+            + os.getenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "20") + "s"
+        )
+        print(
+            "  local fallback reserve        "
+            + os.getenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "45") + "s"
+        )
+        print(
+            "  local LLM timeout             "
+            + os.getenv("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", "600") + "s socket ceiling"
+        )
+        print(
+            "  local primary timeout         "
+            + os.getenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "45") + "s"
+        )
+        print(
+            "  local retry timeout            "
+            + os.getenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "120") + "s maximum"
+        )
         configured_keys = any(
             os.getenv(name, "").strip()
             for name in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
@@ -208,16 +234,18 @@ def doctor() -> int:
         )
         whisper_installed = importlib.util.find_spec("faster_whisper") is not None
         local_stt_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
-        local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip() or "small"
+        local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "base").strip() or "base"
         local_stt_path_ok = not local_stt_path or Path(local_stt_path).expanduser().is_dir()
-        print(
-            "  local Whisper STT             "
-            + (
-                f"PACKAGE READY ({local_stt_model}; cache checked only during use)"
-                if whisper_installed and local_stt_path_ok
-                else "NOT READY (install faster-whisper and cache the model before going offline)"
+        if not whisper_installed:
+            whisper_status = "NOT INSTALLED (run: python run.py --setup-voice)"
+        elif not local_stt_path_ok:
+            whisper_status = f"CONFIGURED MODEL PATH MISSING ({local_stt_path}; run: python run.py --setup-voice after fixing the path)"
+        else:
+            whisper_status = (
+                f"PACKAGE READY ({local_stt_model}; cache is verified on first use; "
+                "run python run.py --setup-voice once while online to pre-cache base)"
             )
-        )
+        print(f"  local Whisper STT             {whisper_status}")
         piper_path = os.getenv("JENEFAR_LOCAL_TTS_MODEL", "").strip()
         piper_ready = bool(shutil.which("piper") and piper_path and Path(piper_path).expanduser().is_file())
         print(
@@ -334,6 +362,116 @@ def setup_vision() -> int:
     print(f"[JENEFAR] Local vision model ready: {model}")
     return 0
 
+def setup_voice() -> int:
+    """Install the lightweight STT dependency and cache a multilingual offline model."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from jenefar.core.config import load_config
+
+    load_config()
+    project_root = Path(__file__).resolve().parent
+    # Kali/Debian's externally-managed system Python must never be modified by
+    # pip. Require the project's venv before attempting dependency installation.
+    if sys.prefix == sys.base_prefix:
+        venv_python = project_root / ".venv" / "bin" / "python"
+        print(
+            "[JENEFAR] Voice setup needs the project's virtual environment; "
+            "the system Python is externally managed and will not be modified."
+        )
+        if venv_python.is_file():
+            print("Run these commands, then retry setup:")
+            print("  source .venv/bin/activate")
+            print("  python -m pip install -r requirements.txt")
+            print("  python run.py --setup-voice")
+        else:
+            print("Run these commands from the Jenefar project root:")
+            print("  python3 -m venv .venv")
+            print("  source .venv/bin/activate")
+            print("  python -m pip install --upgrade pip")
+            print("  python -m pip install -r requirements.txt")
+            print("  python run.py --setup-voice")
+        print("After setup, always launch with: .venv/bin/python run.py")
+        return 2
+
+    model_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
+    device = os.getenv("JENEFAR_LOCAL_STT_DEVICE", "cpu").strip().lower() or "cpu"
+    compute_type = os.getenv(
+        "JENEFAR_LOCAL_STT_COMPUTE_TYPE",
+        "int8" if device == "cpu" else "float16",
+    ).strip() or ("int8" if device == "cpu" else "float16")
+
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        requirements = Path(__file__).resolve().parent / "requirements-voice.txt"
+        print("[JENEFAR] faster-whisper is missing; installing the voice-only dependency set.")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
+            check=False,
+        )
+        if result.returncode:
+            print(
+                "[JENEFAR] Voice dependency installation failed. "
+                "Use the Python interpreter from the active .venv and retry."
+            )
+            return int(result.returncode or 1)
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
+            print(f"[JENEFAR] faster-whisper installation did not complete: {exc}")
+            return 1
+
+    if model_path:
+        selected = Path(model_path).expanduser()
+        if not selected.is_dir():
+            print(
+                "[JENEFAR] JENEFAR_LOCAL_STT_MODEL_PATH is set but does not point "
+                f"to a model directory: {selected}"
+            )
+            return 2
+        model_spec = str(selected)
+        local_files_only = True
+    else:
+        # Base is much lighter than small/medium and is sufficient for short
+        # Hindi/Hinglish commands. Runtime STT will try this cached model if a
+        # user's configured larger alias is absent from the cache.
+        model_spec = (
+            os.getenv("JENEFAR_LOCAL_STT_SETUP_MODEL", "base").strip() or "base"
+        )
+        local_files_only = False
+
+    print(
+        f"[JENEFAR] Preparing local Whisper model '{model_spec}' "
+        f"({device}/{compute_type}). This is a one-time setup and may download model files."
+    )
+    try:
+        model = WhisperModel(
+            model_spec,
+            device=device,
+            compute_type=compute_type,
+            local_files_only=local_files_only,
+        )
+        del model
+    except Exception as exc:
+        print(
+            f"[JENEFAR] Could not prepare local Whisper model: {type(exc).__name__}: {exc}"
+        )
+        print(
+            "[JENEFAR] Check internet access for the first setup, or verify "
+            "JENEFAR_LOCAL_STT_MODEL_PATH if using a manually downloaded model."
+        )
+        return 1
+
+    print(
+        f"[JENEFAR] Offline voice model ready: {model_spec}. "
+        "Restart Jenefar; later microphone transcription uses only the local cache."
+    )
+    return 0
+
+
 def github_command(args: argparse.Namespace) -> int:
     from jenefar.coding.repository import RepositoryAnalyzer
 
@@ -425,11 +563,32 @@ def memory_command(args: argparse.Namespace) -> int:
 
     return 1
 
+def _reexec_in_project_venv_if_available() -> bool:
+    """Prefer the repo's venv automatically when a system Python launches Jenefar."""
+    import os
+    import sys
+    from pathlib import Path
+
+    if sys.prefix != sys.base_prefix:
+        return False
+    project_root = Path(__file__).resolve().parent
+    venv_python = project_root / ".venv" / "bin" / "python"
+    if not venv_python.is_file() or not os.access(venv_python, os.X_OK):
+        return False
+    print("[JENEFAR] Re-launching with the project virtual environment (.venv).", flush=True)
+    os.execv(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]])
+    return True
+
+
 def main() -> int:
     args = build_parser().parse_args()
+    _reexec_in_project_venv_if_available()
 
     if args.doctor:
         return doctor()
+
+    if args.setup_voice:
+        return setup_voice()
 
     if args.llm_smoke_test:
         import os
@@ -523,9 +682,25 @@ def main() -> int:
         from jenefar.voice.browser import BrowserVoiceBridge
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.core.diagnostics import collect_runtime_diagnostics
+        from jenefar.monitoring.server import start_monitoring_server
 
         if args.online_only:
             os.environ["JENEFAR_DISABLE_LOCAL_FALLBACK"] = "1"
+
+        runtime_shutdown_event = threading.Event()
+
+        def request_runtime_shutdown():
+            """Acknowledge the dashboard request before waking the runtime thread."""
+            if not runtime_shutdown_event.is_set():
+                print("[JENEFAR] Graceful shutdown requested from the dashboard.")
+                timer = threading.Timer(0.75, runtime_shutdown_event.set)
+                timer.daemon = True
+                timer.start()
+            return {
+                "accepted": True,
+                "message": "Shutdown requested. Jenefar will stop background services and release its Ollama models.",
+            }
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
@@ -549,8 +724,20 @@ def main() -> int:
                 else orchestrator._approve_pending
             ),
             rejection_handler=orchestrator._reject_pending_workflow,
+            runtime_status_handler=orchestrator.runtime_status,
+            runtime_tasks_handler=orchestrator.runtime_tasks,
+            runtime_diagnostics_handler=lambda: collect_runtime_diagnostics(
+                orchestrator,
+                browser_voice_enabled=browser_voice_enabled,
+            ),
+            runtime_cancel_handler=orchestrator.cancel_active_task,
+            shutdown_handler=request_runtime_shutdown,
         )
         avatar_server.start()
+
+        # Started after runtime diagnostics, immediately before the guarded wait.
+        monitoring_server = None
+        monitoring_server_owned = False
 
         runtime_url = avatar_server.url
         print(f"[JENEFAR] Avatar UI: {runtime_url}")
@@ -605,6 +792,27 @@ def main() -> int:
             )
         else:
             print("[JENEFAR] Backend STT provider unavailable; browser-native speech recognition depends on browser support.")
+        if importlib.util.find_spec("faster_whisper") is None:
+            print(
+                "[JENEFAR] Offline microphone STT is not installed. Run "
+                "'python run.py --setup-voice' once while online."
+            )
+        else:
+            print(
+                "[JENEFAR] Offline Whisper package is available; if no model is cached, "
+                "run 'python run.py --setup-voice' once while online."
+            )
+
+        # Start telemetry only after diagnostics succeed; the following try/finally
+        # owns shutdown and prevents a failed startup path from leaking a thread.
+        try:
+            monitoring_server = start_monitoring_server()
+            monitoring_server_owned = monitoring_server.running
+        except Exception as exc:
+            print(
+                "[JENEFAR] Monitoring server unavailable: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         try:
             if browser_voice_enabled:
@@ -612,13 +820,31 @@ def main() -> int:
                 print("[JENEFAR] Your browser may ask for microphone permission in the avatar UI.")
                 print("[JENEFAR] Browser microphone + server-generated browser audio are the primary voice path; Web SpeechSynthesis is the final fallback.")
                 print("[JENEFAR] Python TTS is disabled in this browser runtime.")
-                threading.Event().wait()
+                runtime_shutdown_event.wait()
             else:
                 print("[JENEFAR] Browser voice is disabled. UI remains available; no terminal voice/TTS is started.")
-                threading.Event().wait()
+                runtime_shutdown_event.wait()
+        except KeyboardInterrupt:
+            print("\n[JENEFAR] Ctrl+C received; shutting down cleanly.")
         finally:
+            try:
+                orchestrator.cancel_active_task(reason="Jenefar runtime is shutting down")
+            except Exception as exc:
+                print(f"[JENEFAR] Task cancellation during shutdown skipped: {type(exc).__name__}: {exc}")
             browser_voice.shutdown()
+            if monitoring_server is not None and monitoring_server_owned:
+                monitoring_server.stop()
             avatar_server.stop()
+            try:
+                from jenefar.offline.local_llm import LocalLLMClient
+                released = LocalLLMClient.release_runtime_models()
+                print(
+                    "[JENEFAR] Local model cleanup: "
+                    f"{len(released.get('released', []))}/{released.get('attempted', 0)} "
+                    "Ollama model(s) released."
+                )
+            except Exception as exc:
+                print(f"[JENEFAR] Local model cleanup skipped: {type(exc).__name__}: {exc}")
         return 0
 
     if args.setup_assets:
@@ -832,11 +1058,14 @@ def main() -> int:
     avatar_server = None
     browser_voice = None
     orchestrator = None
+    monitoring_server = None
+    monitoring_server_owned = False
 
     if args.avatar:
         import webbrowser
         from jenefar.avatar.controller import AvatarController
         from jenefar.avatar.server import AvatarServer
+        from jenefar.monitoring.server import start_monitoring_server
 
         avatar = AvatarController()
         orchestrator = JenefarOrchestrator(avatar=avatar)
@@ -863,8 +1092,25 @@ def main() -> int:
                 else orchestrator._approve_pending
             ),
             rejection_handler=orchestrator._reject_pending_workflow,
+            runtime_status_handler=orchestrator.runtime_status,
+            runtime_tasks_handler=orchestrator.runtime_tasks,
+            runtime_cancel_handler=orchestrator.cancel_active_task,
         )
         avatar_server.start()
+
+        monitoring_server = None
+        monitoring_server_owned = False
+        # CLI microphone-only sessions do not need the browser telemetry server.
+        if not args.voice_continuous:
+            try:
+                monitoring_server = start_monitoring_server()
+                monitoring_server_owned = monitoring_server.running
+            except Exception as exc:
+                print(
+                    "[JENEFAR] Monitoring server unavailable: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
         print(f"[JENEFAR] Avatar UI: {avatar_server.url}")
         print(
             "[JENEFAR] VRM source: "
@@ -933,6 +1179,8 @@ def main() -> int:
     finally:
         if browser_voice is not None:
             browser_voice.shutdown()
+        if monitoring_server is not None and monitoring_server_owned:
+            monitoring_server.stop()
         if avatar_server is not None:
             avatar_server.stop()
 

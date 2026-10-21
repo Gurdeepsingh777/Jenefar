@@ -123,7 +123,7 @@ function resize(){
   width=window.innerWidth;height=window.innerHeight;
   canvas.width=width*dpr;canvas.height=height*dpr;
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  particles=Array.from({length:Math.min(220,Math.floor(width/6))},()=>seedParticle());
+  particles=Array.from({length:Math.min(110,Math.max(36,Math.floor(width/14)))},()=>seedParticle());
 }
 function seedParticle(){
   const angle=Math.random()*Math.PI*2;
@@ -143,8 +143,14 @@ function palette(state){
   return [133,147,255];
 }
 
+let lastParticleFrameAt=0;
+const particleFrameInterval=1000/30;
 function draw(t){
   if(!ctx){requestAnimationFrame(draw);return;}
+  // Keep the decorative canvas at 30 FPS; VRM animation and input handling
+  // remain independent, while this effect no longer consumes a full 60 FPS.
+  if(t-lastParticleFrameAt<particleFrameInterval){requestAnimationFrame(draw);return;}
+  lastParticleFrameAt=t;
   ctx.clearRect(0,0,width,height);
   const workWidth=width*.66;
   const centerX=workWidth/2,centerY=height*.46;
@@ -498,7 +504,7 @@ function stopBrowserAudio(){
   try{URL.revokeObjectURL(activeAudio.dataset?.url||"");}catch(_){}
 }
 
-function playBrowserAudio(base64,mime,text){
+function playBrowserAudio(base64,mime,text,taskId=""){
   if(!base64) return false;
   let url="";
   let audio=null;
@@ -530,7 +536,7 @@ function playBrowserAudio(base64,mime,text){
       audio.onerror=null;
       browserSpeechActive=false;
       try{URL.revokeObjectURL(url);}catch(_){}
-      if(text) browserSpeakFallback(text);
+      if(text) browserSpeakFallback(text,taskId);
       else{
         voiceLocked=false;
         resumeBrowserVoice();
@@ -546,9 +552,14 @@ function playBrowserAudio(base64,mime,text){
       browserAudioGeneration+=1;
       if(browserAudio===audio) browserAudio=null;
       browserSpeechActive=false;
-      voiceLocked=false;
       try{URL.revokeObjectURL(url);}catch(_){}
-      resumeBrowserVoice();
+      // Mark the task's audio phase complete; otherwise the dashboard can remain
+      // stuck on VOICE // SPEAKING after the last sample has played.
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
     };
     audio.onerror=failPlayback;
     audio.play().catch(failPlayback);
@@ -558,16 +569,22 @@ function playBrowserAudio(base64,mime,text){
     if(text) browserSpeakFallback(text);
     else{
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
     }
     return false;
   }
 }
 
-function browserSpeakFallback(text){
+function browserSpeakFallback(text,taskId=""){
   const clean=String(text||"").replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
-  if(!clean) return;
+  if(!clean){
+    if(taskId) apply({state:"completed",task_id:taskId,text:""});
+    return;
+  }
 
   // Native speech is a fallback, never a second simultaneous playback path.
   stopBrowserAudio();
@@ -575,8 +592,12 @@ function browserSpeakFallback(text){
   const generation=browserSpeechGeneration;
   if(!browserSpeechReady){
     browserSpeechActive=false;
-    voiceLocked=false;
-    resumeBrowserVoice();
+    if(taskId) apply({state:"completed",task_id:taskId,text:""});
+    else{
+      voiceLocked=false;
+      resumeBrowserVoice();
+    }
+    setVoiceInputStatus("SPEECH OUTPUT UNAVAILABLE — check browser voices and system output",false);
     return;
   }
 
@@ -594,21 +615,32 @@ function browserSpeakFallback(text){
     utterance.onend=()=>{
       if(generation!==browserSpeechGeneration) return;
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
     };
     utterance.onerror=()=>{
       if(generation!==browserSpeechGeneration) return;
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
+      setVoiceInputStatus("BROWSER SPEECH PLAYBACK FAILED — check system sound output",false);
     };
     window.speechSynthesis.speak(utterance);
   }catch(_){
     if(generation===browserSpeechGeneration){
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
+      setVoiceInputStatus("BROWSER SPEECH PLAYBACK FAILED — check system sound output",false);
     }
   }
 }
@@ -646,7 +678,7 @@ function apply(event){
       // that this tab has already played or is already playing.
       if(!speechEventWasAlreadyHandled(event)){
         pauseBrowserVoice();
-        playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");
+        playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"",String(event.task_id||""));
       }
     }else{
       pauseBrowserVoice();
@@ -654,7 +686,7 @@ function apply(event){
   }else if(currentState==="speaking_fallback"){
     if(event.text&&!speechEventWasAlreadyHandled(event)){
       pauseBrowserVoice();
-      browserSpeakFallback(event.text);
+      browserSpeakFallback(event.text,String(event.task_id||""));
     }
   }else if(currentState==="scan_results"||currentState==="idle"||currentState==="completed"){
     voiceLocked=false;
@@ -703,18 +735,32 @@ function updateChatFromEvent(event){
   const log=document.getElementById("chat-log");
   if(!log || !event?.task_id) return;
   const taskId=String(event.task_id);
+  const state=String(event.state||"");
   let row=log.querySelector('[data-task-id="'+CSS.escape(taskId)+'"]');
-  if((event.state==="speaking"||event.state==="result") && event.text){
-    if(!row){
-      row=document.createElement("div");
-      row.className="chat-row bot";
-      row.dataset.taskId=taskId;
-      row.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
-      log.appendChild(row);
-    }
-    row.querySelector(".bubble").textContent=event.text;
-    log.scrollTop=log.scrollHeight;
+  const shouldShowText=["result","speaking","speaking_fallback","error","cancelled","waiting_approval"].includes(state)
+    && String(event.text||"").trim();
+  const isTerminal=["completed","error","cancelled"].includes(state);
+  if(!row && (shouldShowText||isTerminal)){
+    row=document.createElement("div");
+    row.className="chat-row bot";
+    row.dataset.taskId=taskId;
+    row.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
+    log.appendChild(row);
   }
+  if(!row) return;
+  const bubble=row.querySelector(".bubble");
+  if(shouldShowText){
+    bubble.textContent=String(event.text);
+  }else if(isTerminal && /Jawaab aa raha hai|Working…|Thinking…/i.test(bubble.textContent||"")){
+    bubble.textContent=state==="cancelled"
+      ? "Task cancel kar diya gaya."
+      : state==="error"
+        ? "Task complete nahi ho saka. Details Activity aur task history mein dekho."
+        : "Task completed.";
+  }
+  row.classList.toggle("chat-row-error",state==="error");
+  row.classList.toggle("chat-row-cancelled",state==="cancelled");
+  log.scrollTop=log.scrollHeight;
 }
 
 
@@ -1168,6 +1214,28 @@ function resumeVoiceIfAssistantIdle(){
   resumeBrowserVoice();
 }
 
+function fallbackToBrowserSpeech(reason){
+  const detail=String(reason||"Microphone audio capture is unavailable.");
+  addActivity({state:"error",text:detail});
+  if(!micEnabled) return false;
+  if(voiceSupported&&recognition){
+    stopFallbackMonitor(true);
+    fallbackMode=false;
+    voiceLocked=false;
+    setVoiceInputStatus("BROWSER SPEECH FALLBACK — LISTENING",true);
+    setMicButton(true,true);
+    addActivity({state:"listening",text:"Switching microphone input to browser-native recognition."});
+    resumeBrowserVoice();
+    return true;
+  }
+  stopFallbackMonitor(true);
+  micEnabled=false;
+  voiceLocked=true;
+  setVoiceInputStatus("MIC INPUT UNAVAILABLE — CHECK SYSTEM SOUND → INPUT",false);
+  setMicButton(false,false);
+  return false;
+}
+
 async function transcribeCapturedAudio(blob,durationMs){
   if(!micEnabled||voiceLocked||!blob||blob.size<1200||durationMs<550) return;
   fallbackSubmitting=true;
@@ -1185,11 +1253,22 @@ async function transcribeCapturedAudio(blob,durationMs){
     if(!response.ok||result?.error) throw new Error(result?.error||("HTTP "+response.status));
     if(result?.ignored){
       fallbackSubmitting=false;
-      voiceLocked=false;
       if(result?.reason==="empty_transcript"){
-        setVoiceInputStatus("NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL",false);
         addActivity({state:"error",text:"Audio was captured but speech-to-text returned an empty transcript."});
+        // A blank server transcript should not trap the user in the same
+        // server-side STT path. Switch to native recognition when available.
+        if(fallbackMode&&voiceSupported&&recognition){
+          stopFallbackMonitor(true);
+          fallbackMode=false;
+          voiceLocked=false;
+          setVoiceInputStatus("SERVER STT HEARD NO WORDS — SWITCHING TO BROWSER SPEECH",true);
+          setMicButton(true,true);
+          resumeBrowserVoice();
+          return;
+        }
+        setVoiceInputStatus("NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL",false);
       }else{
+        voiceLocked=false;
         setVoiceInputStatus("MIC ON — LISTENING FOR SPEECH",true);
       }
       setMicButton(true,false);
@@ -1223,20 +1302,48 @@ async function transcribeCapturedAudio(blob,durationMs){
     fallbackSubmitting=false;
     const errorText=String(error?.message||error);
     const providerUnavailable=/Speech-to-text unavailable|No speech-to-text provider is configured|No currently available STT provider|All configured STT providers failed|Browser microphone audio transcription is unavailable|HTTP 503/i.test(errorText);
-    if(providerUnavailable&&fallbackMode&&voiceSupported&&recognition){
+    // Native Chromium speech recognition is a secondary path when server-side
+    // audio decoding/transcription cannot run (for example, ffmpeg is missing).
+    // Previously these errors did not match providerUnavailable, so the UI kept
+    // recording and failed every utterance without ever trying the browser STT.
+    const audioPipelineUnavailable=/ffmpeg|could not decode microphone audio|audio conversion (?:failed|timed out)|microphone audio upload was incomplete/i.test(errorText);
+    if((providerUnavailable||audioPipelineUnavailable)&&fallbackMode&&voiceSupported&&recognition){
       stopFallbackMonitor(true);
       fallbackMode=false;
       voiceLocked=false;
-      addActivity({state:"error",text:"Server STT is unavailable; switching to browser speech recognition: "+errorText});
-      setVoiceInputStatus("SERVER STT UNAVAILABLE — TRYING BROWSER SPEECH",true);
+      const fallbackMessage=audioPipelineUnavailable
+        ? "Browser audio pipeline is unavailable; switching to browser speech recognition: "
+        : "Server STT is unavailable; switching to browser speech recognition: ";
+      addActivity({state:"error",text:fallbackMessage+errorText});
+      setVoiceInputStatus(
+        audioPipelineUnavailable
+          ? "SERVER AUDIO FAILED — TRYING BROWSER SPEECH"
+          : "SERVER STT UNAVAILABLE — TRYING BROWSER SPEECH",
+        true
+      );
       setMicButton(true,true);
       resumeBrowserVoice();
       return;
     }
     voiceLocked=false;
-    addActivity({state:"error",text:"Audio STT failed: "+errorText});
-    setVoiceInputStatus("VOICE STT ERROR — "+errorText.slice(0,90),false);
+    const modelMissing=/Local Whisper STT is not installed|not available in the local cache|No usable local Whisper model was found in the cache|does not point to a model directory/i.test(errorText);
+    const localNoSpeech=/no transcript was produced|did not recognize speech|no speech text/i.test(errorText);
+    addActivity({
+      state:"error",
+      text:"Audio STT failed ("+Math.round(durationMs)+" ms, "+Math.round(blob.size/1024)+" KiB): "+errorText
+    });
+    if(providerUnavailable&&modelMissing){
+      setVoiceInputStatus("VOICE MODEL MISSING — RUN python run.py --setup-voice",false);
+    }else if(providerUnavailable&&localNoSpeech){
+      setVoiceInputStatus("LOCAL WHISPER HEARD NO SPEECH — CHECK MIC LEVEL / TRY AGAIN",false);
+    }else if(providerUnavailable){
+      setVoiceInputStatus("SERVER STT UNAVAILABLE — CHECK QUOTA / LOCAL WHISPER",false);
+    }else{
+      setVoiceInputStatus("VOICE STT ERROR — "+errorText.slice(0,72),false);
+    }
     setMicButton(true,false);
+    // Keep VAD listening after a failed utterance so the user can retry
+    // without toggling the microphone. Full provider details remain in activity.
     resumeBrowserVoice();
   }
 }
@@ -1252,7 +1359,17 @@ function startFallbackMonitor(){
     fallbackData=new Uint8Array(fallbackAnalyser.fftSize);
     fallbackSource=fallbackContext.createMediaStreamSource(fallbackStream);
     fallbackSource.connect(fallbackAnalyser);
-    fallbackContext.resume().catch(()=>{});
+    const activeContext=fallbackContext;
+    activeContext.resume().then(()=>{
+      if(!micEnabled||!fallbackMode||fallbackContext!==activeContext) return;
+      if(activeContext.state!=="running"){
+        fallbackToBrowserSpeech("Browser AudioContext stayed suspended; the microphone level meter could not run.");
+      }
+    }).catch(error=>{
+      if(micEnabled&&fallbackMode&&fallbackContext===activeContext){
+        fallbackToBrowserSpeech("Browser AudioContext could not start: "+String(error?.message||error));
+      }
+    });
   }catch(error){
     setVoiceInputStatus("AUDIO CAPTURE ERROR — "+String(error?.message||error).slice(0,80),false);
     addActivity({state:"error",text:"Audio capture setup failed: "+(error?.message||error)});
@@ -1282,7 +1399,10 @@ function startFallbackMonitor(){
         if(!micEnabled||voiceLocked) return;
         const duration=Math.max(0,performance.now()-fallbackRecordStartedAt);
         const blob=new Blob(chunks,{type:recorder.mimeType||"audio/webm"});
-        if(duration<550||blob.size<1200) return;
+        if(duration<550||blob.size<1200){
+          setVoiceInputStatus("AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS",true);
+          return;
+        }
         transcribeCapturedAudio(blob,duration);
       };
       recorder.start();
@@ -1293,6 +1413,11 @@ function startFallbackMonitor(){
     }
   };
 
+  const monitorStartedAt=performance.now();
+  let noiseFloor=0.001;
+  let lastInputSignalAt=monitorStartedAt;
+  let lastLevelStatusAt=0;
+  let speechFrames=0;
   const monitor=()=>{
     fallbackAnimationFrame=0;
     if(!micEnabled||voiceLocked||!fallbackMode||!fallbackStream||fallbackSubmitting) return;
@@ -1305,12 +1430,36 @@ function startFallbackMonitor(){
     }
     const rms=Math.sqrt(energy/fallbackData.length)/128;
     const now=performance.now();
-    // 0.020 misses quiet speech on some Linux microphone/USB levels.
-    const speechThreshold=0.010;
-    if(rms>speechThreshold){
-      fallbackLastSpeechAt=now;
-      if(!fallbackRecorder&&!fallbackStopping) beginSegment(now);
+
+    // Adapt to quiet laptop/USB microphones rather than requiring a fixed
+    // amplitude. The old fixed 0.010 threshold could leave MIC ON forever with
+    // no recorder started on a low-level Linux input device.
+    if(!fallbackRecorder&&rms<0.020){
+      noiseFloor=(noiseFloor*0.985)+(rms*0.015);
     }
+    const speechThreshold=Math.max(0.0035,Math.min(0.009,noiseFloor*2.4));
+    if(rms>0.0025) lastInputSignalAt=now;
+    if(rms>speechThreshold){
+      speechFrames=Math.min(4,speechFrames+1);
+      fallbackLastSpeechAt=now;
+      if(speechFrames>=2&&!fallbackRecorder&&!fallbackStopping) beginSegment(now);
+    }else{
+      speechFrames=0;
+    }
+
+    if(!fallbackRecorder&&now-lastLevelStatusAt>1200){
+      const level=Math.max(0,Math.min(100,Math.round(rms*100)));
+      setVoiceInputStatus("MIC ON — INPUT LEVEL "+level+"%",true);
+      lastLevelStatusAt=now;
+    }
+
+    // A suspended/incorrect input device previously looked like an active mic
+    // forever: no recorder started and no server request was ever sent.
+    if(!fallbackRecorder&&now-monitorStartedAt>8000&&now-lastInputSignalAt>7000){
+      fallbackToBrowserSpeech("No microphone signal detected (input level stayed near zero). Check System Sound → Input and select the real microphone.");
+      return;
+    }
+
     if(fallbackRecorder&&fallbackRecorder.state==="recording"){
       const elapsed=now-fallbackRecordStartedAt;
       const quietFor=now-fallbackLastSpeechAt;
@@ -1602,7 +1751,23 @@ async function dispatchDashboardCommand(command){
       log.appendChild(bot);
       log.scrollTop=log.scrollHeight;
     }
-    if(result?.accepted || result?.busy){
+    if(result?.busy){
+      const taskId=String(result.task_id||"busy-"+Date.now());
+      if(log){
+        const bot=document.createElement("div");
+        bot.className="chat-row bot chat-row-error";
+        bot.dataset.taskId=taskId;
+        bot.innerHTML='<div class="mini-avatar">J</div><div class="bubble"></div>';
+        bot.querySelector(".bubble").textContent="Main abhi ek task par kaam kar rahi hoon. Current task complete hone dein ya RUNTIME OPERATIONS se cancel karein, phir command dobara bhejein.";
+        log.appendChild(bot);
+        log.scrollTop=log.scrollHeight;
+      }
+      addActivity({state:"error",text:"Command not queued: Jenefar is busy with another task."});
+      setVoiceInputStatus("ASSISTANT BUSY — wait or cancel the active task",true);
+      // The active task's own terminal/audio event will resume microphone capture.
+      return result;
+    }
+    if(result?.accepted){
       // Keep capture locked until the corresponding speaking/completed event.
       return result;
     }
@@ -1642,6 +1807,220 @@ document.getElementById("dock-vision")?.addEventListener("click",()=>document.ge
 document.getElementById("dock-chat")?.addEventListener("click",()=>document.getElementById("chat-input")?.focus());
 
 setupActivityFilters();
+
+/* Production runtime status, persistent task history and cooperative cancellation. */
+const runtimeOpsStatus=document.getElementById("runtime-ops-status");
+const runtimeHistoryList=document.getElementById("task-history-list");
+const runtimeHistorySearch=document.getElementById("runtime-history-search");
+const runtimeHistoryState=document.getElementById("runtime-history-state");
+const runtimeRefreshButton=document.getElementById("runtime-ops-refresh");
+const runtimeDiagnosticsButton=document.getElementById("runtime-ops-diagnostics");
+const runtimeCancelButton=document.getElementById("runtime-ops-cancel");
+const runtimeShutdownButton=document.getElementById("runtime-ops-shutdown");
+let runtimeHistoryTimer=null;
+let runtimeHistoryRequest=0;
+function runtimeOpsNode(tag,className,text){
+  const node=document.createElement(tag);
+  if(className) node.className=className;
+  if(text!==undefined) node.textContent=String(text);
+  return node;
+}
+function formatRuntimeDuration(value){
+  const seconds=Number(value);
+  if(!Number.isFinite(seconds)||seconds<0) return "—";
+  if(seconds>=60) return Math.floor(seconds/60)+"m "+Math.round(seconds%60)+"s";
+  return seconds.toFixed(1)+"s";
+}
+function renderRuntimeHistory(payload){
+  if(!runtimeHistoryList) return;
+  runtimeHistoryList.replaceChildren();
+  const items=Array.isArray(payload?.items)?payload.items:[];
+  if(!items.length){
+    runtimeHistoryList.appendChild(runtimeOpsNode("div","runtime-history-empty","No matching persisted tasks."));
+    return;
+  }
+  for(const item of items){
+    const row=runtimeOpsNode("article","runtime-history-item");
+    const top=runtimeOpsNode("div","runtime-history-item-top");
+    top.appendChild(runtimeOpsNode("span","runtime-history-state state-"+String(item.state||"unknown").replace(/[^a-z0-9_-]/gi,""),String(item.state||"UNKNOWN").replaceAll("_"," ").toUpperCase()));
+    top.appendChild(runtimeOpsNode("span","runtime-history-duration",formatRuntimeDuration(Number(item.elapsed_ms||0)/1000)));
+    const task=runtimeOpsNode("div","runtime-history-task",item.task||"Untitled task");
+    const meta=runtimeOpsNode("div","runtime-history-meta",[item.agent,item.provider,item.task_id].filter(Boolean).join(" · "));
+    const reason=String(item.reason||"").trim();
+    row.append(top,task,meta);
+    if(reason) row.appendChild(runtimeOpsNode("div","runtime-history-reason",reason));
+    runtimeHistoryList.appendChild(row);
+  }
+}
+async function refreshRuntimeHistory(){
+  const requestId=++runtimeHistoryRequest;
+  if(runtimeOpsStatus) runtimeOpsStatus.textContent="Refreshing runtime…";
+  try{
+    const response=await fetch("/runtime/status?ts="+Date.now(),{cache:"no-store"});
+    const snapshot=await response.json();
+    if(!response.ok) throw new Error(snapshot?.error||("Runtime status HTTP "+response.status));
+    const current=snapshot.current||{};
+    const state=String(current.state||"idle").replaceAll("_"," ").toUpperCase();
+    const task=String(current.task||"").trim();
+    const remaining=current.remaining_seconds==null?"":" · "+formatRuntimeDuration(current.remaining_seconds)+" left";
+    const agent=current.agent?" · "+current.agent:"";
+    const provider=current.provider?" · "+current.provider:"";
+    const taskId=current.task_id?" · #"+current.task_id:"";
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent=state+(taskId||"")+agent+provider+remaining+(task?" — "+task.slice(0,180):"");
+    const activeState=String(current.state||"").toLowerCase();
+    if(runtimeCancelButton) runtimeCancelButton.disabled=!["thinking","running"].includes(activeState);
+  }catch(error){
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent="Runtime status unavailable: "+String(error?.message||error);
+    if(runtimeCancelButton) runtimeCancelButton.disabled=true;
+  }
+  try{
+    const params=new URLSearchParams({limit:"40"});
+    const query=String(runtimeHistorySearch?.value||"").trim();
+    const state=String(runtimeHistoryState?.value||"").trim();
+    if(query) params.set("search",query.slice(0,200));
+    if(state) params.set("state",state);
+    const response=await fetch("/runtime/tasks?"+params.toString()+"&ts="+Date.now(),{cache:"no-store"});
+    const payload=await response.json();
+    if(!response.ok) throw new Error(payload?.error||("Task history HTTP "+response.status));
+    if(requestId===runtimeHistoryRequest) renderRuntimeHistory(payload);
+  }catch(error){
+    if(requestId===runtimeHistoryRequest&&runtimeHistoryList){
+      runtimeHistoryList.replaceChildren(runtimeOpsNode("div","runtime-history-empty","Could not load task history: "+String(error?.message||error)));
+    }
+  }
+}
+runtimeRefreshButton?.addEventListener("click",refreshRuntimeHistory);
+runtimeHistoryState?.addEventListener("change",refreshRuntimeHistory);
+
+async function refreshRuntimeDiagnostics(){
+  if(!runtimeDiagnosticsButton) return;
+  runtimeDiagnosticsButton.disabled=true;
+  if(runtimeOpsStatus) runtimeOpsStatus.textContent="Checking microphone, audio devices, local models, desktop backend and timeouts…";
+  try{
+    const response=await fetch("/runtime/diagnostics?ts="+Date.now(),{cache:"no-store"});
+    const report=await response.json();
+    if(!response.ok) throw new Error(report?.error||("Diagnostics HTTP "+response.status));
+    const checks=Array.isArray(report.checks)?report.checks:[];
+    const labelFor={
+      browser_voice:"BROWSER VOICE",
+      whisper:"LOCAL WHISPER",
+      audio_output:"SOUND OUTPUT",
+      audio_input:"MIC INPUT",
+      ollama:"LOCAL LLM",
+      cloud_llm:"CLOUD LLM / FAILOVER",
+      desktop:"DESKTOP INPUT"
+    };
+    const statusText=item=>String(item?.status||"unknown").replaceAll("_"," ").toUpperCase();
+    const providers=Array.isArray(report.online_llm?.providers)?report.online_llm.providers:[];
+    const providerLines=providers.map(provider=>{
+      const state=!provider.configured?"NOT CONFIGURED"
+        :provider.available?"AVAILABLE"
+        :"COOLDOWN "+formatRuntimeDuration(provider.cooldown_seconds||0);
+      const latency=Number.isFinite(Number(provider.last_ms))
+        ? " · last "+formatRuntimeDuration(Number(provider.last_ms)/1000)
+        :"";
+      const failures=Number(provider.recent_failures||0);
+      return "CLOUD "+String(provider.name||"provider").toUpperCase()+" · "+state
+        +(provider.model?" · "+provider.model:"")+latency+(failures?" · failures "+failures:"");
+    });
+    const stt=report.voice?.stt;
+    const tts=report.voice?.tts;
+    const lines=[
+      "DIAGNOSTICS: "+String(report.status||"unknown").replaceAll("_"," ").toUpperCase(),
+      ...checks.map(item=>{
+        const icon=item.ok?"OK":"CHECK";
+        const title=labelFor[item.id]||String(item.id||"CHECK");
+        return icon+" · "+title+": "+statusText(item)+" — "+String(item.message||"");
+      }),
+      ...providerLines,
+      "VOICE STT · "+(stt
+        ? String(stt.provider||"unknown")+"/"+String(stt.model||"model")
+          +(Array.isArray(stt.fallback)&&stt.fallback.length?" · fallback "+stt.fallback.join(" → "):"")
+        : "no hosted STT provider configured; local Whisper/browser fallback may be used"),
+      "VOICE TTS · "+(tts?.provider
+        ? String(tts.provider)+"/"+String(tts.model||"model")
+          +(Array.isArray(tts.fallback)&&tts.fallback.length?" · fallback "+tts.fallback.join(" → "):"")
+        : "no server TTS provider configured; browser SpeechSynthesis is the fallback"),
+      "TIMEOUTS · task "+Number(report.timeouts?.task_seconds||0)+"s"
+        +" · cloud "+Number(report.timeouts?.online_window_seconds||0)+"s"
+        +" · local reserve "+Number(report.timeouts?.local_reserve_seconds||0)+"s"
+        +" · primary "+Number(report.timeouts?.local_primary_seconds||0)+"s"
+        +" · retry "+Number(report.timeouts?.local_retry_seconds||0)+"s",
+      "LOCAL MODEL POLICY · "+(report.local_llm?.configured_model||"auto-select")
+        +" · fallback "+(report.local_llm?.configured_fallback||"auto smaller installed model")
+        +" · cap "+Number(report.timeouts?.local_max_params_billions||8)+"B"
+        +(report.timeouts?.local_allow_large_model?" · large models enabled":" · large models opt-in")
+        +" · think "+(report.timeouts?.local_think_enabled?"on":"off")
+        +" · keep-alive "+String(report.timeouts?.local_keep_alive||"30s")
+        +" · ctx "+Number(report.timeouts?.local_context_tokens||2048),
+      report.active_task
+        ? "ACTIVE TASK · "+String(report.active_task.state||"unknown")+" · "+String(report.active_task.agent||"")
+        : "ACTIVE TASK · none"
+    ];
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent=lines.join("\n");
+    for(const item of report.issues||[]){
+      addActivity({state:"error",text:"Diagnostic · "+String(item.id||"check")+": "+String(item.message||item.status||"needs attention")});
+    }
+  }catch(error){
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent="Diagnostics failed: "+String(error?.message||error);
+  }finally{
+    runtimeDiagnosticsButton.disabled=false;
+  }
+}
+runtimeDiagnosticsButton?.addEventListener("click",refreshRuntimeDiagnostics);
+
+runtimeShutdownButton?.addEventListener("click", async () => {
+  if (!runtimeShutdownButton || runtimeShutdownButton.disabled) return;
+  const confirmed = window.confirm(
+    "Quit Jenefar? This stops its local voice/dashboard servers and asks Ollama to release models used by Jenefar. Other Ollama apps may be affected only if they share the same model session."
+  );
+  if (!confirmed) return;
+
+  runtimeShutdownButton.disabled = true;
+  if (runtimeOpsStatus) runtimeOpsStatus.textContent = "Shutdown requested — stopping services and releasing local model memory…";
+  try {
+    const response = await fetch("/runtime/shutdown", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmed: true })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload?.accepted) {
+      throw new Error(payload?.message || payload?.error || ("HTTP " + response.status));
+    }
+    if (runtimeOpsStatus) runtimeOpsStatus.textContent = payload.message || "Jenefar is shutting down.";
+    if (runtimeHistoryTimer) clearInterval(runtimeHistoryTimer);
+  } catch (error) {
+    runtimeShutdownButton.disabled = false;
+    if (runtimeOpsStatus) runtimeOpsStatus.textContent = "Shutdown failed: " + String(error?.message || error);
+  }
+});
+let runtimeSearchDebounce=null;
+runtimeHistorySearch?.addEventListener("input",()=>{
+  if(runtimeSearchDebounce!==null) clearTimeout(runtimeSearchDebounce);
+  runtimeSearchDebounce=setTimeout(refreshRuntimeHistory,250);
+});
+runtimeCancelButton?.addEventListener("click",async()=>{
+  if(!runtimeCancelButton||runtimeCancelButton.disabled) return;
+  runtimeCancelButton.disabled=true;
+  try{
+    const response=await fetch("/runtime/cancel",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({reason:"Cancelled from runtime operations console"})
+    });
+    const payload=await response.json();
+    if(!response.ok) throw new Error(payload?.error||("Cancel HTTP "+response.status));
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent=payload.cancelled?"Cancellation requested for active task.":String(payload.reason||"No active task to cancel.");
+  }catch(error){
+    if(runtimeOpsStatus) runtimeOpsStatus.textContent="Cancellation request failed: "+String(error?.message||error);
+  }finally{
+    refreshRuntimeHistory();
+  }
+});
+refreshRuntimeHistory();
+runtimeHistoryTimer=setInterval(refreshRuntimeHistory,5000);
+
 window.addEventListener("resize",resize);
 resize();
 connect();
@@ -1762,80 +2141,6 @@ document.getElementById("media-pause")?.addEventListener("click",()=>{
   resumeBrowserVoice();
 });
 
-
-/* Actual host telemetry: values are sampled by the local backend, never simulated. */
-function formatMetricBytes(value){
-  const bytes=Number(value);
-  if(!Number.isFinite(bytes)||bytes<0) return "N/A";
-  const units=["B","KB","MB","GB","TB"];
-  let size=bytes, unit=0;
-  while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
-  return size.toFixed(unit===0?0:1)+" "+units[unit];
-}
-function setMetricRing(name,value,detail){
-  const ring=document.getElementById("metric-"+name);
-  const valueEl=document.getElementById("metric-"+name+"-value");
-  const detailEl=document.getElementById("metric-"+name+"-detail");
-  const n=Number(value);
-  const valid=value!==null&&value!==undefined&&value!==""&&Number.isFinite(n)&&n>=0;
-  if(ring){
-    ring.classList.toggle("meter-unavailable",!valid);
-    ring.style.setProperty("--meter-value",valid?String(Math.min(100,n)):"0");
-    ring.title=valid?name.toUpperCase()+" usage: "+n+"%":String(detail||"Sensor unavailable");
-    if(valid){
-      ring.setAttribute("aria-valuenow",String(Math.round(n)));
-      ring.setAttribute("role","progressbar");
-      ring.setAttribute("aria-label",name.toUpperCase()+" usage "+n+" percent");
-    }else{
-      ring.removeAttribute("aria-valuenow");
-      ring.setAttribute("role","img");
-      ring.setAttribute("aria-label",name.toUpperCase()+" telemetry unavailable");
-    }
-  }
-  if(valueEl) valueEl.textContent=valid?Math.round(n)+"%":"N/A";
-  if(detailEl) detailEl.textContent=detail|| (valid?"Live sample":"Sensor unavailable");
-}
-function showMetricsUnavailable(message){
-  setMetricRing("cpu",null,message);
-  setMetricRing("ram",null,message);
-  setMetricRing("gpu",null,message);
-  const updated=document.getElementById("metrics-updated");
-  if(updated) updated.textContent="LIVE TELEMETRY UNAVAILABLE";
-}
-async function refreshSystemMetrics(){
-  try{
-    const response=await fetch("/system/metrics?ts="+Date.now(),{cache:"no-store"});
-    const data=await response.json();
-    if(!response.ok||!data?.available) throw new Error(data?.error||"System metrics endpoint unavailable");
-    const cpu=data.cpu||{};
-    const ram=data.ram||{};
-    const process=data.process||{};
-    const gpu=data.gpu||{};
-    setMetricRing("cpu",cpu.usage_percent,
-      cpu.logical_cores?String(cpu.logical_cores)+" logical cores":"System CPU");
-    setMetricRing("ram",ram.usage_percent,
-      formatMetricBytes(ram.used_bytes)+" / "+formatMetricBytes(ram.total_bytes));
-    if(gpu.available&&Number.isFinite(Number(gpu.usage_percent))){
-      const vram=Number.isFinite(Number(gpu.memory_used_mb))&&Number.isFinite(Number(gpu.memory_total_mb))
-        ?Math.round(Number(gpu.memory_used_mb))+" / "+Math.round(Number(gpu.memory_total_mb))+" MB VRAM"
-        :"GPU detected";
-      setMetricRing("gpu",gpu.usage_percent,vram);
-    }else{
-      setMetricRing("gpu",null,gpu.reason||"No supported GPU telemetry");
-    }
-    const updated=document.getElementById("metrics-updated");
-    if(updated){
-      const stamp=data.sampled_at?new Date(data.sampled_at):new Date();
-      updated.textContent="LIVE · "+stamp.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})
-        +(Number.isFinite(Number(process.memory_percent))?" · JENEFAR RAM "+Number(process.memory_percent).toFixed(1)+"%":"");
-      updated.title="System values sampled by the local backend at "+stamp.toISOString();
-    }
-  }catch(error){
-    showMetricsUnavailable(String(error?.message||error));
-  }
-}
-refreshSystemMetrics();
-setInterval(refreshSystemMetrics,1500);
 
 /* Browser model controls apply to the live runtime for subsequent responses. */
 const modelPanel=document.getElementById("model-panel");
@@ -2105,4 +2410,169 @@ refreshModelStatus();
   scheduleLayout();
   // The initial font/layout pass can change card height after the first frame.
   window.addEventListener("load", scheduleLayout, { once: true });
+})();
+
+
+/* Live system telemetry from the loopback-only monitoring WebSocket. */
+(function setupLiveSystemTelemetry() {
+  const cpuRing = document.getElementById("metric-cpu");
+  const cpuValue = document.getElementById("metric-cpu-value");
+  const cpuDetail = document.getElementById("metric-cpu-detail");
+  const ramRing = document.getElementById("metric-ram");
+  const ramValue = document.getElementById("metric-ram-value");
+  const ramDetail = document.getElementById("metric-ram-detail");
+  const gpuRing = document.getElementById("metric-gpu");
+  const gpuValue = document.getElementById("metric-gpu-value");
+  const gpuDetail = document.getElementById("metric-gpu-detail");
+  const updated = document.getElementById("metrics-updated");
+  if (!cpuRing || !cpuValue || !ramRing || !ramValue || !gpuRing || !gpuValue) return;
+
+  let socket = null;
+  let retryTimer = null;
+  let freshnessTimer = null;
+  let retryDelay = 1000;
+  let lastPayloadAt = 0;
+
+  function percent(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+  }
+
+  function paintRing(ring, label, value) {
+    const n = percent(value);
+    if (n === null) return;
+    ring.style.setProperty("--meter-value", n + "%");
+    ring.setAttribute("aria-valuenow", String(Math.round(n)));
+    label.textContent = Math.round(n) + "%";
+    ring.classList.remove("meter-unavailable");
+  }
+
+  function setOffline(message) {
+    if (updated) {
+      updated.textContent = message || "SYSTEM TELEMETRY OFFLINE · RETRYING";
+      updated.dataset.state = "offline";
+    }
+    if (cpuDetail) cpuDetail.textContent = "Waiting for live data";
+    if (ramDetail && !lastPayloadAt) ramDetail.textContent = "Waiting for live data";
+    if (!lastPayloadAt && gpuDetail) gpuDetail.textContent = "GPU sensor unavailable";
+  }
+
+  function updateTelemetry(data) {
+    if (!data || typeof data !== "object") return;
+    lastPayloadAt = Date.now();
+    paintRing(cpuRing, cpuValue, data.cpu);
+    if (cpuDetail) cpuDetail.textContent = "Live system usage";
+
+    if (data.ram && typeof data.ram === "object") {
+      paintRing(ramRing, ramValue, data.ram.percent);
+      const used = Number(data.ram.used_gb);
+      const total = Number(data.ram.total_gb);
+      const processMb=Number(data.process?.memory_mb);
+      const processPercent=Number(data.process?.memory_percent);
+      const processSuffix=Number.isFinite(processMb)
+        ? " · Jenefar "+(processMb>=1024?(processMb/1024).toFixed(2)+" GB":processMb.toFixed(0)+" MB")
+          +(Number.isFinite(processPercent)?" ("+processPercent.toFixed(1)+"%)":"")
+        : "";
+      if (ramDetail && Number.isFinite(used) && Number.isFinite(total)) {
+        ramDetail.textContent = used.toFixed(1) + " / " + total.toFixed(1) + " GB" + processSuffix;
+      } else if (ramDetail) {
+        ramDetail.textContent = "RAM " + Math.round(Number(data.ram.percent) || 0) + "%" + processSuffix;
+      }
+    }
+
+    const gpu = data.gpu || {};
+    if (gpu.available && percent(gpu.usage) !== null) {
+      paintRing(gpuRing, gpuValue, gpu.usage);
+      gpuRing.setAttribute("aria-label", "GPU usage " + Math.round(Number(gpu.usage)) + "%");
+      const name = [gpu.vendor, gpu.name].filter(Boolean).join(" · ");
+      const memory = Number.isFinite(Number(gpu.memory_used_gb)) &&
+        Number.isFinite(Number(gpu.memory_total_gb))
+        ? " · " + Number(gpu.memory_used_gb).toFixed(1) + "/" +
+          Number(gpu.memory_total_gb).toFixed(1) + " GB VRAM"
+        : "";
+      if (gpuDetail) {
+        gpuDetail.textContent = (name || "GPU") + memory +
+          (Number.isFinite(Number(gpu.power_w)) ? " · " + Number(gpu.power_w).toFixed(1) + " W" : "");
+        gpuDetail.title = gpuDetail.textContent;
+      }
+    } else {
+      gpuValue.textContent = "N/A";
+      gpuRing.classList.add("meter-unavailable");
+      gpuRing.setAttribute("aria-label", "GPU telemetry unavailable");
+      if (gpuDetail) gpuDetail.textContent = "Sensor unavailable";
+    }
+
+    if (updated) {
+      const now = new Date();
+      updated.textContent = "LIVE SYSTEM TELEMETRY · " +
+        now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      updated.dataset.state = "online";
+    }
+  }
+
+  function socketUrl() {
+    const isLocal = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+    const host = isLocal ? location.hostname : "127.0.0.1";
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    return scheme + "//" + (host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host) + ":8765";
+  }
+
+  function scheduleReconnect() {
+    if (retryTimer) return;
+    setOffline("SYSTEM TELEMETRY OFFLINE · RETRYING");
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 10000);
+  }
+
+  function connect() {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+    if (location.protocol === "https:") {
+      setOffline("SYSTEM TELEMETRY NEEDS A SECURE WEBSOCKET ENDPOINT");
+      return;
+    }
+    try {
+      socket = new WebSocket(socketUrl());
+    } catch (_) {
+      scheduleReconnect();
+      return;
+    }
+    socket.addEventListener("open", () => {
+      retryDelay = 1000;
+      if (updated) updated.textContent = "MONITOR CONNECTED · WAITING FOR FIRST SAMPLE";
+    });
+    socket.addEventListener("message", event => {
+      try {
+        updateTelemetry(JSON.parse(event.data));
+      } catch (error) {
+        console.error("[JENEFAR] Invalid system telemetry payload", error);
+      }
+    });
+    socket.addEventListener("error", () => setOffline("SYSTEM TELEMETRY CONNECTION ERROR"));
+    socket.addEventListener("close", () => {
+      socket = null;
+      scheduleReconnect();
+    });
+  }
+
+  freshnessTimer = setInterval(() => {
+    if (lastPayloadAt && Date.now() - lastPayloadAt > 5000) {
+      setOffline("SYSTEM TELEMETRY STALE · RECONNECTING");
+      if (socket) {
+        try { socket.close(); } catch (_) {}
+      }
+    }
+  }, 2000);
+
+  window.addEventListener("beforeunload", () => {
+    if (retryTimer) clearTimeout(retryTimer);
+    if (freshnessTimer) clearInterval(freshnessTimer);
+    if (socket) {
+      try { socket.close(); } catch (_) {}
+    }
+  }, { once: true });
+
+  connect();
 })();

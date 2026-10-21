@@ -27,7 +27,10 @@ def test_browser_mic_starts_only_after_explicit_user_action():
     assert 'micButton.onclick=async()=>{' in js
     assert 'if(canRecord){\n        // Prefer server-side STT to Chromium' in js
     assert 'setVoiceInputStatus("CLICK MIC ON — SERVER STT READY",false);' in js
-    assert "const speechThreshold=0.010;" in js
+    assert "const speechThreshold=Math.max(0.0035,Math.min(0.009,noiseFloor*2.4));" in js
+    assert "No microphone signal detected (input level stayed near zero)." in js
+    assert "fallbackToBrowserSpeech" in js
+    assert 'setVoiceInputStatus("AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS",true)' in js
     assert "NO WORDS RECOGNIZED — SPEAK CLOSER OR CHECK MIC LEVEL" in js
 
 
@@ -166,9 +169,13 @@ def test_no_internal_model_metadata_is_appended_to_spoken_output():
     assert "[Model:" not in orch
 
 
-def test_browser_voice_bridge_is_serialized():
+def test_browser_voice_bridge_is_serialized_and_shutdown_safe():
     bridge = (ROOT / "jenefar" / "voice" / "browser.py").read_text(encoding="utf-8")
-    assert "max_workers=1" in bridge
+    assert "class _DaemonSingleWorkerExecutor" in bridge
+    assert "self._queue: Queue[Any] = Queue()" in bridge
+    assert "daemon=True" in bridge
+    assert "self._task_executor = _DaemonSingleWorkerExecutor(" in bridge
+    assert "cancel_futures=True" in bridge
 
 
 def test_dashboard_has_explicit_fixed_regions():
@@ -540,8 +547,12 @@ def test_dashboard_uses_live_telemetry_and_has_model_controls():
     assert 'id="model-settings-button"' in html
     assert 'id="model-choice"' in html
     assert 'id="model-id-input"' in html
-    assert 'fetch("/system/metrics?ts="+Date.now()' in app
-    assert "setInterval(refreshSystemMetrics,1500)" in app
+    # Metrics rings must have a single writer. The loopback WebSocket is
+    # authoritative; a second REST polling loop made the rings flicker.
+    assert 'fetch("/system/metrics?ts="+Date.now()' not in app
+    assert "setInterval(refreshSystemMetrics,1500)" not in app
+    assert 'new WebSocket(socketUrl())' in app
+    assert "function updateTelemetry(data)" in app
     assert 'path == "/system/metrics"' in server
     assert 'path == "/model/status"' in server
     assert 'path == "/model/select"' in server
@@ -647,7 +658,7 @@ def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
     approval_handler = app[approval_start:approval_end]
     assert 'const resultValue=payload?.result;' in approval_handler
     assert 'browserSpeakFallback(reply);' not in approval_handler
-    assert 'playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");' in app
+    assert 'playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"",String(event.task_id||""));' in app
     assert 'function stopBrowserAudio(){' in app
     assert 'browserAudioGeneration' in app
     assert 'browserSpeechGeneration' in app
@@ -724,3 +735,179 @@ def test_scan_result_events_carry_structured_data_without_speech():
     assert event["data"]["kind"] == "host_discovery"
     assert event["data"]["hosts"][0]["ip"] == "192.168.29.1"
     assert event["audio_b64"] == ""
+
+def test_browser_mic_falls_back_when_server_audio_pipeline_is_unavailable():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function transcribeCapturedAudio(blob,durationMs){")
+    end = js.index("function startFallbackMonitor(){", start)
+    handler = js[start:end]
+
+    # ffmpeg/decode errors are infrastructure failures, not user speech errors.
+    # If the browser exposes SpeechRecognition, stop the failing recorder path
+    # and switch to native browser recognition instead of retrying forever.
+    assert "const audioPipelineUnavailable=" in handler
+    assert "ffmpeg|could not decode microphone audio|audio conversion" in handler
+    assert "if((providerUnavailable||audioPipelineUnavailable)&&fallbackMode&&voiceSupported&&recognition)" in handler
+    assert "Browser audio pipeline is unavailable; switching to browser speech recognition: " in handler
+    assert '"SERVER AUDIO FAILED — TRYING BROWSER SPEECH"' in handler
+    assert "fallbackMode=false;" in handler
+    assert "resumeBrowserVoice();" in handler
+
+def test_cloud_stt_empty_transcript_falls_back_to_local_whisper(monkeypatch):
+    import asyncio
+    from jenefar.voice.provider import ProviderVoiceRuntime
+
+    runtime = ProviderVoiceRuntime(orchestrator=object())
+    monkeypatch.setattr(runtime, "_provider_order", lambda: ["openai"])
+    monkeypatch.setattr(runtime._audio_pool, "available", lambda _provider: True)
+
+    async def empty_cloud_transcript(_audio):
+        return "  "
+
+    async def local_transcript(_audio):
+        return " open browser "
+
+    monkeypatch.setattr(runtime, "_transcribe_openai", empty_cloud_transcript)
+    monkeypatch.setattr(runtime, "_transcribe_local", local_transcript)
+
+    transcript = asyncio.run(runtime.transcribe_pcm(b"\\x00" * 3200))
+    assert transcript == "open browser"
+
+
+def test_empty_server_transcript_switches_to_browser_speech_recognition():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function transcribeCapturedAudio(blob,durationMs){")
+    end = js.index("function startFallbackMonitor(){", start)
+    handler = js[start:end]
+
+    assert 'result?.reason==="empty_transcript"' in handler
+    assert "if(fallbackMode&&voiceSupported&&recognition)" in handler
+    assert "stopFallbackMonitor(true);" in handler
+    assert "fallbackMode=false;" in handler
+    assert '"SERVER STT HEARD NO WORDS — SWITCHING TO BROWSER SPEECH"' in handler
+
+
+
+def test_dashboard_has_explicit_quit_and_release_memory_control():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+
+    assert 'id="runtime-ops-shutdown"' in html
+    assert 'fetch("/runtime/shutdown"' in app
+    assert 'if path == "/runtime/shutdown":' in server
+    assert "shutdown_handler=request_runtime_shutdown" in run
+    assert "LocalLLMClient.release_runtime_models()" in run
+
+
+def test_live_system_metrics_have_only_one_browser_writer():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+
+    # REST polling and WebSocket telemetry previously painted the same rings
+    # with different units and sample times, making the readings flicker.
+    assert 'setInterval(refreshSystemMetrics,1500)' not in js
+    assert "function refreshSystemMetrics()" not in js
+    assert 'new WebSocket(socketUrl())' in js
+    assert "particleFrameInterval=1000/30" in js
+    assert "Math.min(110,Math.max(36,Math.floor(width/14)))" in js
+
+
+
+def test_offline_voice_setup_command_is_available():
+    from run import build_parser
+
+    parsed = build_parser().parse_args(["--setup-voice"])
+    assert parsed.setup_voice is True
+    assert (ROOT / "requirements-voice.txt").is_file()
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "def setup_voice() -> int:" in run
+    assert "WhisperModel(" in run
+    assert "sys.prefix == sys.base_prefix" in run
+    assert "python3 -m venv .venv" in run
+    assert "def _reexec_in_project_venv_if_available() -> bool:" in run
+
+def test_voice_ui_shows_local_whisper_setup_hint_for_cache_miss():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "No usable local Whisper model was found in the cache" in js
+    assert "python run.py --setup-voice" in js
+    assert "VOICE MODEL MISSING — RUN python run.py --setup-voice" in js
+
+def test_browser_mic_detects_suspended_audio_context_and_silent_input():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("function startFallbackMonitor(){")
+    end = js.index("async function sendBrowserTranscript(text){", start)
+    monitor = js[start:end]
+
+    assert "activeContext.resume().then" in monitor
+    assert 'activeContext.state!=="running"' in monitor
+    assert "fallbackToBrowserSpeech" in monitor
+    assert "MIC ON — INPUT LEVEL " in monitor
+    assert "noiseFloor*2.4" in monitor
+    assert "now-monitorStartedAt>8000&&now-lastInputSignalAt>7000" in monitor
+
+
+def test_browser_mic_short_recording_does_not_fail_silently():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "AUDIO TOO SHORT — SPEAK FOR 1–3 SECONDS" in js
+
+def test_runtime_diagnostics_endpoint_and_dashboard_control_are_wired():
+    from pathlib import Path
+
+    web = ROOT / "jenefar" / "avatar" / "web"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    app = (web / "app.js").read_text(encoding="utf-8")
+    server = (ROOT / "jenefar" / "avatar" / "server.py").read_text(encoding="utf-8")
+    run = (ROOT / "run.py").read_text(encoding="utf-8")
+    diagnostics = (ROOT / "jenefar" / "core" / "diagnostics.py").read_text(encoding="utf-8")
+
+    assert 'id="runtime-ops-diagnostics"' in html
+    assert 'fetch("/runtime/diagnostics?ts="+Date.now()' in app
+    assert 'if path == "/runtime/diagnostics":' in server
+    assert "runtime_diagnostics_handler= lambda" in run or "runtime_diagnostics_handler=lambda" in run
+    assert "collect_runtime_diagnostics" in diagnostics
+    assert "_audio_status()" in diagnostics
+    assert "_whisper_status()" in diagnostics
+    assert "_ollama_status()" in diagnostics
+    assert "_online_provider_status(orchestrator)" in diagnostics
+    assert "CLOUD " in app
+    assert "VOICE STT" in app
+    assert "VOICE TTS" in app
+
+def test_chat_finalizes_audio_and_terminal_task_states():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'function playBrowserAudio(base64,mime,text,taskId="")' in js
+    assert 'apply({state:"completed",task_id:taskId,text:""})' in js
+    assert '["result","speaking","speaking_fallback","error","cancelled","waiting_approval"]' in js
+    assert '["completed","error","cancelled"]' in js
+    assert "Task complete nahi ho saka." in js
+
+
+def test_busy_typed_command_gets_visible_explanation_instead_of_silent_return():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "Command not queued: Jenefar is busy with another task." in js
+    assert "ASSISTANT BUSY — wait or cancel the active task" in js
+    assert "Main abhi ek task par kaam kar rahi hoon." in js
+
+
+
+def test_dashboard_diagnostics_reports_local_model_policy_and_timeout_controls():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    diagnostics = (ROOT / "jenefar" / "core" / "diagnostics.py").read_text(encoding="utf-8")
+
+    assert "LOCAL MODEL POLICY" in js
+    assert "local_max_params_billions" in js
+    assert "local_context_tokens" in js
+    assert '"local_max_params_billions"' in diagnostics
+    assert '"local_allow_large_model"' in diagnostics
+    assert '"local_think_enabled"' in diagnostics
+    assert '"local_keep_alive"' in diagnostics
+
+def test_browser_native_tts_error_releases_speaking_lock_and_surfaces_status():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    start = js.index("function browserSpeakFallback(text,taskId=\"\"){")
+    end = js.index("function apply(event){", start)
+    fallback = js[start:end]
+    assert 'utterance.onerror=()=>{' in fallback
+    assert 'apply({state:"completed",task_id:taskId,text:""})' in fallback
+    assert "BROWSER SPEECH PLAYBACK FAILED — check system sound output" in fallback

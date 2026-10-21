@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from jenefar.core.cancellation import CancellationToken
 from jenefar.core.model_router import ModelRouter
 from jenefar.core.provider_pool import (
     ProviderPool,
@@ -48,6 +50,20 @@ class LLMClient:
             return self.local.detect(model_role=self.default_role) is not None
         except Exception:
             return False
+
+    @staticmethod
+    def _check_cancel(cancel_token: CancellationToken | None) -> None:
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
+
+    @staticmethod
+    def _remaining_timeout(deadline: float | None) -> float | None:
+        if deadline is None:
+            return None
+        remaining = float(deadline) - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Jenefar execution budget exhausted")
+        return remaining
 
     def selected_model(self, model_role: str | None = None) -> tuple[str, str]:
         role = (model_role or self.default_role or "fast").strip().lower()
@@ -184,6 +200,8 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         tools: list[dict[str, Any]] = []
@@ -196,6 +214,7 @@ class LLMClient:
         last_response = None
         tool_counts: Counter[str] = Counter()
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            self._check_cancel(cancel_token)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "instructions": instructions,
@@ -204,6 +223,9 @@ class LLMClient:
             }
             if tools:
                 kwargs["tools"] = tools
+            timeout = self._remaining_timeout(deadline)
+            if timeout is not None:
+                kwargs["timeout"] = timeout
             response = client.responses.create(**kwargs)
             last_response = response
             calls = [
@@ -250,6 +272,8 @@ class LLMClient:
                         model,
                         model_role,
                     )
+                self._check_cancel(cancel_token)
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(tool_name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -303,6 +327,8 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         client = self._client(provider)
         messages: list[dict[str, Any]] = [
@@ -313,6 +339,7 @@ class LLMClient:
         tool_counts: Counter[str] = Counter()
 
         for _ in range(max(1, min(max_tool_rounds, 20))):
+            self._check_cancel(cancel_token)
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
@@ -320,6 +347,9 @@ class LLMClient:
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
+            timeout = self._remaining_timeout(deadline)
+            if timeout is not None:
+                kwargs["timeout"] = timeout
             response = client.chat.completions.create(**kwargs)
             choice = response.choices[0]
             message = choice.message
@@ -366,6 +396,8 @@ class LLMClient:
                         model,
                         model_role,
                     )
+                self._check_cancel(cancel_token)
+                self._remaining_timeout(deadline)
                 output = tool_broker.invoke(name, arguments)
                 try:
                     parsed = json.loads(output)
@@ -414,6 +446,8 @@ class LLMClient:
         max_tool_rounds: int,
         model: str,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         if provider == "openai":
             return self._complete_openai_responses(
@@ -421,12 +455,13 @@ class LLMClient:
                 use_web_search=use_web_search, tool_broker=tool_broker,
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds, model=model,
-                model_role=model_role,
+                model_role=model_role, deadline=deadline, cancel_token=cancel_token,
             )
         return self._complete_chat(
             provider, prompt, instructions=instructions,
             tool_broker=tool_broker, allow_action_tools=allow_action_tools,
             max_tool_rounds=max_tool_rounds, model=model, model_role=model_role,
+            deadline=deadline, cancel_token=cancel_token,
         )
 
     @staticmethod
@@ -537,6 +572,8 @@ class LLMClient:
         allow_action_tools: bool,
         max_tool_rounds: int,
         model_role: str,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
         all_tools = (
             tool_broker.schemas(
@@ -546,10 +583,14 @@ class LLMClient:
             if tool_broker is not None else []
         )
         tools = self._select_local_tools(prompt, all_tools)
+        self._check_cancel(cancel_token)
+        self._remaining_timeout(deadline)
         text, pending = self.local.complete(
             prompt=prompt, instructions=instructions, tools=tools,
             tool_broker=tool_broker, max_tool_rounds=max_tool_rounds,
             model_role=model_role,
+            deadline=deadline,
+            cancel_token=cancel_token,
         )
         if pending:
             return LLMResponse(
@@ -559,6 +600,40 @@ class LLMClient:
         return LLMResponse(
             text, "local", model=self.local.model, model_role=model_role,
         )
+
+    @staticmethod
+    def _online_request_deadline(
+        deadline: float | None,
+        *,
+        now: float | None = None,
+    ) -> float | None:
+        """Bound cloud attempts so local fallback always gets reserved task time."""
+        if deadline is None:
+            return None
+        moment = time.monotonic() if now is None else float(now)
+        remaining = float(deadline) - moment
+        if remaining <= 0:
+            return float(deadline)
+
+        def env_seconds(name: str, default: float, lower: float, upper: float) -> float:
+            try:
+                value = float(os.getenv(name, str(default)).strip())
+            except (TypeError, ValueError):
+                value = default
+            return min(upper, max(lower, value))
+
+        local_reserve = env_seconds(
+            "JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", 45.0, 5.0, 120.0
+        )
+        online_budget = env_seconds(
+            "JENEFAR_ONLINE_LLM_BUDGET_SECONDS", 20.0, 3.0, 120.0
+        )
+        # If the task has less than the configured reserve left, skip cloud calls
+        # entirely and let local fallback use the remaining bounded task deadline.
+        cloud_cutoff = float(deadline) - local_reserve
+        if cloud_cutoff <= moment:
+            return moment
+        return min(cloud_cutoff, moment + online_budget)
 
     def complete(
         self,
@@ -570,20 +645,46 @@ class LLMClient:
         allow_action_tools: bool = False,
         max_tool_rounds: int = 4,
         model_role: str | None = None,
+        deadline: float | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> LLMResponse:
+        self._check_cancel(cancel_token)
+        self._remaining_timeout(deadline)
         online = internet_available()
         _, selected_role = self.selected_model(model_role)
         failures: list[str] = []
         runtime_override = ModelRouter.runtime_override()
         runtime_provider = (runtime_override or {}).get("provider", "")
-        provider_order = self.providers.order()
+        provider_order = self.providers.order_for_role(selected_role)
         if runtime_provider in self.providers.CONFIGS:
             provider_order = [runtime_provider] + [
                 name for name in provider_order if name != runtime_provider
             ]
 
-        if online:
+        online_deadline = self._online_request_deadline(deadline)
+        online_window_open = (
+            online
+            and (
+                deadline is None
+                or (online_deadline is not None and online_deadline - time.monotonic() > 0.5)
+            )
+        )
+        if online and not online_window_open:
+            failures.append("cloud LLM window skipped to preserve the local fallback budget")
+            print(
+                "[JENEFAR] Skipping cloud LLM attempts because the task budget is low; "
+                "preserving remaining time for local fallback."
+            )
+
+        if online_window_open:
             for provider in provider_order:
+                if online_deadline is not None and online_deadline - time.monotonic() <= 0.5:
+                    failures.append("cloud LLM window ended; local fallback time was reserved")
+                    print(
+                        "[JENEFAR] Cloud LLM time window ended; switching to local fallback "
+                        "with the reserved task budget."
+                    )
+                    break
                 if not self.providers.available(provider):
                     continue
                 runtime_model = (runtime_override or {}).get("model", "")
@@ -593,16 +694,21 @@ class LLMClient:
                     else self.explicit_model or self.providers.model(provider, selected_role)
                 )
                 try:
+                    started = time.perf_counter()
                     result = self._complete_online(
                         provider, prompt, instructions=instructions,
                         use_web_search=use_web_search, tool_broker=tool_broker,
                         allow_action_tools=allow_action_tools,
                         max_tool_rounds=max_tool_rounds, model=model,
                         model_role=selected_role,
+                        deadline=online_deadline,
+                        cancel_token=cancel_token,
                     )
+                    self.providers.record_latency(provider, time.perf_counter() - started, success=True)
                     self.providers.reset(provider)
                     return result
                 except Exception as exc:
+                    self.providers.record_latency(provider, time.perf_counter() - started, success=False)
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
                     quota_exhausted = is_quota_exhausted_provider_error(exc)
@@ -663,6 +769,8 @@ class LLMClient:
             )
 
         try:
+            self._check_cancel(cancel_token)
+            self._remaining_timeout(deadline)
             return self._complete_local(
                 prompt,
                 instructions=(
@@ -676,6 +784,8 @@ class LLMClient:
                 allow_action_tools=allow_action_tools,
                 max_tool_rounds=max_tool_rounds,
                 model_role=selected_role,
+                deadline=deadline,
+                cancel_token=cancel_token,
             )
         except Exception as exc:
             local_error = f"{type(exc).__name__}: {exc}"
@@ -687,12 +797,28 @@ class LLMClient:
             )
             lowered = local_error.casefold()
             if "timed out" in lowered or "timeout" in lowered:
+                current_local_model = str(getattr(self.local, "model", "") or "")
+                smaller_tag = LocalLLMClient._recommended_smaller_model_tag(
+                    current_local_model
+                )
+                if smaller_tag:
+                    local_hint = (
+                        f" Installed model '{current_local_model}' bhi slow hai; "
+                        f"smaller model install karein: 'ollama pull {smaller_tag}'. "
+                        f".env mein JENEFAR_LOCAL_LLM_FALLBACK_MODEL={smaller_tag} set kar sakte hain."
+                    )
+                else:
+                    local_hint = (
+                        " Ollama library se apne installed model se chhota chat model install "
+                        "karke JENEFAR_LOCAL_LLM_FALLBACK_MODEL mein uska exact tag set karein."
+                    )
                 message = (
                     "Cloud AI providers se response nahi mila aur local model bhi timeout ho gaya. "
-                    "Jenefar ab ek compact retry aur, available ho to, installed smaller Ollama model "
-                    "try karta hai. Agar yeh message phir aaye to ek baar 'ollama pull qwen3:8b' "
-                    "chalayein; yeh local model hai aur API credits use nahi karta. "
-                    "Terminal mein har cloud provider ki asli error bhi ab dikh jayegi."
+                    "Jenefar ne compact retry aur available smaller-model fallback try kiya. "
+                    + local_hint
+                    + " Timeout values .env mein JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS aur "
+                    "JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS se tune ki ja sakti hain. "
+                    "Terminal mein provider errors ki detail maujood hai."
                 )
             elif "empty answer" in lowered or "returned an empty" in lowered:
                 message = (

@@ -108,3 +108,52 @@ def test_rea_tools_are_registered_and_mutating_bridge_call_is_gated(monkeypatch)
     assert result["status"] == "approval_required"
     assert result["tool"] == "rea_call"
     assert len(broker.pending) == 1
+
+def test_nonzero_terminal_exit_is_reported_as_tool_failure_not_success():
+    import json
+
+    broker = ToolBroker(require_confirmation=True)
+    request = json.loads(broker.invoke(
+        "terminal_execute",
+        {"command": "python -c 'import sys; sys.exit(7)'", "timeout": 5},
+    ))
+    assert request["status"] == "approval_required"
+
+    result = json.loads(broker.approve(request["pending_id"]))
+    assert result["status"] == "error"
+    assert result["executed"] is True
+    assert result["exit_code"] == 7
+    assert "exit_code=7" in result["result"]
+
+
+def test_terminal_result_includes_zero_exit_code_for_success():
+    import json
+
+    broker = ToolBroker(require_confirmation=True)
+    request = json.loads(broker.invoke(
+        "terminal_execute",
+        {"command": "printf verified", "timeout": 5},
+    ))
+    result = json.loads(broker.approve(request["pending_id"]))
+    assert result["status"] == "ok"
+    assert "exit_code=0" in result["result"]
+    assert "verified" in result["result"]
+
+def test_terminal_failure_is_recorded_for_task_verification_without_raw_command():
+    import json
+
+    broker = ToolBroker(require_confirmation=True)
+    broker.set_task_context(agent="coding", task="Run the requested local test safely")
+    request = json.loads(broker.invoke(
+        "terminal_execute",
+        {"command": "python -c 'import sys; sys.exit(7)'", "timeout": 5},
+    ))
+    result = json.loads(broker.approve(request["pending_id"]))
+    failures = broker.consume_task_failures()
+
+    assert result["status"] == "error"
+    assert len(failures) == 1
+    assert failures[0]["tool"] == "terminal_execute"
+    assert failures[0]["stage"] == "execution"
+    assert "code 7" in failures[0]["error"]
+    assert "python -c" not in json.dumps(failures)
