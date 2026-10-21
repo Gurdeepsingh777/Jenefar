@@ -581,7 +581,10 @@ function playBrowserAudio(base64,mime,text,taskId=""){
 
 function browserSpeakFallback(text,taskId=""){
   const clean=String(text||"").replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
-  if(!clean) return;
+  if(!clean){
+    if(taskId) apply({state:"completed",task_id:taskId,text:""});
+    return;
+  }
 
   // Native speech is a fallback, never a second simultaneous playback path.
   stopBrowserAudio();
@@ -621,15 +624,23 @@ function browserSpeakFallback(text,taskId=""){
     utterance.onerror=()=>{
       if(generation!==browserSpeechGeneration) return;
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
+      setVoiceInputStatus("BROWSER SPEECH PLAYBACK FAILED — check system sound output",false);
     };
     window.speechSynthesis.speak(utterance);
   }catch(_){
     if(generation===browserSpeechGeneration){
       browserSpeechActive=false;
-      voiceLocked=false;
-      resumeBrowserVoice();
+      if(taskId) apply({state:"completed",task_id:taskId,text:""});
+      else{
+        voiceLocked=false;
+        resumeBrowserVoice();
+      }
+      setVoiceInputStatus("BROWSER SPEECH PLAYBACK FAILED — check system sound output",false);
     }
   }
 }
