@@ -224,3 +224,11 @@ def test_internal_narration_from_cloud_provider_is_repaired(monkeypatch):
 
     assert result.content == "The answer is 42."
     assert result.metadata["provider"] == "gemini"
+
+def test_unclosed_reasoning_tags_are_never_exposed_to_users():
+    assert BaseLLMAgent._strip_internal_reasoning(
+        "<think>I should recap the user's old chat instead of answering."
+    ) == ""
+    assert BaseLLMAgent._strip_internal_reasoning(
+        "Verified fact. <analysis>Unfinished internal analysis"
+    ) == "Verified fact."
