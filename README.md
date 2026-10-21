@@ -919,7 +919,7 @@ Yeh runtime track current host-discovery/port-scan flow, local-model fallback, e
 - Runtime trace summaries mein p50/p95/max latency, failure rate aur slow-task counts.
 
 ### Phase 8 — Execution budgets
-- `JENEFAR_AGENT_TIMEOUT_SECONDS` default 60 s (10–300 s bounded); agent/role-specific `JENEFAR_AGENT_TIMEOUT_<NAME>` overrides.
+- `JENEFAR_AGENT_TIMEOUT_SECONDS` default 180 s (10–300 s bounded); agent/role-specific `JENEFAR_AGENT_TIMEOUT_<NAME>` overrides. Cloud LLMs share a bounded window so the configured local fallback reserve remains available.
 - Deadline cloud Responses/Chat requests, local LLM inference aur tool loop tak propagate hota hai.
 
 ### Phase 9 — Runtime operations dashboard
@@ -1017,18 +1017,18 @@ Suggested settings in `.env`:
 
 ```env
 JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS=600
-JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS=120
-JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=180
-JENEFAR_LOCAL_LLM_FALLBACK_MODEL=
+JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS=45
+JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS=120
+JENEFAR_LOCAL_LLM_FALLBACK_MODEL=qwen3:4b
 ```
 
 If a large local model such as a 27B model is installed and requests time out, install a smaller local fallback once while online:
 
 ```bash
-ollama pull qwen3:8b
+ollama pull qwen3:4b
 ```
 
-This downloads a local model and does not use hosted API credits. Once installed, Jenefar can switch to it automatically when the larger model times out.
+This downloads a local model and does not use hosted API credits. Set `JENEFAR_LOCAL_LLM_FALLBACK_MODEL=qwen3:4b` in `.env` to select it as the preferred fallback. When an inference attempt times out, Jenefar can walk through smaller already-installed models (for example 27B → 8B → 4B → 1.7B). It never downloads models automatically. By default, models above `JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS=8` are not selected for interactive tasks unless `JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL=true` is explicitly enabled.
 
 Before opening the browser UI, run the actual inference smoke test:
 
@@ -1038,6 +1038,25 @@ python run.py --llm-smoke-test
 ```
 
 The smoke test tries Groq -> Gemini -> OpenRouter -> local Ollama. It deliberately excludes OpenAI so debugging does not consume a paid OpenAI balance. `python run.py --doctor` only verifies that a local model is detected; it does not prove that chat inference completes. The smoke test prints the provider/model that responded, or the actual provider and local timeout errors if all attempts fail. Native Wayland desktop automation is a separate compositor/backend capability and is not the same as LLM/text chat availability.
+
+## Reliability workflow and diagnostics
+
+Run these from the project root with `.venv` activated:
+
+```bash
+python run.py --doctor
+python run.py --provider-status
+python run.py --llm-smoke-test
+node --check jenefar/avatar/web/app.js
+python -m compileall -q jenefar run.py
+python -m pytest -q
+```
+
+The dashboard's **RUN DIAGNOSTICS** panel reports the selected OS audio input/output, cached Whisper package/model status, online provider cooldowns, local Ollama model/fallback policy, context/output limits, task/cloud/local timeout budgets, and desktop input/capture readiness. Diagnostics never expose API keys.
+
+For a voice command, the terminal logs safe stages without printing the spoken words: microphone upload byte count, decoded PCM peak/RMS, successful STT provider and transcript length, selected LLM provider/model, tool failures, and whether browser-native TTS fallback was required. A near-zero PCM level points to the OS Input device; successful STT with a timeout points to local/cloud inference; a generated answer with no sound points to browser/system audio output.
+
+A task is not counted as successful when the local provider is unavailable or a tool execution failure remains unresolved. Tool-result summaries are bounded, treated as untrusted data, and revalidated before a user-facing answer. After tool approval, continuation receives a fresh bounded deadline. Voice and orchestrator activity events share the same dashboard task ID to prevent duplicate phantom-running entries.
 
 ## Multi-provider LLM failover
 
