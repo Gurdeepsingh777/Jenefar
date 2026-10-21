@@ -1935,6 +1935,13 @@ async function refreshRuntimeDiagnostics(){
         +" · local reserve "+Number(report.timeouts?.local_reserve_seconds||0)+"s"
         +" · primary "+Number(report.timeouts?.local_primary_seconds||0)+"s"
         +" · retry "+Number(report.timeouts?.local_retry_seconds||0)+"s",
+      "LOCAL MODEL POLICY · "+(report.local_llm?.configured_model||"auto-select")
+        +" · fallback "+(report.local_llm?.configured_fallback||"auto smaller installed model")
+        +" · cap "+Number(report.timeouts?.local_max_params_billions||8)+"B"
+        +(report.timeouts?.local_allow_large_model?" · large models enabled":" · large models opt-in")
+        +" · think "+(report.timeouts?.local_think_enabled?"on":"off")
+        +" · keep-alive "+String(report.timeouts?.local_keep_alive||"30s")
+        +" · ctx "+Number(report.timeouts?.local_context_tokens||2048),
       report.active_task
         ? "ACTIVE TASK · "+String(report.active_task.state||"unknown")+" · "+String(report.active_task.agent||"")
         : "ACTIVE TASK · none"
