@@ -139,15 +139,25 @@ class JenefarOrchestrator:
         failures: list[dict[str, Any]],
         successful_actions: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """A failed tool is resolved only when that same tool later succeeds."""
-        successful_names = {
-            str(action.get("tool") or "unknown")
-            for action in successful_actions
-        }
-        return [
-            item for item in failures
-            if str(item.get("tool") or "unknown") not in successful_names
-        ]
+        """Resolve at most one failure per successful retry of the same tool.
+
+        Argument/result payloads are intentionally not retained in the action log for
+        privacy. Counting successes avoids the previous bug where one successful call
+        erased any number of separate failures from that tool during the same task.
+        """
+        success_counts: dict[str, int] = {}
+        for action in successful_actions:
+            name = str(action.get("tool") or "unknown")
+            success_counts[name] = success_counts.get(name, 0) + 1
+
+        unresolved: list[dict[str, Any]] = []
+        for item in failures:
+            name = str(item.get("tool") or "unknown")
+            if success_counts.get(name, 0) > 0:
+                success_counts[name] -= 1
+                continue
+            unresolved.append(item)
+        return unresolved
 
     @staticmethod
     def _late_dispatch_result_should_fail(deadline: float, result: Any, *, now: float | None = None) -> bool:
