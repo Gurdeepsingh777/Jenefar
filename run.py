@@ -234,7 +234,7 @@ def doctor() -> int:
         )
         whisper_installed = importlib.util.find_spec("faster_whisper") is not None
         local_stt_path = os.getenv("JENEFAR_LOCAL_STT_MODEL_PATH", "").strip()
-        local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "small").strip() or "small"
+        local_stt_model = local_stt_path or os.getenv("JENEFAR_LOCAL_STT_MODEL", "base").strip() or "base"
         local_stt_path_ok = not local_stt_path or Path(local_stt_path).expanduser().is_dir()
         if not whisper_installed:
             whisper_status = "NOT INSTALLED (run: python run.py --setup-voice)"
