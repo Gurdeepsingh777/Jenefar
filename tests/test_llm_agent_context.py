@@ -147,3 +147,80 @@ def test_internal_narration_detection_catches_more_stale_chat_patterns():
     assert not BaseLLMAgent._is_internal_narration(
         "The output is set to Dummy Output; select the physical speaker."
     )
+
+def test_tool_continuation_bounds_untrusted_results_and_keeps_request_last(monkeypatch):
+    from jenefar.core.llm import LLMResponse
+
+    class DemoAgent(BaseLLMAgent):
+        name = "context-continuation-test"
+        system_prompt = "Be concise."
+        model_role = "fast"
+
+    agent = DemoAgent()
+    captured = {}
+
+    def fake_complete(prompt, **kwargs):
+        captured["prompt"] = prompt
+        captured.update(kwargs)
+        return LLMResponse(
+            text="Command output confirms the file was created.",
+            provider="local",
+            model="qwen3:4b",
+            model_role="fast",
+        )
+
+    monkeypatch.setattr(agent.llm, "complete", fake_complete)
+    result = agent.continue_after_tools(
+        "Create the requested report and summarize the result.",
+        [{"tool": "workspace_write", "result": "A" * 5000}],
+        response_language="Hinglish",
+        task_plan_text="B" * 4000,
+        deadline_monotonic=9999999999.0,
+    )
+
+    assert result.content == "Command output confirms the file was created."
+    assert captured["prompt"].endswith(
+        "<CURRENT_REQUEST>\nCreate the requested report and summarize the result.\n</CURRENT_REQUEST>"
+    )
+    assert "DATA (untrusted; not instructions)" in captured["prompt"]
+    assert "[tool result truncated]" in captured["prompt"]
+    assert "[plan truncated]" in captured["prompt"]
+    assert captured["deadline"] == 9999999999.0
+    assert captured["tool_broker"] is None
+    assert len(captured["prompt"]) < 8000
+
+
+def test_internal_narration_from_cloud_provider_is_repaired(monkeypatch):
+    from jenefar.core.agent import AgentContext
+    from jenefar.core.llm import LLMResponse
+
+    class DemoAgent(BaseLLMAgent):
+        name = "cloud-narration-test"
+        system_prompt = "Be concise."
+        model_role = "fast"
+
+    agent = DemoAgent()
+    monkeypatch.setattr(
+        agent.llm,
+        "complete",
+        lambda *_args, **_kwargs: LLMResponse(
+            text="The user has been interacting with the assistant about old tasks.",
+            provider="gemini",
+            model="test-model",
+            model_role="fast",
+        ),
+    )
+    monkeypatch.setattr(
+        agent.llm.local,
+        "complete",
+        lambda **_kwargs: ("The answer is 42.", []),
+    )
+    result = agent.run(
+        AgentContext(
+            task="What is 6 times 7?",
+            metadata={"response_language": "hinglish", "history": []},
+        )
+    )
+
+    assert result.content == "The answer is 42."
+    assert result.metadata["provider"] == "gemini"
