@@ -38,6 +38,7 @@ from jenefar.memory.advanced import AdvancedMemory
 from jenefar.events.engine import EventEngine
 from jenefar.rea.client import ReaMCPClient
 from jenefar.evaluation.trace import redact_sensitive
+from jenefar.voip_security import analyze_source as analyze_voip_source
 
 
 @dataclass
@@ -316,6 +317,40 @@ class ToolBroker:
         }
 
     def _register_builtin_tools(self) -> None:
+        self.registry.register(ToolSpec(
+            name="voip_parser_source_review",
+            description="Offline defensive review of supplied C/C++ source for VoIP/WebRTC packet-parser memory-safety indicators. This is static heuristic analysis only; do not use it to exploit targets.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "source_code": {
+                        "type": "string",
+                        "description": "C/C++ source snippet the user is authorized to review; do not include secrets."
+                    }
+                },
+                "required": ["source_code"],
+                "additionalProperties": False,
+            },
+            handler=lambda args: {
+                "mode": "offline-static-review",
+                "finding_count": len(analyze_voip_source(str(args.get("source_code", "")))),
+                "findings": [
+                    {
+                        "rule_id": item.rule_id,
+                        "severity": item.severity,
+                        "line": item.line,
+                        "title": item.title,
+                        "evidence": item.evidence,
+                        "recommendation": item.recommendation,
+                    }
+                    for item in analyze_voip_source(str(args.get("source_code", "")))
+                ],
+                "limitations": [
+                    "Heuristic matches can be false positives and do not establish exploitability.",
+                    "No packets are sent and no remote target is contacted.",
+                ],
+            },
+        ))
         self.registry.register(ToolSpec(
             name="rea_status",
             description="Check optional REA MCP bridge status and Node.js prerequisites.",
