@@ -81,3 +81,32 @@ def test_orchestrator_activity_events_inherit_and_reset_voice_task_id():
 
     assert orchestrator.avatar.events[0]["task_id"] == "voice-task-123"
     assert orchestrator.avatar.events[1]["task_id"] == ""
+
+def test_tool_failure_resolution_requires_one_success_per_failure():
+    from jenefar.core.orchestrator import JenefarOrchestrator
+
+    failures = [
+        {"tool": "desktop_click", "stage": "execution", "error": "first click failed"},
+        {"tool": "desktop_click", "stage": "execution", "error": "second click failed"},
+        {"tool": "browser_open", "stage": "execution", "error": "navigation failed"},
+    ]
+    successes = [{"tool": "desktop_click"}]
+    unresolved = JenefarOrchestrator._unresolved_tool_failures(failures, successes)
+
+    assert len(unresolved) == 2
+    assert unresolved[0]["error"] == "second click failed"
+    assert unresolved[1]["tool"] == "browser_open"
+
+
+def test_each_successful_tool_retry_resolves_at_most_one_matching_failure():
+    from jenefar.core.orchestrator import JenefarOrchestrator
+
+    failures = [
+        {"tool": "workspace_write", "error": "attempt 1 failed"},
+        {"tool": "workspace_write", "error": "attempt 2 failed"},
+    ]
+    successes = [
+        {"tool": "workspace_write"},
+        {"tool": "workspace_write"},
+    ]
+    assert JenefarOrchestrator._unresolved_tool_failures(failures, successes) == []
