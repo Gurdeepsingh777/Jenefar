@@ -658,7 +658,7 @@ def test_avatar_approval_controls_use_orchestrator_workflow_callbacks():
     approval_handler = app[approval_start:approval_end]
     assert 'const resultValue=payload?.result;' in approval_handler
     assert 'browserSpeakFallback(reply);' not in approval_handler
-    assert 'playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"");' in app
+    assert 'playBrowserAudio(event.audio_b64,event.audio_mime,event.text||"",String(event.task_id||""));' in app
     assert 'function stopBrowserAudio(){' in app
     assert 'browserAudioGeneration' in app
     assert 'browserSpeechGeneration' in app
