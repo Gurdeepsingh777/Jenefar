@@ -509,3 +509,45 @@ def test_tts_logs_browser_native_fallback_when_generated_audio_is_unavailable():
     bridge = Path("jenefar/voice/browser.py").read_text(encoding="utf-8")
     assert "requesting browser-native SpeechSynthesis fallback" in bridge
     assert "do not leave 'Dummy Output' selected" in bridge
+
+def test_runtime_diagnostics_expose_local_model_policy_and_allow_overrides(monkeypatch):
+    from jenefar.core.diagnostics import _timeout_settings
+
+    monkeypatch.setenv("JENEFAR_AGENT_TIMEOUT_SECONDS", "240")
+    monkeypatch.setenv("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", "25")
+    monkeypatch.setenv("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", "80")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", "50")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", "150")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS", "6.5")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL", "true")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_THINK", "false")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "45s")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "8192")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "256")
+
+    settings = _timeout_settings()
+    assert settings["task_seconds"] == 240
+    assert settings["online_window_seconds"] == 25
+    assert settings["local_reserve_seconds"] == 80
+    assert settings["local_primary_seconds"] == 50
+    assert settings["local_retry_seconds"] == 150
+    assert settings["local_max_params_billions"] == 6.5
+    assert settings["local_allow_large_model"] is True
+    assert settings["local_think_enabled"] is False
+    assert settings["local_keep_alive"] == "45s"
+    assert settings["local_context_tokens"] == 8192
+    assert settings["local_predict_tokens"] == 256
+
+
+def test_runtime_diagnostics_model_policy_clamps_unsafe_or_malformed_values(monkeypatch):
+    from jenefar.core.diagnostics import _timeout_settings
+
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS", "not-a-number")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_CTX", "999999")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_NUM_PREDICT", "1")
+    monkeypatch.setenv("JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL", "not-true")
+    settings = _timeout_settings()
+    assert settings["local_max_params_billions"] == 8.0
+    assert settings["local_context_tokens"] == 65536
+    assert settings["local_predict_tokens"] == 128
+    assert settings["local_allow_large_model"] is False
