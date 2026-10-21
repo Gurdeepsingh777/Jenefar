@@ -366,21 +366,39 @@ def _voice_provider_status() -> dict[str, Any]:
     }
 
 
-def _timeout_settings() -> dict[str, int]:
-    def read(name: str, default: int, minimum: int, maximum: int) -> int:
+def _timeout_settings() -> dict[str, Any]:
+    def read_int(name: str, default: int, minimum: int, maximum: int) -> int:
         try:
             value = int(os.getenv(name, str(default)).strip())
         except (TypeError, ValueError):
             value = default
         return max(minimum, min(maximum, value))
 
+    def read_float(name: str, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(os.getenv(name, str(default)).strip())
+        except (TypeError, ValueError):
+            value = default
+        return max(minimum, min(maximum, value))
+
+    allow_large = os.getenv("JENEFAR_LOCAL_LLM_ALLOW_LARGE_MODEL", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
     return {
-        "task_seconds": read("JENEFAR_AGENT_TIMEOUT_SECONDS", 180, 10, 300),
-        "online_window_seconds": read("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", 20, 3, 120),
-        "local_reserve_seconds": read("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", 45, 5, 120),
-        "local_primary_seconds": read("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 45, 5, 180),
-        "local_retry_seconds": read("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 120, 5, 300),
-        "local_socket_ceiling_seconds": read("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", 600, 5, 1800),
+        "task_seconds": read_int("JENEFAR_AGENT_TIMEOUT_SECONDS", 180, 10, 300),
+        "online_window_seconds": read_int("JENEFAR_ONLINE_LLM_BUDGET_SECONDS", 20, 3, 120),
+        "local_reserve_seconds": read_int("JENEFAR_LOCAL_FALLBACK_RESERVE_SECONDS", 45, 5, 120),
+        "local_primary_seconds": read_int("JENEFAR_LOCAL_LLM_PRIMARY_TIMEOUT_SECONDS", 45, 5, 180),
+        "local_retry_seconds": read_int("JENEFAR_LOCAL_LLM_RETRY_TIMEOUT_SECONDS", 120, 5, 300),
+        "local_socket_ceiling_seconds": read_int("JENEFAR_LOCAL_LLM_TIMEOUT_SECONDS", 600, 5, 1800),
+        "local_max_params_billions": read_float("JENEFAR_LOCAL_LLM_MAX_PARAMS_BILLIONS", 8.0, 0.6, 128.0),
+        "local_allow_large_model": allow_large,
+        "local_think_enabled": os.getenv("JENEFAR_LOCAL_LLM_THINK", "false").strip().lower() in {
+            "1", "true", "yes", "on"
+        },
+        "local_keep_alive": (os.getenv("JENEFAR_LOCAL_LLM_KEEP_ALIVE", "30s").strip() or "30s")[:40],
+        "local_context_tokens": read_int("JENEFAR_LOCAL_LLM_NUM_CTX", 2048, 2048, 65536),
+        "local_predict_tokens": read_int("JENEFAR_LOCAL_LLM_NUM_PREDICT", 192, 128, 8192),
     }
 
 
