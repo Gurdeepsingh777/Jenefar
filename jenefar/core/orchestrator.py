@@ -63,6 +63,10 @@ class JenefarOrchestrator:
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
         self.avatar = avatar
+        # Associate internal avatar/activity events with the browser voice task that
+        # caused them. Thread-local context avoids crossing IDs between concurrent
+        # desktop/API callers while keeping the event channel backward compatible.
+        self._avatar_event_task = threading.local()
         self.tool_broker = ToolBroker(
             require_confirmation=self.config.require_confirmation_for_tools,
             audit=self.audit,
@@ -1986,11 +1990,32 @@ class JenefarOrchestrator:
         from jenefar.core.model_router import ModelRouter
         return ModelRouter().role_for_intent(plan.intent, plan.agent)
 
+    def bind_avatar_event_task(self, task_id: str) -> str:
+        """Bind internal activity events to a voice task for consistent dashboard IDs."""
+        context = getattr(self, "_avatar_event_task", None)
+        if context is None:
+            context = threading.local()
+            self._avatar_event_task = context
+        previous = str(getattr(context, "task_id", "") or "")
+        context.task_id = str(task_id or "")
+        return previous
+
+    def reset_avatar_event_task(self, previous_task_id: str = "") -> None:
+        context = getattr(self, "_avatar_event_task", None)
+        if context is not None:
+            context.task_id = str(previous_task_id or "")
+
     def _avatar_activity(self, state: str, text: str = "") -> None:
         if text:
             print(f"[JENEFAR][ACTIVITY] {state.upper()}: {text}")
         if self.avatar is not None:
-            self.avatar.publish(state, text)
+            context = getattr(self, "_avatar_event_task", None)
+            task_id = str(getattr(context, "task_id", "") or "") if context is not None else ""
+            try:
+                self.avatar.publish(state, text, task_id=task_id)
+            except TypeError:
+                # Preserve compatibility with embedders exposing a minimal avatar stub.
+                self.avatar.publish(state, text)
 
     def _avatar_state(self, state: str, text: str = "") -> None:
         self._avatar_activity(state, text)
