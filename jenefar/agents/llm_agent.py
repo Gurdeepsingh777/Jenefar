@@ -83,6 +83,19 @@ class BaseLLMAgent(BaseAgent):
             value,
             flags=re.IGNORECASE | re.DOTALL,
         )
+        # Some models emit an opening reasoning tag but never close it. If that
+        # happens, discard that unfinished segment instead of showing it to the user.
+        unclosed = re.search(
+            r"<(?:think|analysis|reasoning)>",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if unclosed and not re.search(
+            r"</(?:think|analysis|reasoning)>",
+            value[unclosed.end():],
+            flags=re.IGNORECASE,
+        ):
+            value = value[:unclosed.start()].strip()
         # Support common token-style reasoning/final separators without depending on a
         # particular model family.
         final_token = re.search(r"<\|final\|>", value, flags=re.IGNORECASE)
@@ -115,6 +128,13 @@ class BaseLLMAgent(BaseAgent):
             "let me think through this",
             "my chain of thought",
             "internal reasoning:",
+            "the user is asking me to",
+            "i need to answer the user",
+            "i should respond to the user",
+            "we need to answer",
+            "let me analyze the user's request",
+            "let's think through",
+            "first i need to understand the user",
         )
         return any(marker in value for marker in markers)
 
