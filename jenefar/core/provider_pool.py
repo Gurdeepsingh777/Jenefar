@@ -28,6 +28,11 @@ class ProviderPool:
             "APINEX_MODEL",
             "free/gpt-6-luna",
         ),
+        "unorouter": ProviderConfig("unorouter", "UNOROUTER_API_KEY", "https://api.unorouter.com/v1", "UNOROUTER_MODEL", "ling-3.0-flash-vl:free"),
+        "apmix": ProviderConfig("apmix", "APMIX_API_KEY", "https://api.apmix.ai/v1", "APMIX_MODEL", "qwen3.8-max"),
+        "nvidia": ProviderConfig("nvidia", "NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1", "NVIDIA_MODEL", "nvidia/llama-3.1-70b-instruct"),
+        "kilo": ProviderConfig("kilo", "KILO_API_KEY", "https://ai-gateway.kilo.ai/api/v1", "KILO_MODEL", "anthropic/claude-sonnet-4.5"),
+        "qwen": ProviderConfig("qwen", "DASHSCOPE_API_KEY", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "QWEN_MODEL", "qwen3.8-max"),
         "openrouter": ProviderConfig(
             "openrouter",
             "OPENROUTER_API_KEY",
@@ -67,7 +72,7 @@ class ProviderPool:
         # Prefer providers with useful free tiers, then optionally use OpenAI
         # if the user has configured a working paid key. Local Ollama is the
         # automatic final fallback in LLMClient.complete().
-        default_order = ["groq", "gemini", "openrouter", "apinex", "openai"]
+        default_order = ["groq", "gemini", "openrouter", "apinex", "unorouter", "apmix", "nvidia", "kilo", "qwen", "openai"]
         raw = os.getenv("JENEFAR_PROVIDER_ORDER", "").strip()
         if not raw:
             return default_order
@@ -205,7 +210,7 @@ class ProviderPool:
                 "available": self.available(name),
                 "api_key_env": config.api_key_env,
                 "model": self.model(name, role),
-                "base_url": config.base_url or "https://api.openai.com/v1",
+                "base_url": (os.getenv(f"JENEFAR_{name.upper()}_BASE_URL", "").strip() or (os.getenv("DASHSCOPE_BASE_URL", "").strip() if name == "qwen" else "") or config.base_url or "https://api.openai.com/v1"),
                 "cooldown_seconds": max(0, round(until - now, 1)),
                 "latency": self.latency_status()[name],
             }
