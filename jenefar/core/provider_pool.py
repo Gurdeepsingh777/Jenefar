@@ -21,6 +21,13 @@ class ProviderPool:
 
     CONFIGS = {
         "openai": ProviderConfig("openai", "OPENAI_API_KEY", "", "OPENAI_MODEL", "gpt-5.6-luna"),
+        "apinex": ProviderConfig(
+            "apinex",
+            "APINEX_API_KEY",
+            "https://api.apinex.bond/v1",
+            "APINEX_MODEL",
+            "free/gpt-6-luna",
+        ),
         "openrouter": ProviderConfig(
             "openrouter",
             "OPENROUTER_API_KEY",
@@ -60,7 +67,7 @@ class ProviderPool:
         # Prefer providers with useful free tiers, then optionally use OpenAI
         # if the user has configured a working paid key. Local Ollama is the
         # automatic final fallback in LLMClient.complete().
-        default_order = ["groq", "gemini", "openrouter", "openai"]
+        default_order = ["groq", "gemini", "openrouter", "apinex", "openai"]
         raw = os.getenv("JENEFAR_PROVIDER_ORDER", "").strip()
         if not raw:
             return default_order
