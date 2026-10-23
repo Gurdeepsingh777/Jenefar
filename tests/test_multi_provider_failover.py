@@ -110,7 +110,7 @@ def test_generic_telegram_gemini_key_is_usable_by_avatar_llm(monkeypatch):
 
 def test_default_provider_order_prioritizes_free_friendly_providers(monkeypatch):
     monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
-    assert ProviderPool().order() == ["groq", "gemini", "openrouter", "openai"]
+    assert ProviderPool().order() == ["groq", "gemini", "openrouter", "apinex", "openai"]
 
 
 def test_legacy_example_orders_migrate_but_custom_order_is_preserved(monkeypatch):
@@ -120,7 +120,7 @@ def test_legacy_example_orders_migrate_but_custom_order_is_preserved(monkeypatch
         "gemini,openrouter,groq,openai",
     ):
         monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", old_order)
-        assert pool.order() == ["groq", "gemini", "openrouter", "openai"]
+        assert pool.order() == ["groq", "gemini", "openrouter", "apinex", "openai"]
 
     monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", "openrouter,groq")
     assert pool.order() == ["openrouter", "groq"]
@@ -218,3 +218,18 @@ def test_gemini_chat_tool_history_preserves_google_thought_signature():
 
     assert serialized["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == signature
     assert serialized["tool_calls"][0]["function"]["name"] == "skill_catalog"
+
+
+
+def test_apinex_provider_configuration_and_free_model(monkeypatch):
+    monkeypatch.setenv("APINEX_API_KEY", "test-apinex-key")
+    monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
+    monkeypatch.delenv("APINEX_MODEL", raising=False)
+    pool = ProviderPool()
+
+    assert "apinex" in pool.order()
+    assert pool.configured("apinex")
+    assert pool.api_key("apinex") == "test-apinex-key"
+    assert pool.model("apinex", "fast") == "free/gpt-6-luna"
+    status = pool.status()["apinex"]
+    assert status["base_url"] == "https://api.apinex.bond/v1"

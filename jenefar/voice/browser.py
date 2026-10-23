@@ -874,16 +874,30 @@ class BrowserVoiceBridge:
                 display_summary = self._display_text(
                     str(structured_scan.get("summary") or reply)
                 )
-                # Do not synthesize or enqueue spoken IP/port lists. The browser's
-                # dedicated glass results window is the sole presentation path.
-                self._last_assistant_text = ""
-                self._last_assistant_spoken_at = 0.0
+                # Keep detailed IP/port data in the dedicated results window,
+                # but always speak a concise summary so voice users receive feedback.
                 self._publish(
                     "scan_results",
                     display_summary,
                     task_id,
                     data=structured_scan,
                 )
+                spoken_summary = roman_hinglish_for_voice(display_summary)
+                self._last_assistant_text = display_summary
+                self._last_assistant_spoken_at = time.monotonic()
+                if spoken_summary:
+                    audio_b64, audio_mime = self._synthesize_browser_audio(spoken_summary)
+                    self._publish(
+                        "speaking",
+                        display_summary,
+                        task_id,
+                        audio_b64=audio_b64,
+                        audio_mime=audio_mime,
+                    )
+                    if not audio_b64:
+                        self._publish("speaking_fallback", display_summary, task_id)
+                else:
+                    self._publish("completed", "", task_id)
                 return
 
             speech_source = enforce_hinglish(reply)
