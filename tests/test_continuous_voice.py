@@ -150,3 +150,15 @@ def test_browser_voice_bridge_uses_task_pool():
     bridge = BrowserVoiceBridge
     assert issubclass(ThreadPoolExecutor, object)
     assert hasattr(bridge, "submit_text")
+
+
+def test_browser_voice_speaks_summary_for_structured_scan_results():
+    from pathlib import Path
+
+    source = Path("jenefar/voice/browser.py").read_text(encoding="utf-8")
+    start = source.index("if isinstance(structured_scan, dict)")
+    end = source.index("\n            speech_source = enforce_hinglish(reply)", start)
+    scan_branch = source[start:end]
+    assert "self._publish(\n                    \"scan_results\"" in scan_branch
+    assert "_synthesize_browser_audio(spoken_summary)" in scan_branch
+    assert "self._publish(\"speaking_fallback\", display_summary, task_id)" in scan_branch
