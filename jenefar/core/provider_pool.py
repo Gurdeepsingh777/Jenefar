@@ -210,7 +210,7 @@ class ProviderPool:
                 "available": self.available(name),
                 "api_key_env": config.api_key_env,
                 "model": self.model(name, role),
-                "base_url": (os.getenv(f"JENEFAR_{name.upper()}_BASE_URL", "").strip() or (os.getenv("DASHSCOPE_BASE_URL", "").strip() if name == "qwen" else "") or config.base_url or "https://api.openai.com/v1"),
+                "base_url": (os.getenv(f"JENEFAR_{name.upper()}_BASE_URL", "").strip() or ((os.getenv("DASHSCOPE_BASE_URL", "").strip() or os.getenv("QWEN_BASE_URL", "").strip()) if name == "qwen" else "") or config.base_url or "https://api.openai.com/v1"),
                 "cooldown_seconds": max(0, round(until - now, 1)),
                 "latency": self.latency_status()[name],
             }
