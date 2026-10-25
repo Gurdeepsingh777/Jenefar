@@ -517,8 +517,6 @@ class LLMClient:
                 "Local fallback is disabled for this run.",
                 "online_unavailable",
                 model_role=selected_role,
-                deadline=deadline,
-                cancel_token=cancel_token,
             )
 
         print(f"[JENEFAR][LLM] switching to local fallback; online_status={'online' if online else 'offline'}; reason={online_error}")
