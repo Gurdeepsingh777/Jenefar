@@ -1999,3 +1999,73 @@ html,body,#stage{
 }
 #production-runtime[data-state="warning"]{color:#ffbb5c}
 #production-runtime[data-state="healthy"]{color:#72ffd8}
+
+
+/* Stabilize the desktop workspace: keep the command stack, live activity and task history in separate lanes. */
+@media (min-width: 1200px) {
+  #activity-panel {
+    right: 18px !important;
+    top: 478px !important;
+    width: 320px !important;
+    height: max(220px, calc(100vh - 568px)) !important;
+    max-height: calc(100vh - 500px) !important;
+    overflow: hidden !important;
+  }
+  #activity-list {
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+  }
+  .command-stack {
+    right: 18px !important;
+    top: 258px !important;
+    width: 320px !important;
+    max-height: 200px !important;
+    overflow: auto !important;
+  }
+  .task-history-panel {
+    left: max(470px, calc(var(--p1-left) + 365px)) !important;
+    right: 356px !important;
+    bottom: 10px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 164px !important;
+    overflow: hidden !important;
+  }
+  .task-history-list { min-height: 0 !important; overflow-y: auto !important; }
+  .realtime-controls {
+    right: 18px !important;
+    bottom: 12px !important;
+    width: 320px !important;
+    max-width: calc(100vw - 36px) !important;
+    min-height: 48px !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    z-index: 120 !important;
+  }
+}
+@media (max-width: 1199px) {
+  #activity-panel {
+    left: auto !important;
+    right: 12px !important;
+    top: auto !important;
+    bottom: 92px !important;
+    width: min(340px, calc(100vw - 210px)) !important;
+    height: min(34vh, 290px) !important;
+    max-height: 290px !important;
+  }
+  .task-history-panel {
+    left: 190px !important;
+    right: 12px !important;
+    bottom: 8px !important;
+    height: 150px !important;
+    min-width: 0 !important;
+  }
+  .realtime-controls { max-width: calc(100vw - 24px) !important; flex-wrap: wrap !important; }
+}
+@media (max-width: 800px) {
+  #activity-panel { display: flex !important; left: 12px !important; right: 12px !important; bottom: 200px !important; width: auto !important; height: 26vh !important; }
+  .task-history-panel { left: 12px !important; right: 12px !important; bottom: 8px !important; height: 168px !important; }
+  .realtime-controls { left: 12px !important; right: 12px !important; bottom: 182px !important; width: auto !important; }
+}
