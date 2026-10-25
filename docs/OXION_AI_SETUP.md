@@ -4,11 +4,12 @@ Jenefar's LLM provider pool supports Oxion AI through its OpenAI-compatible Chat
 
 ## 1. Configure the API key
 
-Copy .env.example to .env if you have not already done so. In your local .env, set:
+Copy .env.example to .env if you have not already done so. Keep all values containing spaces in quotes (especially JENEFAR_WAKE_PHRASES and JENEFAR_BROWSER_TTS_INSTRUCTIONS). Do not run source .env until those values are quoted; dotenv loads .env automatically when Jenefar starts. In your local .env, set:
 
     OXION_API_KEY=cc_your_actual_key_here
     OXION_MODEL=claude-sonnet-5
     JENEFAR_PROVIDER_ORDER=oxion,openai,openrouter,gemini,groq,cerebras
+    JENEFAR_ADAPTIVE_ROUTING=0
 
 Replace the example value with the key copied from Oxion AI Dashboard → API Keys. Do not commit .env, paste the key into chat, or place it in browser-side code. If the key was exposed, revoke it and create a new one.
 
@@ -27,7 +28,11 @@ From the Jenefar repository root, run:
 
 Do not print or share the key. A successful request should return the model list.
 
-Then start Jenefar normally. The provider pool tries Oxion first when its key is configured and falls through to other configured online providers after retryable provider errors; Jenefar's existing local LLM fallback remains available through its normal runtime path.
+Then run the UI with online-only mode if you want to prevent silent Ollama fallback:
+
+    python run.py --voice-auto --online-only
+
+The provider pool tries Oxion first when its key is configured and falls through to other configured online providers after provider errors. With --online-only, if all online providers fail, Jenefar reports the failure instead of switching to Ollama. Omit --online-only when you want offline fallback.
 
 ## Notes
 
