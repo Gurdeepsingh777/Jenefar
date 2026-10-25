@@ -40,7 +40,7 @@ class ProviderPool:
 
     def order_for_role(self, role: str = "fast") -> list[str]:
         names = self.order()
-        enabled = os.getenv("JENEFAR_ADAPTIVE_ROUTING", "1").strip().lower() not in {"0", "false", "no", "off"}
+        enabled = os.getenv("JENEFAR_ADAPTIVE_ROUTING", "0").strip().lower() not in {"0", "false", "no", "off"}
         if not enabled:
             return names
         warmup = max(1, int(os.getenv("JENEFAR_ROUTING_WARMUP_SAMPLES", "2")))
