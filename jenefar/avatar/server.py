@@ -21,7 +21,7 @@ ASSET_DIR = Path(__file__).with_name("web")
 
 
 class _AvatarHandler(BaseHTTPRequestHandler):
-    MAX_REQUEST_BODY_BYTES = 1024 * 1024
+    MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024
     controller: AvatarController
     vrm_path: Path | None
     tool_broker = None
