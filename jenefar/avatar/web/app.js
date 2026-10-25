@@ -557,6 +557,10 @@ let voiceSupported=false;
 let restartTimer=null;
 let browserSpeechActive=false;
 let browserAudio=null;
+let serverTranscriptionFallback=false;
+let mediaRecorder=null;
+let recorderStream=null;
+let recorderChunks=[];
 
 function setVoiceInputStatus(text,active=false){
   if(voiceInputStatus){
@@ -630,6 +634,106 @@ async function sendBrowserTranscript(text){
   }
 }
 
+async function startServerAudioRecording(){
+  if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){
+    setVoiceInputStatus("MIC CAPTURE UNSUPPORTED — USE CHROME/CHROMIUM",false);
+    setMicButton(false,false);
+    return;
+  }
+  try{
+    recorderStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    const preferredType=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"].find(type=>MediaRecorder.isTypeSupported(type));
+    mediaRecorder=preferredType?new MediaRecorder(recorderStream,{mimeType:preferredType}):new MediaRecorder(recorderStream);
+    recorderChunks=[];
+    mediaRecorder.ondataavailable=event=>{if(event.data&&event.data.size)recorderChunks.push(event.data);};
+    mediaRecorder.onerror=event=>{
+      addActivity({state:"error",text:"Microphone recorder: "+(event.error?.name||"recording error")});
+      setVoiceInputStatus("MIC RECORDING ERROR",false);
+    };
+    mediaRecorder.onstop=async()=>{
+      const blob=new Blob(recorderChunks,{type:mediaRecorder?.mimeType||"audio/webm"});
+      recorderStream?.getTracks().forEach(track=>track.stop());
+      recorderStream=null;
+      mediaRecorder=null;
+      recorderChunks=[];
+      micEnabled=false;
+      voiceLocked=true;
+      setMicButton(false,true);
+      if(blob.size<1200){
+        setVoiceInputStatus("AUDIO TOO SHORT — TRY AGAIN",false);
+        setMicButton(false,false);
+        voiceLocked=false;
+        return;
+      }
+      await sendBrowserAudio(blob);
+    };
+    mediaRecorder.start();
+    micEnabled=true;
+    voiceLocked=false;
+    setVoiceInputStatus("RECORDING — CLICK MIC TO SEND",true);
+    setMicButton(true,false);
+  }catch(error){
+    const code=error?.name||"unknown";
+    setVoiceInputStatus(code==="NotAllowedError"?"MIC BLOCKED — ALLOW IN SITE SETTINGS":"MIC ERROR: "+code,false);
+    addActivity({state:"error",text:"Microphone capture: "+code});
+    recorderStream?.getTracks().forEach(track=>track.stop());
+    recorderStream=null;
+    micEnabled=false;
+    voiceLocked=true;
+    setMicButton(false,false);
+  }
+}
+
+function stopServerAudioRecording(){
+  if(mediaRecorder&&mediaRecorder.state!=="inactive"){
+    setVoiceInputStatus("TRANSCRIBING AUDIO…",true);
+    try{mediaRecorder.stop();}catch(_){}
+  }
+}
+
+async function sendBrowserAudio(blob){
+  try{
+    const bytes=await blob.arrayBuffer();
+    let binary="";
+    const data=new Uint8Array(bytes);
+    for(let offset=0;offset<data.length;offset+=0x8000){
+      binary+=String.fromCharCode(...data.subarray(offset,Math.min(offset+0x8000,data.length)));
+    }
+    const audioB64=btoa(binary);
+    const response=await fetch("/voice/audio",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({audio_b64:audioB64,mime_type:blob.type||"audio/webm"})
+    });
+    const result=await response.json();
+    if(!response.ok||result?.error||result?.ok===false){
+      throw new Error(result?.error||("HTTP "+response.status));
+    }
+    if(result?.transcript) addActivity({state:"listening",text:"You (server STT): "+result.transcript});
+    if(result?.busy){
+      setVoiceInputStatus("Jawaab abhi chal raha hai — thoda wait karo",true);
+      setMicButton(false,true);
+    }else if(result?.accepted){
+      setVoiceInputStatus("TRANSCRIPT SENT • "+(result.stt_provider||"online STT").toUpperCase(),true);
+      setMicButton(false,false);
+      voiceLocked=false;
+    }else if(result?.ignored){
+      setVoiceInputStatus("NO NEW SPEECH DETECTED",false);
+      setMicButton(false,false);
+      voiceLocked=false;
+    }else{
+      setVoiceInputStatus("VOICE REQUEST RECEIVED",true);
+      setMicButton(false,false);
+      voiceLocked=false;
+    }
+  }catch(error){
+    addActivity({state:"error",text:"Server STT failed: "+error.message});
+    setVoiceInputStatus("STT ERROR — CHECK GROQ/OPENAI KEY",false);
+    setMicButton(false,false);
+    voiceLocked=false;
+  }
+}
+
 function setupBrowserVoice(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 
@@ -673,6 +777,14 @@ function setupBrowserVoice(){
 
   if(micButton){
     micButton.onclick=async()=>{
+      if(serverTranscriptionFallback){
+        if(mediaRecorder&&mediaRecorder.state==="recording"){
+          stopServerAudioRecording();
+        }else{
+          await startServerAudioRecording();
+        }
+        return;
+      }
       if(!voiceSupported) return;
       if(micEnabled){
         micEnabled=false;
@@ -693,10 +805,21 @@ function setupBrowserVoice(){
   }
 
   if(!Recognition){
+    // Firefox and some privacy-focused browsers do not implement Web Speech.
+    // Capture audio locally and use the configured server-side STT provider instead.
+    if(window.MediaRecorder && navigator.mediaDevices?.getUserMedia){
+      serverTranscriptionFallback=true;
+      voiceSupported=true;
+      micEnabled=false;
+      voiceLocked=true;
+      setVoiceInputStatus("SERVER STT READY — CLICK TO RECORD",false);
+      setMicButton(false,false);
+      return;
+    }
     voiceSupported=false;
     micEnabled=false;
-    setVoiceInputStatus("BROWSER SPEECH UNSUPPORTED",false);
-    setMicButton(false, false);
+    setVoiceInputStatus("MIC CAPTURE UNSUPPORTED",false);
+    setMicButton(false,false);
     if(micButton) micButton.textContent="MIC UNSUPPORTED";
     return;
   }
