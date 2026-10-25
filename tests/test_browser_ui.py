@@ -373,8 +373,8 @@ def test_critical_only_approval_policy():
     broker = ToolBroker(require_confirmation=False)
     assert broker.registry.get("workspace_edit_file").critical is False
     assert broker.registry.get("workspace_validate_python").critical is False
-    assert broker.registry.get("desktop_click_element").critical is False
-    assert broker.registry.get("desktop_screenshot").critical is False
+    assert broker.registry.get("desktop_click_element").critical is True
+    assert broker.registry.get("desktop_screenshot").critical is True
     assert broker.registry.get("whatsapp_send_web").critical is True
     assert broker.registry.get("terminal_execute").critical is True
 

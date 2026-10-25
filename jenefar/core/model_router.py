@@ -47,8 +47,35 @@ class ModelRouter:
             return self.role_for_agent(agent_name)
         return "fast"
 
-    def resolve(self, role: str = "fast", *, explicit_model: str | None = None) -> ModelSelection:
-        normalized = (role or "fast").strip().lower() or "fast"
+    def role_for_complexity(self, agent_name: str, complexity: str = "standard") -> str:
+        level = (complexity or "standard").strip().lower() or "standard"
+        if agent_name in self.ROLE_ENV:
+            agent_role = agent_name
+        else:
+            agent_role = self.role_for_agent(agent_name)
+        if level == "simple":
+            return "fast"
+        if level == "hard":
+            if agent_role == "coding":
+                return "coding"
+            if os.getenv(self.ROLE_ENV["reasoning"], "").strip():
+                return "reasoning"
+            return agent_role
+        return agent_role
+
+    def resolve(
+        self,
+        role: str = "fast",
+        *,
+        explicit_model: str | None = None,
+        complexity: str | None = None,
+        agent_name: str | None = None,
+    ) -> ModelSelection:
+        if complexity:
+            resolved_role = self.role_for_complexity(agent_name or role, complexity)
+        else:
+            resolved_role = (role or "fast").strip().lower() or "fast"
+        normalized = resolved_role
         if explicit_model:
             return ModelSelection(normalized, explicit_model, "explicit-agent-model")
         role_env = self.ROLE_ENV.get(normalized)

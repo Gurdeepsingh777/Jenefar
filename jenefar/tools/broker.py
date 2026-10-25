@@ -108,6 +108,19 @@ class ToolBroker:
             "robot_mqtt_publish",
             "robot_ros2_publish",
             "robot_command",
+            "desktop_click_element",
+            "desktop_type_into_element",
+            "desktop_hotkey",
+            "desktop_scroll",
+            "desktop_click",
+            "desktop_type",
+            "desktop_press",
+            "desktop_screenshot",
+            "desktop_window_transfer",
+            "desktop_window_restore",
+            "desktop_window_focus",
+            "desktop_mirror_start",
+            "desktop_mirror_stop",
         }
         for name in critical_names:
             try:

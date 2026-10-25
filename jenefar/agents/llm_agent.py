@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from jenefar.core.agent import AgentContext, AgentResult, BaseAgent
+from jenefar.core.complexity import tool_round_budget
 from jenefar.core.llm import LLMClient
 from jenefar.core.model_router import ModelRouter
 
@@ -140,15 +141,24 @@ class BaseLLMAgent(BaseAgent):
             plan_text = str(task_plan.get("prompt_text") or "").strip()
             if plan_text:
                 instructions += "\n\nHierarchical task plan:\n" + plan_text
+        critic_notes = str(context.metadata.get("critic_notes") or "").strip()
+        if critic_notes:
+            instructions += (
+                "\nCritic notes from the previous attempt. Fix these issues "
+                "and do not repeat the same unverified claims:\n"
+                + critic_notes
+            )
 
         role = str(context.metadata.get("model_role") or self.model_role)
+        complexity = str(context.metadata.get("complexity") or "standard")
+        rounds = tool_round_budget(complexity, self.max_tool_rounds)
         response = self.llm.complete(
             f"Task:\n{context.task}{history_text}{memory_text}{procedure_text}{graph_text}",
             instructions=instructions,
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if self.use_tools else None,
             allow_action_tools=self.allow_action_tools,
-            max_tool_rounds=self.max_tool_rounds,
+            max_tool_rounds=rounds,
             model_role=role,
         )
         return AgentResult(
@@ -203,7 +213,7 @@ class BaseLLMAgent(BaseAgent):
             use_web_search=self.use_web_search,
             tool_broker=self.tool_broker if continue_tools and self.use_tools else None,
             allow_action_tools=self.allow_action_tools if continue_tools else False,
-            max_tool_rounds=self.max_tool_rounds,
+            max_tool_rounds=tool_round_budget("standard", self.max_tool_rounds),
             model_role=self.model_role,
         )
         return AgentResult(

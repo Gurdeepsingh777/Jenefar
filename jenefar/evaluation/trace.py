@@ -24,6 +24,10 @@ class ExecutionTrace:
     planner_confidence: float = 0.0
     provider: str = ""
     model_role: str = ""
+    complexity: str = ""
+    intent_fallback_used: bool = False
+    critic_verdict: str = ""
+    critic_replan: bool = False
     connectivity: str = "unknown"
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None

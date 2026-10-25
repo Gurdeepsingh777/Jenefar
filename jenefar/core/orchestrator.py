@@ -13,7 +13,9 @@ from jenefar.agents.cybersecurity.kali import KaliSecurityAgent
 from jenefar.agents.research.research import ResearchAgent
 from jenefar.agents.robotics.robotics import RoboticsAgent
 from jenefar.agents.utility import UtilityAgent
+from jenefar.core.complexity import ComplexityClassifier
 from jenefar.core.config import load_config
+from jenefar.core.intent import LLMIntentFallback
 from jenefar.core.planner import Planner
 from jenefar.core.router import AgentRouter
 from jenefar.core.session import Session
@@ -49,6 +51,8 @@ class JenefarOrchestrator:
         self.trace_store = TraceStore()
         self.self_healing = SelfHealingRuntime()
         self.planner = Planner(skills=self.skills)
+        self.classifier = ComplexityClassifier()
+        self.intent_fallback = LLMIntentFallback(llm_complete=self._fast_complete)
         self.audit = AuditLogger(self.config.audit_log_path)
         self.scope = ScopePolicy(self.config.authorized_targets)
         self.avatar = avatar
@@ -222,11 +226,27 @@ class JenefarOrchestrator:
             recall = self.memory_engine.recall(text, limit=8)
             graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
             plan = self.planner.plan(text)
+            complexity = "standard"
+            intent_fallback_used = False
+            try:
+                complexity = self.classifier.classify(text, plan).level
+            except Exception:
+                complexity = "standard"
+            try:
+                refined = self.intent_fallback.refine(text, plan)
+                if refined is not plan:
+                    intent_fallback_used = True
+                    plan = refined
+                    complexity = self.classifier.classify(text, plan).level
+            except Exception:
+                intent_fallback_used = False
             task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
             trace.intent = plan.intent
             trace.planned_agent = plan.agent
             trace.planner_confidence = plan.confidence
-            trace.model_role = self._model_role_for_plan(plan)
+            trace.complexity = complexity
+            trace.intent_fallback_used = intent_fallback_used
+            trace.model_role = self._model_role_for_plan(plan, complexity)
             connected = internet_available()
             trace.connectivity = "online" if connected else "offline"
             online_task = any(marker in text.lower() for marker in (
@@ -251,6 +271,10 @@ class JenefarOrchestrator:
                 "planned_agent": plan.agent,
                 "planner_reason": plan.reason,
                 "planner_confidence": plan.confidence,
+                "complexity": complexity,
+                "intent_fallback_used": intent_fallback_used,
+                "critic_pass": 0,
+                "critic_notes": "",
                 "task_plan": task_plan.as_dict() | {"prompt_text": task_plan.prompt_text()},
                 "model_role": trace.model_role,
                 "response_language": response_language,
@@ -271,24 +295,48 @@ class JenefarOrchestrator:
                 ],
             }
             self._avatar_activity("thinking", "")
-            if hasattr(self.tool_broker, "set_task_context"):
-                self.tool_broker.set_task_context(
-                    agent=plan.agent,
-                    task=text,
-                )
-            try:
-                result = self.self_healing.run(
-                    "agent_dispatch",
-                    lambda: self.router.dispatch(text, metadata=dispatch_metadata),
-
-                    metadata={
-                        "approval_required": False,
-                        "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
-                    },
-                )
-            finally:
-                if hasattr(self.tool_broker, "clear_task_context"):
-                    self.tool_broker.clear_task_context()
+            critic_pass = 0
+            critic_verdict = "skipped"
+            critic_replan = False
+            result = self._dispatch_with_healing(text, plan, dispatch_metadata)
+            awaiting = str(result.metadata.get("provider", "")) in {
+                "approval_required",
+                "local_approval_required",
+            }
+            if complexity != "simple" and not awaiting:
+                try:
+                    critique = self.verifier.review(
+                        text,
+                        result.content,
+                        complexity=complexity,
+                        tool_trace=list(trace.tool_calls),
+                    )
+                    critic_verdict = "pass" if critique.passed else "fail"
+                    if critique.skipped:
+                        critic_verdict = "skipped"
+                    elif not critique.passed:
+                        critic_pass = 1
+                        critic_replan = True
+                        dispatch_metadata["critic_pass"] = 1
+                        dispatch_metadata["critic_notes"] = critique.notes
+                        result = self._dispatch_with_healing(text, plan, dispatch_metadata)
+                        awaiting = str(result.metadata.get("provider", "")) in {
+                            "approval_required",
+                            "local_approval_required",
+                        }
+                        retry_critique = self.verifier.review(
+                            text,
+                            result.content,
+                            complexity=complexity,
+                            tool_trace=list(trace.tool_calls),
+                        )
+                        critic_verdict = "pass" if retry_critique.passed else "fail"
+                        if retry_critique.skipped:
+                            critic_verdict = "skipped"
+                except Exception:
+                    critic_verdict = "skipped"
+            trace.critic_verdict = critic_verdict
+            trace.critic_replan = critic_replan
             trace.metadata["self_healing"] = {
                 "retries": self.self_healing.health.retries,
                 "consecutive_failures": self.self_healing.health.consecutive_failures,
@@ -302,7 +350,13 @@ class JenefarOrchestrator:
                     status="approval_required",
                     approval_required=True,
                 )
-            output = self.verifier.verify(text, result.content)
+            output = self.verifier.verify(
+                text,
+                result.content,
+                complexity=complexity,
+                tool_trace=list(trace.tool_calls),
+                critic_pass=critic_pass,
+            )
             from jenefar.voice.speech import devanagari_to_roman
             output = devanagari_to_roman(output)
             verification = {
@@ -518,10 +572,37 @@ class JenefarOrchestrator:
             )
         return f"The current laptop time is {payload['time']} on {payload['date']} ({payload['timezone']})."
 
+    def _fast_complete(self, prompt: str) -> str:
+        from jenefar.core.llm import LLMClient
+
+        response = LLMClient(model_role="fast").complete(
+            prompt,
+            instructions="Return JSON only. No markdown.",
+            max_tool_rounds=1,
+            model_role="fast",
+        )
+        return str(getattr(response, "text", "") or "")
+
+    def _dispatch_with_healing(self, text: str, plan, dispatch_metadata: dict):
+        if hasattr(self.tool_broker, "set_task_context"):
+            self.tool_broker.set_task_context(agent=plan.agent, task=text)
+        try:
+            return self.self_healing.run(
+                "agent_dispatch",
+                lambda: self.router.dispatch(text, metadata=dispatch_metadata),
+                metadata={
+                    "approval_required": False,
+                    "security_action": plan.agent in {"kali", "cybersecurity", "bugbounty"},
+                },
+            )
+        finally:
+            if hasattr(self.tool_broker, "clear_task_context"):
+                self.tool_broker.clear_task_context()
+
     @staticmethod
-    def _model_role_for_plan(plan) -> str:
+    def _model_role_for_plan(plan, complexity: str = "standard") -> str:
         from jenefar.core.model_router import ModelRouter
-        return ModelRouter().role_for_intent(plan.intent, plan.agent)
+        return ModelRouter().role_for_complexity(plan.agent, complexity)
 
     def _avatar_activity(self, state: str, text: str = "") -> None:
         if text:
