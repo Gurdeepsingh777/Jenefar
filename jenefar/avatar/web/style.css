@@ -2108,17 +2108,26 @@ html,body,#stage{
     max-height: none !important;
   }
   #task-screen {
-    bottom: 338px !important;
-    height: 72px !important;
-    min-height: 72px !important;
-    max-height: 72px !important;
+    bottom: 300px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    max-height: 34px !important;
     right: calc(var(--p1-right) + 36px) !important;
+    overflow: hidden !important;
   }
+  #task-screen .task-screen-progress,
+  #task-screen .task-screen-log,
+  #task-screen .task-screen-footer { display: none !important; }
+  #task-screen .task-screen-header { min-height: 0 !important; padding: 6px 8px !important; }
   .runtime-intel {
-    bottom: 244px !important;
-    height: 86px !important;
+    bottom: 242px !important;
+    height: 48px !important;
     right: calc(var(--p1-right) + 36px) !important;
+    overflow: hidden !important;
   }
+  .runtime-intel .runtime-metrics,
+  .runtime-intel .runtime-health-line { display: none !important; }
+  .runtime-intel .runtime-budget { margin-top: 5px !important; }
   .task-history-panel {
     bottom: 100px !important;
     height: 136px !important;
@@ -2160,19 +2169,18 @@ html,body,#stage{
     max-height: none !important;
   }
   #task-screen {
-    left: calc(var(--p1-left) + 365px) !important;
-    right: calc(var(--p1-right) + 36px) !important;
-    bottom: 338px !important;
-    height: 72px !important;
-    min-height: 72px !important;
-    max-height: 72px !important;
+    display: none !important;
   }
   .runtime-intel {
-    left: calc(var(--p1-left) + 365px) !important;
-    right: calc(var(--p1-right) + 36px) !important;
-    bottom: 244px !important;
-    height: 86px !important;
+    left: 190px !important;
+    right: 344px !important;
+    bottom: 242px !important;
+    height: 48px !important;
+    overflow: hidden !important;
   }
+  .runtime-intel .runtime-metrics,
+  .runtime-intel .runtime-health-line { display: none !important; }
+  .runtime-intel .runtime-budget { margin-top: 5px !important; }
   .task-history-panel {
     left: calc(var(--p1-left) + 365px) !important;
     right: 344px !important;
