@@ -20,34 +20,11 @@ class ProviderPool:
 
     CONFIGS = {
         "openai": ProviderConfig("openai", "OPENAI_API_KEY", "", "OPENAI_MODEL", "gpt-5.6-luna"),
-        "openrouter": ProviderConfig(
-            "openrouter",
-            "OPENROUTER_API_KEY",
-            "https://openrouter.ai/api/v1",
-            "OPENROUTER_MODEL",
-            "openrouter/free",
-        ),
-        "gemini": ProviderConfig(
-            "gemini",
-            "GEMINI_API_KEY",
-            "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "GEMINI_MODEL",
-            "gemini-3.5-flash-lite",
-        ),
-        "groq": ProviderConfig(
-            "groq",
-            "GROQ_API_KEY",
-            "https://api.groq.com/openai/v1",
-            "GROQ_MODEL",
-            "openai/gpt-oss-120b",
-        ),
-        "cerebras": ProviderConfig(
-            "cerebras",
-            "CEREBRAS_API_KEY",
-            "https://api.cerebras.ai/v1",
-            "CEREBRAS_MODEL",
-            "gpt-oss-120b",
-        ),
+        "oxion": ProviderConfig("oxion", "OXION_API_KEY", "https://www.oxionai.com/v1", "OXION_MODEL", "claude-sonnet-5"),
+        "openrouter": ProviderConfig("openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1", "OPENROUTER_MODEL", "openrouter/free"),
+        "gemini": ProviderConfig("gemini", "GEMINI_API_KEY", "https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_MODEL", "gemini-3.5-flash-lite"),
+        "groq": ProviderConfig("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1", "GROQ_MODEL", "openai/gpt-oss-120b"),
+        "cerebras": ProviderConfig("cerebras", "CEREBRAS_API_KEY", "https://api.cerebras.ai/v1", "CEREBRAS_MODEL", "gpt-oss-120b"),
     }
 
     def __init__(self) -> None:
@@ -56,26 +33,18 @@ class ProviderPool:
         self.failure_samples: dict[str, int] = defaultdict(int)
 
     def order(self) -> list[str]:
-        raw = os.getenv(
-            "JENEFAR_PROVIDER_ORDER",
-            "openai,groq,gemini,openrouter",
-        )
+        raw = os.getenv("JENEFAR_PROVIDER_ORDER", "oxion,openai,openrouter,gemini,groq,cerebras")
         names = [item.strip().lower() for item in raw.split(",") if item.strip()]
         valid = [name for name in names if name in self.CONFIGS]
         return valid or ["openai"]
 
     def order_for_role(self, role: str = "fast") -> list[str]:
         names = self.order()
-        enabled = os.getenv("JENEFAR_ADAPTIVE_ROUTING", "1").strip().lower() not in {
-            "0", "false", "no", "off"
-        }
+        enabled = os.getenv("JENEFAR_ADAPTIVE_ROUTING", "1").strip().lower() not in {"0", "false", "no", "off"}
         if not enabled:
             return names
         warmup = max(1, int(os.getenv("JENEFAR_ROUTING_WARMUP_SAMPLES", "2")))
-        known = {
-            name: samples for name, samples in self.latency_samples.items()
-            if name in names and len(samples) >= warmup
-        }
+        known = {name: samples for name, samples in self.latency_samples.items() if name in names and len(samples) >= warmup}
         if not known:
             return names
         position = {name: index for index, name in enumerate(names)}
@@ -85,10 +54,7 @@ class ProviderPool:
                 return (float("inf"), position[name])
             avg = sum(samples[-8:]) / min(len(samples), 8)
             failures = self.failure_samples.get(name, 0)
-            return (
-                avg * (1.0 + min(2.0, failures / max(1, len(samples)))),
-                position[name],
-            )
+            return (avg * (1.0 + min(2.0, failures / max(1, len(samples)))), position[name])
         return sorted(names, key=score)
 
     def record_latency(self, name: str, elapsed_seconds: float, *, success: bool) -> None:
@@ -119,18 +85,12 @@ class ProviderPool:
             if name == "openai" and key.startswith("sk-or-"):
                 return False
             return True
-        # Backward compatibility: the existing Jenefar setup may have stored an
-        # OpenRouter key in OPENAI_API_KEY before provider-aware routing existed.
         return name == "openrouter" and os.getenv("OPENAI_API_KEY", "").strip().startswith("sk-or-")
 
     def model(self, name: str, role: str = "fast") -> str:
         config = self.CONFIGS[name]
         role_env = f"JENEFAR_{name.upper()}_MODEL_{(role or 'fast').strip().upper()}"
-        selected = (
-            os.getenv(role_env, "").strip()
-            or os.getenv(config.model_env, "").strip()
-            or config.default_model
-        )
+        selected = os.getenv(role_env, "").strip() or os.getenv(config.model_env, "").strip() or config.default_model
         if name == "gemini" and selected in {"gemini-2.5-flash-lite", "models/gemini-2.5-flash-lite"}:
             selected = "gemini-3.5-flash-lite"
         return selected
@@ -181,24 +141,14 @@ def is_retryable_provider_error(exc: Exception) -> bool:
     response = getattr(exc, "response", None)
     if status is None and response is not None:
         status = getattr(response, "status_code", None)
-
     if status in {400, 404}:
         return False
     if status in {401, 403, 408, 409, 429, 500, 502, 503, 504}:
         return True
-
     retry_markers = (
-        "authenticationerror",
-        "invalid_api_key",
-        "rate limit",
-        "ratelimit",
-        "too many requests",
-        "timeout",
-        "timed out",
-        "connection",
-        "service unavailable",
-        "temporarily unavailable",
-        "internal server error",
+        "authenticationerror", "invalid_api_key", "rate limit", "ratelimit",
+        "too many requests", "timeout", "timed out", "connection",
+        "service unavailable", "temporarily unavailable", "internal server error",
         "bad gateway",
     )
     return any(marker in message for marker in retry_markers)
