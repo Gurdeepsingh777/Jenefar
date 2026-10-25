@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import os
 import tempfile
 import threading
@@ -274,6 +275,53 @@ class BrowserVoiceBridge:
 
     def handle_text(self, text: str) -> dict[str, Any]:
         return self.submit_text(text)
+
+    def handle_audio(self, audio_bytes: bytes, mime_type: str = "audio/webm") -> dict[str, Any]:
+        """Transcribe browser-recorded audio on the server for browsers without Web Speech API."""
+        if not audio_bytes:
+            return {"ok": False, "error": "No audio was received."}
+        if len(audio_bytes) > 8 * 1024 * 1024:
+            return {"ok": False, "error": "Audio is too large (8 MB limit)."}
+
+        from jenefar.voice.provider import ProviderVoiceRuntime
+
+        mime = (mime_type or "audio/webm").split(";", 1)[0].strip().lower()
+        suffix = ".ogg" if "ogg" in mime else ".wav" if "wav" in mime else ".mp4" if "mp4" in mime else ".webm"
+        audio = io.BytesIO(audio_bytes)
+        audio.name = "jenefar_browser_audio" + suffix
+        providers = ProviderVoiceRuntime._configured_audio_providers()
+        if not providers:
+            return {
+                "ok": False,
+                "error": "Browser speech recognition is unsupported here. Configure GROQ_API_KEY or a valid OPENAI_API_KEY for server-side transcription.",
+            }
+
+        async def transcribe() -> tuple[str, str]:
+            last_error: Exception | None = None
+            for provider in providers:
+                try:
+                    audio.seek(0)
+                    if provider == "groq":
+                        text = await ProviderVoiceRuntime._transcribe_groq(audio)
+                    else:
+                        text = await ProviderVoiceRuntime._transcribe_openai(audio)
+                    if text:
+                        return text, provider
+                    last_error = RuntimeError("The speech service returned an empty transcript.")
+                except Exception as exc:
+                    last_error = exc
+            if last_error:
+                raise last_error
+            raise RuntimeError("No configured speech-to-text provider is available.")
+
+        try:
+            transcript, provider = asyncio.run(transcribe())
+        except Exception as exc:
+            return {"ok": False, "error": f"Audio transcription failed: {type(exc).__name__}: {exc}"}
+        result = self.submit_text(transcript)
+        result["transcript"] = transcript
+        result["stt_provider"] = provider
+        return result
 
     def _run_task(self, task_id: str, raw: str) -> None:
         if self._shutdown_event.is_set():
