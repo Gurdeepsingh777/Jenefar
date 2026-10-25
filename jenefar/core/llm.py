@@ -491,11 +491,13 @@ class LLMClient:
                     )
                     self.providers.record_latency(provider, time.perf_counter() - started, success=True)
                     self.providers.reset(provider)
+                    print(f"[JENEFAR][LLM] online provider={provider} model={model} role={selected_role}")
                     return result
                 except Exception as exc:
                     self.providers.record_latency(provider, time.perf_counter() - started, success=False)
                     error = f"{type(exc).__name__}: {exc}"
                     failures.append(f"{provider}: {error}")
+                    print(f"[JENEFAR][LLM] provider={provider} model={model} failed: {type(exc).__name__}: {exc}")
                     if is_retryable_provider_error(exc):
                         self.providers.cooldown(provider)
                         continue
@@ -519,6 +521,7 @@ class LLMClient:
                 cancel_token=cancel_token,
             )
 
+        print(f"[JENEFAR][LLM] switching to local fallback; online_status={'online' if online else 'offline'}; reason={online_error}")
         try:
             return self._complete_local(
                 prompt,
