@@ -175,7 +175,7 @@ def doctor() -> int:
         print(f"  config                       OK ({config.name})")
         configured_keys = any(
             os.getenv(name, "").strip()
-            for name in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
+            for name in ("OXION_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY")
         )
         print(
             "  online provider keys         "
@@ -597,6 +597,7 @@ def main() -> int:
             vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
+            audio_handler=browser_voice.handle_audio if browser_voice_enabled else None,
             runtime_status=orchestrator.runtime_status,
             cancel_active_task=orchestrator.cancel_active_task,
             runtime_tasks=orchestrator.runtime_tasks,
