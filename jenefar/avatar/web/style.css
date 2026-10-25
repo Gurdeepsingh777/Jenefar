@@ -2078,8 +2078,8 @@ html,body,#stage{
    ========================================================= */
 @media (min-width: 1200px) {
   .system-card {
-    height: 198px !important;
-    min-height: 198px !important;
+    height: 212px !important;
+    min-height: 212px !important;
     padding: 12px !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
@@ -2089,7 +2089,7 @@ html,body,#stage{
     gap: 5px !important;
   }
   .command-stack {
-    top: 282px !important;
+    top: 296px !important;
     gap: 6px !important;
     max-height: 170px !important;
     overflow: hidden !important;
@@ -2101,7 +2101,7 @@ html,body,#stage{
     padding: 6px 12px !important;
   }
   #activity-panel {
-    top: 464px !important;
+    top: 478px !important;
     bottom: 100px !important;
     height: auto !important;
     min-height: 180px !important;
@@ -2134,13 +2134,13 @@ html,body,#stage{
 
 @media (min-width: 1001px) and (max-width: 1199px) {
   .system-card {
-    height: 198px !important;
-    min-height: 198px !important;
+    height: 212px !important;
+    min-height: 212px !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
   }
   .command-stack {
-    top: 282px !important;
+    top: 296px !important;
     gap: 6px !important;
     max-height: 170px !important;
     overflow: hidden !important;
@@ -2152,7 +2152,7 @@ html,body,#stage{
     padding: 6px 12px !important;
   }
   #activity-panel {
-    top: 464px !important;
+    top: 478px !important;
     bottom: 100px !important;
     width: 310px !important;
     height: auto !important;
@@ -2263,7 +2263,7 @@ html,body,#stage{
     position: fixed !important;
     left: 12px !important;
     right: 12px !important;
-    bottom: 84px !important;
+    bottom: 94px !important;
     width: auto !important;
     max-width: none !important;
     z-index: 120 !important;
