@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 
 class WakeWord:
     def __init__(self, phrases: list[str]) -> None:
@@ -11,17 +13,15 @@ class WakeWord:
 
     @staticmethod
     def normalize_stt_text(text: str) -> str:
-        normalized = " ".join(text.lower().strip().split())
+        normalized = " ".join(str(text or "").lower().strip().split())
         for source, target in {
             "jennifer": "jenefar",
             "jenifer": "jenefar",
-            "jennifer.": "jenefar",
-            "jennifer!": "jenefar",
-            "jennifer?": "jenefar",
             "jeneferr": "jenefar",
         }.items():
             normalized = normalized.replace(source, target)
-        return normalized
+        normalized = re.sub(r"[^\w\s]", " ", normalized)
+        return " ".join(normalized.split())
 
     def matched_phrase(self, text: str) -> str | None:
         normalized = self.normalize_stt_text(text)
@@ -34,14 +34,25 @@ class WakeWord:
         return self.matched_phrase(text) is not None
 
     def remove_wake_phrase(self, text: str) -> str:
-        normalized = self.normalize_stt_text(text)
+        original = str(text or "").strip()
+        phrase = self.matched_phrase(original)
+        if phrase is None:
+            return original
+        match = re.match(self._wake_prefix_pattern(phrase), original, re.IGNORECASE)
+        if match:
+            return original[match.end():].strip().lower()
+        normalized = self.normalize_stt_text(original)
+        if normalized == phrase:
+            return ""
+        return normalized[len(phrase):].strip()
 
-        for phrase in sorted(self.phrases, key=len, reverse=True):
-            if normalized == phrase:
-                return ""
-
-            prefix = phrase + " "
-            if normalized.startswith(prefix):
-                return normalized[len(prefix):].strip()
-
-        return text.strip()
+    @staticmethod
+    def _wake_prefix_pattern(phrase: str) -> str:
+        parts = []
+        for token in phrase.split():
+            if token == "jenefar":
+                parts.append(r"(?:jenefar|jennifer|jenifer|jeneferr)")
+            else:
+                parts.append(re.escape(token))
+        separator = r"[\s,.:;!?\"'`~_\-]+"
+        return r"^(?:" + separator + r")*" + separator.join(parts) + r"(?:" + separator + r")*"

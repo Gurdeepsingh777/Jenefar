@@ -108,6 +108,20 @@ def test_simple_greeting_skips_intent_fallback_llm(monkeypatch, tmp_path):
     assert orchestrator.router.calls[0]["metadata"]["intent_fallback_used"] is False
 
 
+def test_greeting_stays_awake_even_with_single_turn_sleep(monkeypatch, tmp_path):
+    from jenefar.core.state import JenefarState
+
+    monkeypatch.chdir(tmp_path)
+    orchestrator = JenefarOrchestrator()
+    orchestrator.config.single_turn_sleep = True
+    orchestrator.router = RecordingRouter([
+        AgentResult(agent="research", content="should-not-dispatch", metadata={"provider": "fake"}),
+    ])
+    orchestrator.handle("hi")
+    assert orchestrator.state == JenefarState.AWAKE
+    assert orchestrator.router.calls == []
+
+
 def test_greeting_does_not_dispatch_or_call_intent_llm(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     orchestrator = JenefarOrchestrator()

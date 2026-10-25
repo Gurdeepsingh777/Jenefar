@@ -96,6 +96,54 @@ class LLMClient:
         }
 
     @staticmethod
+    def _assistant_tool_message(message: Any, tool_calls: list[Any]) -> dict[str, Any]:
+        dumped = None
+        for attr in ("model_dump", "to_dict", "dict"):
+            method = getattr(message, attr, None)
+            if callable(method):
+                try:
+                    dumped = method(exclude_none=True) if attr == "model_dump" else method()
+                except TypeError:
+                    dumped = method()
+                except Exception:
+                    dumped = None
+                if isinstance(dumped, dict):
+                    break
+                dumped = None
+        if isinstance(dumped, dict) and dumped.get("tool_calls"):
+            payload = {
+                "role": dumped.get("role") or "assistant",
+                "content": dumped.get("content"),
+                "tool_calls": dumped.get("tool_calls"),
+            }
+            extra = dumped.get("extra_content")
+            if extra:
+                payload["extra_content"] = extra
+            return payload
+
+        serialized_calls = []
+        for call in tool_calls:
+            item: dict[str, Any] = {
+                "id": getattr(call, "id", ""),
+                "type": getattr(call, "type", None) or "function",
+                "function": {
+                    "name": getattr(getattr(call, "function", None), "name", ""),
+                    "arguments": getattr(getattr(call, "function", None), "arguments", "{}"),
+                },
+            }
+            extra = getattr(call, "extra_content", None)
+            if extra is None and isinstance(call, dict):
+                extra = call.get("extra_content")
+            if extra:
+                item["extra_content"] = extra
+            serialized_calls.append(item)
+        return {
+            "role": "assistant",
+            "content": getattr(message, "content", None),
+            "tool_calls": serialized_calls,
+        }
+
+    @staticmethod
     def _tool_signature(name: str, arguments: dict[str, Any]) -> str:
         try:
             encoded = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
@@ -284,22 +332,7 @@ class LLMClient:
                     model_role=model_role,
                 )
 
-            assistant_message = {
-                "role": "assistant",
-                "content": getattr(message, "content", None),
-                "tool_calls": [
-                    {
-                        "id": getattr(call, "id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": getattr(getattr(call, "function", None), "name", ""),
-                            "arguments": getattr(getattr(call, "function", None), "arguments", "{}"),
-                        },
-                    }
-                    for call in tool_calls
-                ],
-            }
-            messages.append(assistant_message)
+            messages.append(self._assistant_tool_message(message, tool_calls))
             pending_tools: list[dict[str, str]] = []
 
             for call in tool_calls:

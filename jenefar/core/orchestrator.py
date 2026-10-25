@@ -232,7 +232,7 @@ class JenefarOrchestrator:
                     greeting,
                     importance=0.35,
                 )
-                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self.state = JenefarState.AWAKE
                 self._avatar_state("speaking", greeting)
                 return greeting
 
