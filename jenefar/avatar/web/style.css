@@ -2182,7 +2182,7 @@ html,body,#stage{
   .runtime-intel .runtime-health-line { display: none !important; }
   .runtime-intel .runtime-budget { margin-top: 5px !important; }
   .task-history-panel {
-    left: calc(var(--p1-left) + 365px) !important;
+    left: 190px !important;
     right: 344px !important;
     bottom: 100px !important;
     height: 136px !important;
