@@ -2069,3 +2069,208 @@ html,body,#stage{
   .task-history-panel { left: 12px !important; right: 12px !important; bottom: 8px !important; height: 168px !important; }
   .realtime-controls { left: 12px !important; right: 12px !important; bottom: 182px !important; width: auto !important; }
 }
+
+
+/* =========================================================
+   FINAL WORKSPACE COLLISION FIX
+   Reserve separate vertical lanes for task console, runtime,
+   task history, activity rail, and fixed bottom controls.
+   ========================================================= */
+@media (min-width: 1200px) {
+  .system-card {
+    height: 198px !important;
+    min-height: 198px !important;
+    padding: 12px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  .system-card .service-list {
+    margin-top: 7px !important;
+    gap: 5px !important;
+  }
+  .command-stack {
+    top: 282px !important;
+    gap: 6px !important;
+    max-height: 170px !important;
+    overflow: hidden !important;
+  }
+  .command-stack .command-chip {
+    height: 38px !important;
+    min-height: 38px !important;
+    box-sizing: border-box !important;
+    padding: 6px 12px !important;
+  }
+  #activity-panel {
+    top: 464px !important;
+    bottom: 100px !important;
+    height: auto !important;
+    min-height: 180px !important;
+    max-height: none !important;
+  }
+  #task-screen {
+    bottom: 338px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+    right: calc(var(--p1-right) + 36px) !important;
+  }
+  .runtime-intel {
+    bottom: 244px !important;
+    height: 86px !important;
+    right: calc(var(--p1-right) + 36px) !important;
+  }
+  .task-history-panel {
+    bottom: 100px !important;
+    height: 136px !important;
+    right: 356px !important;
+  }
+  .task-history-list {
+    height: 84px !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+  .realtime-controls { bottom: 12px !important; }
+}
+
+@media (min-width: 1001px) and (max-width: 1199px) {
+  .system-card {
+    height: 198px !important;
+    min-height: 198px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  .command-stack {
+    top: 282px !important;
+    gap: 6px !important;
+    max-height: 170px !important;
+    overflow: hidden !important;
+  }
+  .command-stack .command-chip {
+    height: 38px !important;
+    min-height: 38px !important;
+    box-sizing: border-box !important;
+    padding: 6px 12px !important;
+  }
+  #activity-panel {
+    top: 464px !important;
+    bottom: 100px !important;
+    width: 310px !important;
+    height: auto !important;
+    min-height: 180px !important;
+    max-height: none !important;
+  }
+  #task-screen {
+    left: calc(var(--p1-left) + 365px) !important;
+    right: calc(var(--p1-right) + 36px) !important;
+    bottom: 338px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+  .runtime-intel {
+    left: calc(var(--p1-left) + 365px) !important;
+    right: calc(var(--p1-right) + 36px) !important;
+    bottom: 244px !important;
+    height: 86px !important;
+  }
+  .task-history-panel {
+    left: calc(var(--p1-left) + 365px) !important;
+    right: 344px !important;
+    bottom: 100px !important;
+    height: 136px !important;
+  }
+  .task-history-list { height: 84px !important; min-height: 0 !important; }
+  .realtime-controls { bottom: 12px !important; right: 12px !important; }
+}
+
+/* Compact intermediate screens: keep the right rail clear of the bottom controls. */
+@media (min-width: 801px) and (max-width: 1000px) {
+  #task-screen { display: none !important; }
+  .runtime-intel {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 440px !important;
+    height: 80px !important;
+  }
+  #activity-panel {
+    left: auto !important;
+    right: 12px !important;
+    top: auto !important;
+    bottom: 244px !important;
+    width: min(320px, calc(100vw - 220px)) !important;
+    height: 180px !important;
+    min-height: 0 !important;
+    max-height: 180px !important;
+  }
+  .task-history-panel {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 8px !important;
+    height: 150px !important;
+  }
+  .realtime-controls {
+    left: auto !important;
+    right: 12px !important;
+    bottom: 174px !important;
+    width: min(320px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+}
+
+/* Small screens use a scrollable stacked workspace rather than absolute overlays. */
+@media (max-width: 800px) {
+  #stage {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow: visible !important;
+    padding-bottom: 100px !important;
+  }
+  #task-screen { display: none !important; }
+  .runtime-intel,
+  #activity-panel,
+  .task-history-panel {
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: calc(100% - 24px) !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+    margin: 10px 12px !important;
+  }
+  .runtime-intel {
+    order: 19 !important;
+    height: auto !important;
+    min-height: 100px !important;
+  }
+  #activity-panel {
+    order: 20 !important;
+    height: 230px !important;
+    min-height: 230px !important;
+    max-height: 230px !important;
+  }
+  .task-history-panel {
+    order: 21 !important;
+    height: 170px !important;
+    min-height: 170px !important;
+    margin-bottom: 110px !important;
+  }
+  .realtime-controls {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 84px !important;
+    width: auto !important;
+    max-width: none !important;
+    z-index: 120 !important;
+  }
+  .bottom-dock {
+    position: fixed !important;
+    bottom: 12px !important;
+    z-index: 130 !important;
+  }
+}
