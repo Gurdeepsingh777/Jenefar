@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +26,7 @@ class _AvatarHandler(BaseHTTPRequestHandler):
     vrm_path: Path | None
     tool_broker = None
     voice_handler = None
+    audio_handler = None
     runtime_status = None
     cancel_active_task = None
     runtime_tasks = None
@@ -217,6 +219,32 @@ class _AvatarHandler(BaseHTTPRequestHandler):
                 self._json(200, result if isinstance(result, dict) else {"result": result})
                 return
 
+            if path == "/voice/audio":
+                handler = self.audio_handler
+                if handler is None:
+                    self._json(503, {"error": "Browser audio transcription handler unavailable."})
+                    return
+                encoded = str(body.get("audio_b64", "") or "")
+                if not encoded:
+                    self._json(400, {"error": "No audio payload was provided."})
+                    return
+                if len(encoded) > 11 * 1024 * 1024:
+                    self._json(413, {"error": "Audio payload is too large (8 MB limit)."})
+                    return
+                try:
+                    audio_bytes = base64.b64decode(encoded, validate=True)
+                except (ValueError, base64.binascii.Error):
+                    self._json(400, {"error": "Invalid base64 audio payload."})
+                    return
+                if len(audio_bytes) > 8 * 1024 * 1024:
+                    self._json(413, {"error": "Audio payload is too large (8 MB limit)."})
+                    return
+                mime_type = str(body.get("mime_type", "audio/webm") or "audio/webm")
+                result = handler(audio_bytes, mime_type)
+                status = 200 if isinstance(result, dict) and result.get("ok", True) else 502
+                self._json(status, result if isinstance(result, dict) else {"result": result})
+                return
+
             if path == "/runtime/cancel":
                 handler = self.cancel_active_task
                 if handler is None:
@@ -281,6 +309,7 @@ class AvatarServer:
         vrm_path: Path | None = None,
         tool_broker=None,
         voice_handler=None,
+        audio_handler=None,
         runtime_status=None,
         cancel_active_task=None,
         runtime_tasks=None,
@@ -291,6 +320,7 @@ class AvatarServer:
         self.vrm_path = Path(vrm_path).expanduser().resolve() if vrm_path else None
         self.tool_broker = tool_broker
         self.voice_handler = voice_handler
+        self.audio_handler = audio_handler
         self.runtime_status = runtime_status
         self.cancel_active_task = cancel_active_task
         self.runtime_tasks = runtime_tasks
@@ -307,6 +337,7 @@ class AvatarServer:
         vrm_path = self.vrm_path
         tool_broker = self.tool_broker
         voice_handler = self.voice_handler
+        audio_handler = self.audio_handler
         runtime_status = self.runtime_status
         cancel_active_task = self.cancel_active_task
         runtime_tasks = self.runtime_tasks
@@ -320,6 +351,7 @@ class AvatarServer:
         # Functions stored on a handler class become bound methods. Keep the
         # injected browser voice callback as a static callable.
         Handler.voice_handler = staticmethod(voice_handler) if voice_handler is not None else None
+        Handler.audio_handler = staticmethod(audio_handler) if audio_handler is not None else None
         Handler.runtime_status = staticmethod(runtime_status) if runtime_status is not None else None
         Handler.cancel_active_task = staticmethod(cancel_active_task) if cancel_active_task is not None else None
         Handler.runtime_tasks = staticmethod(runtime_tasks) if runtime_tasks is not None else None
