@@ -83,9 +83,67 @@ def test_simple_task_skips_critic_replan(monkeypatch, tmp_path):
     orchestrator.verifier = Verifier()
     # Bypass the deterministic time shortcut so the intelligence path runs.
     orchestrator._is_local_time_query = lambda text: False
-    orchestrator.handle("hi")
+    orchestrator.handle("tell me more")
     assert len(orchestrator.router.calls) == 1
     assert orchestrator.router.calls[0]["metadata"]["complexity"] == "simple"
+
+
+def test_simple_greeting_skips_intent_fallback_llm(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    orchestrator = JenefarOrchestrator()
+    calls = []
+
+    def fake_llm(prompt: str) -> str:
+        calls.append(prompt)
+        raise TimeoutError("intent fallback must not run on simple greetings")
+
+    orchestrator.intent_fallback = LLMIntentFallback(llm_complete=fake_llm)
+    orchestrator.router = RecordingRouter([
+        AgentResult(agent="research", content="Haan, boliye.", metadata={"provider": "fake"}),
+    ])
+    output = orchestrator.handle("tell me more")
+    assert output
+    assert calls == []
+    assert orchestrator.router.calls[0]["metadata"]["complexity"] == "simple"
+    assert orchestrator.router.calls[0]["metadata"]["intent_fallback_used"] is False
+
+
+def test_greeting_does_not_dispatch_or_call_intent_llm(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    orchestrator = JenefarOrchestrator()
+    calls = []
+
+    def fake_llm(prompt: str) -> str:
+        calls.append(prompt)
+        raise TimeoutError("greetings must not call LLM")
+
+    orchestrator.intent_fallback = LLMIntentFallback(llm_complete=fake_llm)
+    orchestrator.router = RecordingRouter([
+        AgentResult(agent="research", content="should-not-dispatch", metadata={"provider": "fake"}),
+    ])
+    output = orchestrator.handle("hi")
+    assert output
+    assert "boliye" in output.lower() or "listening" in output.lower() or "haan" in output.lower()
+    assert calls == []
+    assert orchestrator.router.calls == []
+
+
+def test_fast_complete_timeout_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    orchestrator = JenefarOrchestrator()
+
+    class HangingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def complete(self, *args, **kwargs):
+            import time
+            time.sleep(2)
+            return type("Resp", (), {"text": "should-not-return"})()
+
+    monkeypatch.setattr("jenefar.core.llm.LLMClient", HangingClient)
+    orchestrator._fast_complete_timeout = 0.05
+    assert orchestrator._fast_complete("classify this") == ""
 
 
 def test_trace_records_intelligence_fields(monkeypatch, tmp_path):

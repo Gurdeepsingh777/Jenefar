@@ -60,7 +60,9 @@ class ComplexityClassifier:
 
         if self._is_simple(lowered, agent, needs_tool):
             return ComplexityResult("simple", "heuristic", "short greeting or lookup")
-        if is_compound or agent in HARD_AGENTS:
+        if agent in HARD_AGENTS:
+            return ComplexityResult("hard", "heuristic", "compound or high-impact specialist")
+        if is_compound and agent not in {"research"}:
             return ComplexityResult("hard", "heuristic", "compound or high-impact specialist")
         if _contains_marker(lowered, HARD_MARKERS):
             return ComplexityResult("hard", "heuristic", "hard keyword match")

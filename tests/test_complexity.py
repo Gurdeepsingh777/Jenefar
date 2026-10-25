@@ -53,6 +53,15 @@ def test_classifier_failure_returns_standard():
     assert result.source == "fallback"
 
 
+def test_single_research_query_is_standard_not_hard():
+    from jenefar.core.planner import Planner
+
+    plan = Planner().plan("what is the history of computers?")
+    result = ComplexityClassifier().classify("what is the history of computers?", plan)
+    assert plan.agent == "research"
+    assert result.level == "standard"
+
+
 def test_uncertain_heuristic_uses_llm_when_injected():
     plan = SimpleNamespace(agent="research", needs_tool=False, is_compound=False, confidence=0.55)
 

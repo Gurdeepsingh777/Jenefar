@@ -223,6 +223,19 @@ class JenefarOrchestrator:
                 self._avatar_state("speaking", output)
                 return output
 
+            greeting = self._greeting_response(text, response_language)
+            if greeting:
+                self.session.add("assistant", greeting)
+                self.memory_engine.record_message(
+                    self.session.session_id,
+                    "assistant",
+                    greeting,
+                    importance=0.35,
+                )
+                self.state = JenefarState.SLEEPING if self.config.single_turn_sleep else JenefarState.AWAKE
+                self._avatar_state("speaking", greeting)
+                return greeting
+
             recall = self.memory_engine.recall(text, limit=8)
             graph_hits = self.graph.search(text.split()[0] if text.split() else text, limit=8)
             plan = self.planner.plan(text)
@@ -233,11 +246,12 @@ class JenefarOrchestrator:
             except Exception:
                 complexity = "standard"
             try:
-                refined = self.intent_fallback.refine(text, plan)
-                if refined is not plan:
-                    intent_fallback_used = True
-                    plan = refined
-                    complexity = self.classifier.classify(text, plan).level
+                if complexity != "simple":
+                    refined = self.intent_fallback.refine(text, plan)
+                    if refined is not plan:
+                        intent_fallback_used = True
+                        plan = refined
+                        complexity = self.classifier.classify(text, plan).level
             except Exception:
                 intent_fallback_used = False
             task_plan = self.planner.task_planner.build(text, plan.intent, plan.agent)
@@ -551,6 +565,33 @@ class JenefarOrchestrator:
         )
 
     @staticmethod
+    def _is_greeting(text: str) -> bool:
+        lowered = " ".join(str(text or "").lower().split())
+        if not lowered:
+            return False
+        greetings = {
+            "hi", "hello", "hey", "yo", "sup",
+            "hi jenefar", "hello jenefar", "hey jenefar",
+            "good morning", "good night", "good evening",
+            "thanks", "thank you", "ok", "okay",
+            "haan", "han", "namaste",
+        }
+        return lowered in greetings or (len(lowered.split()) <= 2 and lowered.split()[0] in {
+            "hi", "hello", "hey", "thanks",
+        })
+
+    def _greeting_response(self, text: str, response_language: str | None = None) -> str | None:
+        if not self._is_greeting(text):
+            return None
+        hinglish = str(response_language or "").lower() == "hinglish"
+        lowered = " ".join(str(text or "").lower().split())
+        if lowered in {"thanks", "thank you"}:
+            return "Koi baat nahi." if hinglish else "You're welcome."
+        if hinglish:
+            return "Haan, boliye. Main sun rahi hoon."
+        return "Yes, I'm listening."
+
+    @staticmethod
     def _is_local_time_query(text: str) -> bool:
         lowered = text.lower().strip()
         phrases = (
@@ -573,15 +614,28 @@ class JenefarOrchestrator:
         return f"The current laptop time is {payload['time']} on {payload['date']} ({payload['timezone']})."
 
     def _fast_complete(self, prompt: str) -> str:
+        from concurrent.futures import ThreadPoolExecutor
+
         from jenefar.core.llm import LLMClient
 
-        response = LLMClient(model_role="fast").complete(
-            prompt,
-            instructions="Return JSON only. No markdown.",
-            max_tool_rounds=1,
-            model_role="fast",
-        )
-        return str(getattr(response, "text", "") or "")
+        timeout = float(getattr(self, "_fast_complete_timeout", 8.0) or 8.0)
+
+        def _run() -> str:
+            response = LLMClient(model_role="fast").complete(
+                prompt,
+                instructions="Return JSON only. No markdown.",
+                max_tool_rounds=1,
+                model_role="fast",
+            )
+            return str(getattr(response, "text", "") or "")
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            return executor.submit(_run).result(timeout=timeout)
+        except Exception:
+            return ""
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _dispatch_with_healing(self, text: str, plan, dispatch_metadata: dict):
         if hasattr(self.tool_broker, "set_task_context"):
