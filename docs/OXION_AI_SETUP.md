@@ -4,7 +4,7 @@ Jenefar's LLM provider pool supports Oxion AI through its OpenAI-compatible Chat
 
 ## 1. Configure the API key
 
-Copy .env.example to .env if you have not already done so. Keep all values containing spaces in quotes (especially JENEFAR_WAKE_PHRASES and JENEFAR_BROWSER_TTS_INSTRUCTIONS). Do not run source .env until those values are quoted; dotenv loads .env automatically when Jenefar starts. In your local .env, set:
+Copy .env.example to .env if you have not already done so. Keep values containing spaces in matching quotes (especially JENEFAR_WAKE_PHRASES and JENEFAR_BROWSER_TTS_INSTRUCTIONS). Keep only one JENEFAR_PROVIDER_ORDER assignment. For authorized targets, use a quoted, comma-separated list such as JENEFAR_AUTHORIZED_TARGETS="192.168.29.0/24,192.168.29.10" and include only systems you are authorized to test. Do not run source .env just to read the API key: malformed lines can be interpreted as shell commands. Jenefar loads .env through dotenv automatically. In your local .env, set:
 
     OXION_API_KEY=cc_your_actual_key_here
     OXION_MODEL=claude-sonnet-5
@@ -21,12 +21,13 @@ To use a different model for one task role, set e.g. JENEFAR_OXION_MODEL_CODING=
 
 ## 3. Test the API key independently
 
-From the Jenefar repository root, run:
+From the Jenefar repository root, run this shell-safe check. It reads the key with python-dotenv rather than executing every line in .env:
 
-    set -a; source .env; set +a
-    curl -fsS https://www.oxionai.com/v1/models -H "Authorization: Bearer $OXION_API_KEY"
+    OXION_API_KEY="$(python -c 'from dotenv import load_dotenv; import os; load_dotenv(".env"); print(os.getenv("OXION_API_KEY", ""))')"
+    if [ -z "$OXION_API_KEY" ]; then echo "OXION_API_KEY is missing from .env"; else curl -sS -w '\\nHTTP %{http_code}\\n' https://www.oxionai.com/v1/models -H "Authorization: Bearer $OXION_API_KEY"; fi
+    unset OXION_API_KEY
 
-Do not print or share the key. A successful request should return the model list.
+Do not print or share the key. HTTP 200 should return the model list. HTTP 503 means the endpoint is reporting a service-side failure at that moment; repeatedly changing local model settings will not fix that response.
 
 Then run the UI with online-only mode if you want to prevent silent Ollama fallback:
 
