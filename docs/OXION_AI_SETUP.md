@@ -24,7 +24,7 @@ To use a different model for one task role, set e.g. JENEFAR_OXION_MODEL_CODING=
 From the Jenefar repository root, run this shell-safe check. It reads the key with python-dotenv rather than executing every line in .env:
 
     OXION_API_KEY="$(python -c 'from dotenv import load_dotenv; import os; load_dotenv(".env"); print(os.getenv("OXION_API_KEY", ""))')"
-    if [ -z "$OXION_API_KEY" ]; then echo "OXION_API_KEY is missing from .env"; else curl -sS -w '\\nHTTP %{http_code}\\n' https://www.oxionai.com/v1/models -H "Authorization: Bearer $OXION_API_KEY"; fi
+    if [ -z "$OXION_API_KEY" ]; then echo "OXION_API_KEY is missing from .env"; else curl -sS -w '\nHTTP %{http_code}\n' https://www.oxionai.com/v1/models -H "Authorization: Bearer $OXION_API_KEY"; fi
     unset OXION_API_KEY
 
 Do not print or share the key. HTTP 200 should return the model list. HTTP 503 means the endpoint is reporting a service-side failure at that moment; repeatedly changing local model settings will not fix that response.
