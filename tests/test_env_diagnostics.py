@@ -37,6 +37,7 @@ def test_audit_accepts_quoted_values_and_shell_comments(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
         'JENEFAR_WAKE_PHRASES="Hi Jenefar,Hello Jenefar"\n'
+        'JENEFAR_BROWSER_TTS_INSTRUCTIONS="natural female voice" # valid comment\n'
         'OXION_MODEL=gpt-5.6-luna # default model\n',
         encoding="utf-8",
     )
