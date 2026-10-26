@@ -674,7 +674,7 @@ def main() -> int:
                 print("[JENEFAR] Browser voice is disabled. UI remains available; no terminal voice/TTS is started.")
                 threading.Event().wait()
         except KeyboardInterrupt:
-            print("\\n[JENEFAR] Shutdown requested by user.")
+            print("[JENEFAR] Shutdown requested by user.")
         finally:
             browser_voice.shutdown()
             if monitoring_server is not None and monitoring_server_owned:
