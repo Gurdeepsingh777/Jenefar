@@ -47,7 +47,7 @@ def audit_env_file(path: str | Path) -> list[str]:
                 (
                     index for index in range(1, len(raw_value))
                     if raw_value[index] == quote
-                    and (index == 0 or raw_value[index - 1] != "\\\\")
+                    and (index == 0 or raw_value[index - 1] != "\\")
                 ),
                 None,
             )
