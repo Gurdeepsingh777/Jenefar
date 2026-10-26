@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 
-_ASSIGNMENT = re.compile(r"^\\s*(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=(.*)$")
+_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
 
 
 def audit_env_file(path: str | Path) -> list[str]:
@@ -50,8 +50,8 @@ def audit_env_file(path: str | Path) -> list[str]:
 
         # Ignore a trailing shell comment when assessing whitespace.
         # Embedded spaces must be quoted for shell sourcing. Target lists use commas.
-        value_without_comment = re.sub(r"\\s+#.*$", "", raw_value).strip()
-        if value_without_comment and re.search(r"\\s", value_without_comment):
+        value_without_comment = re.sub(r"\s+#.*$", "", raw_value).strip()
+        if value_without_comment and re.search(r"\s", value_without_comment):
             hint = (
                 "; use comma-separated targets inside quotes"
                 if key == "JENEFAR_AUTHORIZED_TARGETS"
