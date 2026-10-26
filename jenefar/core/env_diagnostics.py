@@ -33,10 +33,9 @@ def audit_env_file(path: str | Path) -> list[str]:
 
         match = _ASSIGNMENT.match(raw_line)
         if not match:
-            if not stripped.startswith("export "):
-                issues.append(
-                    f"line {line_number}: not a KEY=value assignment; check for stray text"
-                )
+            issues.append(
+                f"line {line_number}: not a KEY=value assignment; check for stray text"
+            )
             continue
 
         key, raw_value = match.group(1), match.group(2).strip()
@@ -44,8 +43,22 @@ def audit_env_file(path: str | Path) -> list[str]:
 
         if raw_value.startswith(("'", '"')):
             quote = raw_value[0]
-            if len(raw_value) < 2 or not raw_value.endswith(quote):
+            closing = next(
+                (
+                    index for index in range(1, len(raw_value))
+                    if raw_value[index] == quote
+                    and (index == 0 or raw_value[index - 1] != "\\\\")
+                ),
+                None,
+            )
+            if closing is None:
                 issues.append(f"{key} line {line_number}: quote is not closed")
+            else:
+                suffix = raw_value[closing + 1 :].strip()
+                if suffix and not suffix.startswith("#"):
+                    issues.append(
+                        f"{key} line {line_number}: unexpected text after quoted value"
+                    )
             continue
 
         # Ignore a trailing shell comment when assessing whitespace.
