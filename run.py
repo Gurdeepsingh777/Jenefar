@@ -173,6 +173,20 @@ def doctor() -> int:
 
         config = load_config()
         print(f"  config                       OK ({config.name})")
+        from jenefar.core.env_diagnostics import audit_env_file
+        env_path = root / ".env"
+        if env_path.is_file():
+            env_issues = audit_env_file(env_path)
+            if env_issues:
+                print("  .env shell/config audit       WARNING")
+                for issue in env_issues[:40]:
+                    print(f"    - {issue}")
+                if len(env_issues) > 40:
+                    print(f"    - ... {len(env_issues) - 40} additional warning(s)")
+            else:
+                print("  .env shell/config audit       OK")
+        else:
+            print("  .env shell/config audit       NOT FOUND (optional)")
         configured_keys = any(
             os.getenv(name, "").strip()
             for name in ("OXION_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY")
