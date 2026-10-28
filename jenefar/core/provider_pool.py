@@ -30,7 +30,10 @@ class ProviderPool:
     def __init__(self) -> None:
         self.cooldowns: dict[str, float] = {}
         self.latency_samples: dict[str, list[float]] = defaultdict(list)
+        # Lifetime failure counts are retained for diagnostics only. Adaptive
+        # routing uses a consecutive-failure streak that clears on recovery.
         self.failure_samples: dict[str, int] = defaultdict(int)
+        self.failure_streaks: dict[str, int] = defaultdict(int)
 
     def order(self) -> list[str]:
         raw = os.getenv("JENEFAR_PROVIDER_ORDER", "oxion,openai,openrouter,gemini,groq,cerebras")
@@ -53,7 +56,7 @@ class ProviderPool:
             if not samples:
                 return (float("inf"), position[name])
             avg = sum(samples[-8:]) / min(len(samples), 8)
-            failures = self.failure_samples.get(name, 0)
+            failures = self.failure_streaks.get(name, 0)
             return (avg * (1.0 + min(2.0, failures / max(1, len(samples)))), position[name])
         return sorted(names, key=score)
 
@@ -63,8 +66,11 @@ class ProviderPool:
         samples = self.latency_samples[name]
         samples.append(max(0.0, float(elapsed_seconds)))
         del samples[:-8]
-        if not success:
+        if success:
+            self.failure_streaks[name] = 0
+        else:
             self.failure_samples[name] += 1
+            self.failure_streaks[name] += 1
 
     def latency_status(self) -> dict[str, dict]:
         result = {}
