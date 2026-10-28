@@ -120,7 +120,9 @@ def doctor() -> int:
     """Run dependency, configuration, source-syntax, and runtime smoke checks."""
     from pathlib import Path
     import ast
+    import errno
     import os
+    import tempfile
 
     print("[JENEFAR] Doctor")
     root = Path(__file__).resolve().parent
@@ -228,12 +230,37 @@ def doctor() -> int:
         except Exception as exc:
             print(f"  local vision                 NOT READY ({type(exc).__name__}: {exc})")
 
+        # Runtime databases use paths under ./data. Check the directory before
+        # constructing the orchestrator so read-only mounts are reported clearly.
+        data_dir = Path("data")
+        data_writable = True
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                prefix=".jenefar-doctor-", dir=data_dir, delete=True
+            ):
+                pass
+            print("  data directory writable       OK")
+        except OSError as exc:
+            data_writable = False
+            cause = "READ-ONLY FILESYSTEM" if exc.errno == errno.EROFS else type(exc).__name__
+            print(f"  data directory writable       ERROR ({cause}: {exc})")
+            if exc.errno == errno.EROFS:
+                print(
+                    "    - The project/data volume is mounted read-only. "
+                    "Use a writable local clone or repair the filesystem mount."
+                )
+            failed = True
+
         # Import the orchestrator to catch dependency/import integration errors.
         from jenefar.core.orchestrator import JenefarOrchestrator
         print("  orchestrator import           OK")
-        # Construct it only after syntax/import checks; this validates core wiring.
-        JenefarOrchestrator()
-        print("  orchestrator init             OK")
+        # Only initialize runtime databases when their containing directory is writable.
+        if data_writable:
+            JenefarOrchestrator()
+            print("  orchestrator init             OK")
+        else:
+            print("  runtime wiring                 SKIPPED (data directory not writable)")
     except Exception as exc:
         print(f"  runtime wiring               ERROR ({type(exc).__name__}: {exc})")
         failed = True
