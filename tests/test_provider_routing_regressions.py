@@ -53,6 +53,30 @@ def test_chat_tool_schema_conversion():
     }]
 
 
-def test_default_provider_order_prefers_groq_over_openrouter(monkeypatch):
-    monkeypatch.delenv("JENEFAR_PROVIDER_ORDER", raising=False)
+def test_explicit_provider_order_can_prefer_groq_over_openrouter(monkeypatch):
+    monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", "openai,groq,gemini,openrouter")
     assert ProviderPool().order() == ["openai", "groq", "gemini", "openrouter"]
+
+
+def test_adaptive_routing_penalty_clears_after_provider_recovers(monkeypatch):
+    monkeypatch.setenv("JENEFAR_PROVIDER_ORDER", "openai,groq")
+    monkeypatch.setenv("JENEFAR_ADAPTIVE_ROUTING", "1")
+    monkeypatch.setenv("JENEFAR_ROUTING_WARMUP_SAMPLES", "2")
+    pool = ProviderPool()
+
+    for _ in range(2):
+        pool.record_latency("openai", 0.05, success=True)
+        pool.record_latency("groq", 0.07, success=True)
+    assert pool.order_for_role() == ["openai", "groq"]
+
+    for _ in range(4):
+        pool.record_latency("openai", 0.05, success=False)
+    assert pool.order_for_role() == ["groq", "openai"]
+
+    # The diagnostic lifetime count is preserved, but successful recovery
+    # clears the adaptive failure streak and restores latency-based ordering.
+    for _ in range(4):
+        pool.record_latency("openai", 0.05, success=True)
+    assert pool.failure_samples["openai"] == 4
+    assert pool.failure_streaks["openai"] == 0
+    assert pool.order_for_role() == ["openai", "groq"]
