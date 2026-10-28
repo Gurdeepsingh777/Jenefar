@@ -476,13 +476,10 @@ class LLMClient:
                     self.providers.reset(provider)
                     return result
                 except Exception as exc:
-                    error = f"{type(exc).__name__}: {exc}"
-                    failures.append(f"{provider}: {error}")
+                    failures.append(f"{provider}: {_user_facing_provider_error(exc)}")
                     if is_retryable_provider_error(exc):
                         self.providers.cooldown(provider)
                         continue
-                    # A non-retryable provider error should still allow another
-                    # configured provider to answer, but it is not cooled down.
                     continue
 
         online_error = "; ".join(failures) if failures else (
@@ -493,8 +490,7 @@ class LLMClient:
             "1", "true", "yes", "on"
         }:
             return LLMResponse(
-                f"All online providers unavailable ({online_error}). "
-                "Local fallback is disabled for this run.",
+                _user_facing_unavailable(online_error, local_error=None, local_disabled=True),
                 "online_unavailable",
                 model_role=selected_role,
             )
@@ -516,8 +512,50 @@ class LLMClient:
             )
         except Exception as exc:
             return LLMResponse(
-                f"Online providers unavailable ({online_error}); "
-                f"local model unavailable ({type(exc).__name__}: {exc}).",
+                _user_facing_unavailable(online_error, local_error=exc),
                 "offline_unavailable",
                 model_role=selected_role,
             )
+
+
+def _user_facing_provider_error(exc: Exception) -> str:
+    message = str(exc or "").lower()
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None) if response is not None else None
+    if status == 429 or "insufficient_quota" in message or "credit" in message or "rate limit" in message:
+        return "quota or rate limit reached"
+    if "thought_signature" in message:
+        return "tool-call format error"
+    if status in {401, 403} or "authentication" in message or "invalid api key" in message:
+        return "authentication failed"
+    if "timeout" in message or "timed out" in message:
+        return "request timed out"
+    if status in {500, 502, 503, 504} or "unavailable" in message:
+        return "temporarily unavailable"
+    if status == 400:
+        return "bad request"
+    return "provider error"
+
+
+def _user_facing_unavailable(
+    online_error: str,
+    *,
+    local_error: Exception | None = None,
+    local_disabled: bool = False,
+) -> str:
+    if local_disabled:
+        return (
+            "Online models are unavailable right now, and local fallback is disabled. "
+            "Check provider credits or start a local model."
+        )
+    if local_error is not None:
+        local = _user_facing_provider_error(local_error)
+        if "timed out" in local or "timeout" in local:
+            local = "local model timed out"
+        return (
+            "Online models are unavailable right now, and the local model could not finish. "
+            f"Details: {online_error}; {local}."
+        )
+    return f"Online models are unavailable right now. Details: {online_error}."
