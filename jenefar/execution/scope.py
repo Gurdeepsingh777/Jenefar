@@ -19,6 +19,22 @@ class ScopePolicy:
         if not self.allowed_targets:
             return False
 
+        value = target.strip().lower()
+        # A requested CIDR must fit wholly inside an authorized CIDR. Treating
+        # it as its base address would let a wider range pass by accident.
+        if "/" in value and "://" not in value:
+            try:
+                requested = ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                return False
+            for allowed in self.allowed_targets:
+                try:
+                    if requested.subnet_of(ipaddress.ip_network(allowed, strict=False)):
+                        return True
+                except ValueError:
+                    continue
+            return False
+
         host = self._normalize(target)
         for allowed in self.allowed_targets:
             if "/" in allowed:

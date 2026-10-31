@@ -1999,3 +1999,286 @@ html,body,#stage{
 }
 #production-runtime[data-state="warning"]{color:#ffbb5c}
 #production-runtime[data-state="healthy"]{color:#72ffd8}
+
+
+/* Stabilize the desktop workspace: keep the command stack, live activity and task history in separate lanes. */
+@media (min-width: 1200px) {
+  #activity-panel {
+    right: 18px !important;
+    top: 478px !important;
+    width: 320px !important;
+    height: max(220px, calc(100vh - 568px)) !important;
+    max-height: calc(100vh - 500px) !important;
+    overflow: hidden !important;
+  }
+  #activity-list {
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+  }
+  .command-stack {
+    right: 18px !important;
+    top: 258px !important;
+    width: 320px !important;
+    max-height: 200px !important;
+    overflow: auto !important;
+  }
+  .task-history-panel {
+    left: max(470px, calc(var(--p1-left) + 365px)) !important;
+    right: 356px !important;
+    bottom: 10px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 164px !important;
+    overflow: hidden !important;
+  }
+  .task-history-list { min-height: 0 !important; overflow-y: auto !important; }
+  .realtime-controls {
+    right: 18px !important;
+    bottom: 12px !important;
+    width: 320px !important;
+    max-width: calc(100vw - 36px) !important;
+    min-height: 48px !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    z-index: 120 !important;
+  }
+}
+@media (max-width: 1199px) {
+  #activity-panel {
+    left: auto !important;
+    right: 12px !important;
+    top: auto !important;
+    bottom: 92px !important;
+    width: min(340px, calc(100vw - 210px)) !important;
+    height: min(34vh, 290px) !important;
+    max-height: 290px !important;
+  }
+  .task-history-panel {
+    left: 190px !important;
+    right: 12px !important;
+    bottom: 8px !important;
+    height: 150px !important;
+    min-width: 0 !important;
+  }
+  .realtime-controls { max-width: calc(100vw - 24px) !important; flex-wrap: wrap !important; }
+}
+@media (max-width: 800px) {
+  #activity-panel { display: flex !important; left: 12px !important; right: 12px !important; bottom: 200px !important; width: auto !important; height: 26vh !important; }
+  .task-history-panel { left: 12px !important; right: 12px !important; bottom: 8px !important; height: 168px !important; }
+  .realtime-controls { left: 12px !important; right: 12px !important; bottom: 182px !important; width: auto !important; }
+}
+
+
+/* =========================================================
+   FINAL WORKSPACE COLLISION FIX
+   Reserve separate vertical lanes for task console, runtime,
+   task history, activity rail, and fixed bottom controls.
+   ========================================================= */
+@media (min-width: 1200px) {
+  .system-card {
+    height: 212px !important;
+    min-height: 212px !important;
+    padding: 12px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  .system-card .service-list {
+    margin-top: 7px !important;
+    gap: 5px !important;
+  }
+  .command-stack {
+    top: 296px !important;
+    gap: 6px !important;
+    max-height: 170px !important;
+    overflow: hidden !important;
+  }
+  .command-stack .command-chip {
+    height: 38px !important;
+    min-height: 38px !important;
+    box-sizing: border-box !important;
+    padding: 6px 12px !important;
+  }
+  #activity-panel {
+    top: 478px !important;
+    bottom: 100px !important;
+    height: auto !important;
+    min-height: 180px !important;
+    max-height: none !important;
+  }
+  #task-screen {
+    bottom: 300px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    max-height: 34px !important;
+    right: calc(var(--p1-right) + 36px) !important;
+    overflow: hidden !important;
+  }
+  #task-screen .task-screen-progress,
+  #task-screen .task-screen-log,
+  #task-screen .task-screen-footer { display: none !important; }
+  #task-screen .task-screen-header { min-height: 0 !important; padding: 6px 8px !important; }
+  .runtime-intel {
+    bottom: 242px !important;
+    height: 48px !important;
+    right: calc(var(--p1-right) + 36px) !important;
+    overflow: hidden !important;
+  }
+  .runtime-intel .runtime-metrics,
+  .runtime-intel .runtime-health-line { display: none !important; }
+  .runtime-intel .runtime-budget { margin-top: 5px !important; }
+  .task-history-panel {
+    bottom: 100px !important;
+    height: 136px !important;
+    right: 356px !important;
+  }
+  .task-history-list {
+    height: 84px !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+  .realtime-controls { bottom: 12px !important; }
+}
+
+@media (min-width: 1001px) and (max-width: 1199px) {
+  .system-card {
+    height: 212px !important;
+    min-height: 212px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  .command-stack {
+    top: 296px !important;
+    gap: 6px !important;
+    max-height: 170px !important;
+    overflow: hidden !important;
+  }
+  .command-stack .command-chip {
+    height: 38px !important;
+    min-height: 38px !important;
+    box-sizing: border-box !important;
+    padding: 6px 12px !important;
+  }
+  #activity-panel {
+    top: 478px !important;
+    bottom: 100px !important;
+    width: 310px !important;
+    height: auto !important;
+    min-height: 180px !important;
+    max-height: none !important;
+  }
+  #task-screen {
+    display: none !important;
+  }
+  .runtime-intel {
+    left: 190px !important;
+    right: 344px !important;
+    bottom: 242px !important;
+    height: 48px !important;
+    overflow: hidden !important;
+  }
+  .runtime-intel .runtime-metrics,
+  .runtime-intel .runtime-health-line { display: none !important; }
+  .runtime-intel .runtime-budget { margin-top: 5px !important; }
+  .task-history-panel {
+    left: 190px !important;
+    right: 344px !important;
+    bottom: 100px !important;
+    height: 136px !important;
+  }
+  .task-history-list { height: 84px !important; min-height: 0 !important; }
+  .realtime-controls { bottom: 12px !important; right: 12px !important; }
+}
+
+/* Compact intermediate screens: keep the right rail clear of the bottom controls. */
+@media (min-width: 801px) and (max-width: 1000px) {
+  #task-screen { display: none !important; }
+  .runtime-intel {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 440px !important;
+    height: 80px !important;
+  }
+  #activity-panel {
+    left: auto !important;
+    right: 12px !important;
+    top: auto !important;
+    bottom: 244px !important;
+    width: min(320px, calc(100vw - 220px)) !important;
+    height: 180px !important;
+    min-height: 0 !important;
+    max-height: 180px !important;
+  }
+  .task-history-panel {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 8px !important;
+    height: 150px !important;
+  }
+  .realtime-controls {
+    left: auto !important;
+    right: 12px !important;
+    bottom: 174px !important;
+    width: min(320px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+}
+
+/* Small screens use a scrollable stacked workspace rather than absolute overlays. */
+@media (max-width: 800px) {
+  #stage {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow: visible !important;
+    padding-bottom: 100px !important;
+  }
+  #task-screen { display: none !important; }
+  .runtime-intel,
+  #activity-panel,
+  .task-history-panel {
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: calc(100% - 24px) !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+    margin: 10px 12px !important;
+  }
+  .runtime-intel {
+    order: 19 !important;
+    height: auto !important;
+    min-height: 100px !important;
+  }
+  #activity-panel {
+    order: 20 !important;
+    height: 230px !important;
+    min-height: 230px !important;
+    max-height: 230px !important;
+  }
+  .task-history-panel {
+    order: 21 !important;
+    height: 170px !important;
+    min-height: 170px !important;
+    margin-bottom: 110px !important;
+  }
+  .realtime-controls {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 94px !important;
+    width: auto !important;
+    max-width: none !important;
+    z-index: 120 !important;
+  }
+  .bottom-dock {
+    position: fixed !important;
+    bottom: 12px !important;
+    z-index: 130 !important;
+  }
+}

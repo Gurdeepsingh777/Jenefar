@@ -120,7 +120,9 @@ def doctor() -> int:
     """Run dependency, configuration, source-syntax, and runtime smoke checks."""
     from pathlib import Path
     import ast
+    import errno
     import os
+    import tempfile
 
     print("[JENEFAR] Doctor")
     root = Path(__file__).resolve().parent
@@ -173,9 +175,23 @@ def doctor() -> int:
 
         config = load_config()
         print(f"  config                       OK ({config.name})")
+        from jenefar.core.env_diagnostics import audit_env_file
+        env_path = root / ".env"
+        if env_path.is_file():
+            env_issues = audit_env_file(env_path)
+            if env_issues:
+                print("  .env shell/config audit       WARNING")
+                for issue in env_issues[:40]:
+                    print(f"    - {issue}")
+                if len(env_issues) > 40:
+                    print(f"    - ... {len(env_issues) - 40} additional warning(s)")
+            else:
+                print("  .env shell/config audit       OK")
+        else:
+            print("  .env shell/config audit       NOT FOUND (optional)")
         configured_keys = any(
             os.getenv(name, "").strip()
-            for name in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
+            for name in ("OXION_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY")
         )
         print(
             "  online provider keys         "
@@ -214,12 +230,37 @@ def doctor() -> int:
         except Exception as exc:
             print(f"  local vision                 NOT READY ({type(exc).__name__}: {exc})")
 
+        # Runtime databases use paths under ./data. Check the directory before
+        # constructing the orchestrator so read-only mounts are reported clearly.
+        data_dir = Path("data")
+        data_writable = True
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                prefix=".jenefar-doctor-", dir=data_dir, delete=True
+            ):
+                pass
+            print("  data directory writable       OK")
+        except OSError as exc:
+            data_writable = False
+            cause = "READ-ONLY FILESYSTEM" if exc.errno == errno.EROFS else type(exc).__name__
+            print(f"  data directory writable       ERROR ({cause}: {exc})")
+            if exc.errno == errno.EROFS:
+                print(
+                    "    - The project/data volume is mounted read-only. "
+                    "Use a writable local clone or repair the filesystem mount."
+                )
+            failed = True
+
         # Import the orchestrator to catch dependency/import integration errors.
         from jenefar.core.orchestrator import JenefarOrchestrator
         print("  orchestrator import           OK")
-        # Construct it only after syntax/import checks; this validates core wiring.
-        JenefarOrchestrator()
-        print("  orchestrator init             OK")
+        # Only initialize runtime databases when their containing directory is writable.
+        if data_writable:
+            JenefarOrchestrator()
+            print("  orchestrator init             OK")
+        else:
+            print("  runtime wiring                 SKIPPED (data directory not writable)")
     except Exception as exc:
         print(f"  runtime wiring               ERROR ({type(exc).__name__}: {exc})")
         failed = True
@@ -597,6 +638,7 @@ def main() -> int:
             vrm_path=avatar_model if avatar_model.is_file() else None,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice_enabled else None,
+            audio_handler=browser_voice.handle_audio if browser_voice_enabled else None,
             runtime_status=orchestrator.runtime_status,
             cancel_active_task=orchestrator.cancel_active_task,
             runtime_tasks=orchestrator.runtime_tasks,
@@ -658,6 +700,8 @@ def main() -> int:
             else:
                 print("[JENEFAR] Browser voice is disabled. UI remains available; no terminal voice/TTS is started.")
                 threading.Event().wait()
+        except KeyboardInterrupt:
+            print("[JENEFAR] Shutdown requested by user.")
         finally:
             browser_voice.shutdown()
             if monitoring_server is not None and monitoring_server_owned:
@@ -877,6 +921,7 @@ def main() -> int:
             vrm_path=avatar_model,
             tool_broker=orchestrator.tool_broker,
             voice_handler=browser_voice.handle_text if browser_voice else None,
+            audio_handler=browser_voice.handle_audio if browser_voice else None,
             runtime_status=orchestrator.runtime_status,
             cancel_active_task=orchestrator.cancel_active_task,
             runtime_tasks=orchestrator.runtime_tasks,
