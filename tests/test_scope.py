@@ -10,5 +10,10 @@ def test_cidr_scope():
     assert policy.allows("192.168.1.20")
     assert not policy.allows("192.168.2.20")
 
+def test_cidr_target_must_fit_inside_authorized_network():
+    policy = ScopePolicy(["192.168.1.0/24"])
+    assert policy.allows("192.168.1.0/25")
+    assert not policy.allows("192.168.0.0/16")
+
 def test_empty_scope_denies():
     assert not ScopePolicy([]).allows("127.0.0.1")

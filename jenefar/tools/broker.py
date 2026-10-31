@@ -581,12 +581,13 @@ class ToolBroker:
         ))
         self.registry.register(ToolSpec(
             name="security_tool_execute",
-            description="Run a constrained non-shell security profile against a target inside authorized_targets. Profiles are nmap service scan, WhatWeb fingerprinting, and Nikto web-server scanning.",
+            description="Run a constrained non-shell security profile against a target inside authorized_targets. Use nmap mode live_hosts for CIDR host discovery or services for service detection; WhatWeb and Nikto use services mode.",
             parameters={
                 "type": "object",
                 "properties": {
                     "tool": {"type": "string", "enum": ["nmap", "whatweb", "nikto"]},
                     "target": {"type": "string"},
+                    "mode": {"type": "string", "enum": ["live_hosts", "services"]},
                     "timeout": {"type": "integer", "minimum": 1, "maximum": 120},
                 },
                 "required": ["tool", "target", "timeout"],
@@ -1329,6 +1330,7 @@ class ToolBroker:
             tool=str(args["tool"]),
             target=str(args["target"]),
             timeout=int(args["timeout"]),
+            mode=str(args.get("mode") or "services"),
         )
         self.audit.record(
             "security_tool_executed",
