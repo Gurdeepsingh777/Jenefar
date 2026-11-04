@@ -59,3 +59,32 @@ def test_fcc_provider_can_be_enabled_without_a_paid_key(monkeypatch):
     assert pool.configured("fcc")
     assert pool.api_key("fcc") == "fcc-local"
     assert pool.model("fcc") == "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b"
+
+
+def test_llm_client_uses_fcc_base_url_and_token(monkeypatch):
+    from types import SimpleNamespace
+
+    from jenefar.core.llm import LLMClient
+
+    captured = {}
+
+    def fake_openai(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    import openai
+
+    monkeypatch.setattr(openai, "OpenAI", fake_openai)
+    monkeypatch.setenv("FCC_ENABLED", "true")
+    monkeypatch.setenv("FCC_BASE_URL", "http://127.0.0.1:9191/v1")
+    monkeypatch.setenv("FCC_API_KEY", "local-secret")
+    client = LLMClient.__new__(LLMClient)
+    client._clients = {}
+    client.providers = ProviderPool()
+
+    client._client("fcc")
+
+    assert captured == {
+        "api_key": "local-secret",
+        "base_url": "http://127.0.0.1:9191/v1",
+    }
