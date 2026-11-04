@@ -47,6 +47,10 @@ class ProviderPool:
             "CEREBRAS_MODEL",
             "gpt-oss-120b",
         ),
+        "fcc": ProviderConfig(
+            "fcc", "FCC_API_KEY", "http://127.0.0.1:8082/v1",
+            "FCC_MODEL", "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",
+        ),
     }
 
     def __init__(self) -> None:
@@ -63,6 +67,8 @@ class ProviderPool:
 
     def configured(self, name: str) -> bool:
         config = self.CONFIGS[name]
+        if name == "fcc":
+            return os.getenv("FCC_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
         key = os.getenv(config.api_key_env, "").strip()
         if key:
             if name == "openai" and key.startswith("sk-or-"):
@@ -95,6 +101,8 @@ class ProviderPool:
     def api_key(self, name: str) -> str:
         config = self.CONFIGS[name]
         key = os.getenv(config.api_key_env, "").strip()
+        if name == "fcc":
+            return key or "fcc-local"
         if key:
             return key
         if name == "openrouter":
