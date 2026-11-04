@@ -400,7 +400,7 @@ class LLMClient:
         model: str,
         model_role: str,
     ) -> LLMResponse:
-        if provider == "openai":
+        if provider in {"openai", "fcc"}:
             return self._complete_openai_responses(
                 provider, prompt, instructions=instructions,
                 use_web_search=use_web_search, tool_broker=tool_broker,
