@@ -947,3 +947,8 @@ Explicit commands such as "Firefox ko blue screen par shift karo", "terminal ko 
 
 On native Wayland, application-window capture is available through the XDG ScreenCast portal and PipeWire, but generic cross-application window movement/minimization is compositor-managed rather than a single universal client API. The portal explicitly supports application-window sources, while the Wayland xdg-shell protocol exposes move/resize operations as user-driven surface operations. citeturn144502search0turn144502search6 Jenefar therefore reports the actual backend capability instead of pretending a native transfer succeeded when it did not.
 
+
+
+### Optional Free Claude Code gateway
+
+Jenefar can optionally use a separately running Free Claude Code gateway for model routing and provider fallback. See [the FCC integration guide](docs/integrations/free-claude-code.md). FCC is opt-in and is not a required Jenefar dependency.

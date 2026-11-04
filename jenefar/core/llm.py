@@ -55,7 +55,11 @@ class LLMClient:
         from openai import OpenAI
 
         kwargs = {"api_key": self.providers.api_key(provider)}
-        if config.base_url:
+        if provider == "fcc":
+            from jenefar.core.fcc_gateway import fcc_base_url, fcc_api_key
+            kwargs["api_key"] = fcc_api_key()
+            kwargs["base_url"] = fcc_base_url()
+        elif config.base_url:
             kwargs["base_url"] = config.base_url
         self._clients[provider] = OpenAI(**kwargs)
         return self._clients[provider]
@@ -400,7 +404,7 @@ class LLMClient:
         model: str,
         model_role: str,
     ) -> LLMResponse:
-        if provider == "openai":
+        if provider in {"openai", "fcc"}:
             return self._complete_openai_responses(
                 provider, prompt, instructions=instructions,
                 use_web_search=use_web_search, tool_broker=tool_broker,
